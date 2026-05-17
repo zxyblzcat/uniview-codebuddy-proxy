@@ -14,53 +14,22 @@ import (
 
 // RegisterRoutes 注册所有 /v1/* 路由和健康检查路由
 func RegisterRoutes(r *gin.Engine) {
-	// API Key 认证中间件
-	v1 := r.Group("/v1")
-	v1.Use(apiKeyAuthMiddleware())
-	{
-		v1.POST("/chat/completions", handleChatCompletions)
-		v1.GET("/models", handleModels)
-		v1.POST("/messages", handleAnthropicMessages)
-		v1.POST("/responses", handleResponses)
-	}
+	// 注册路由到 group，同时兼容 /v1/v1/* 双重路径
+	registerAPIRoutes(r.Group("/v1"))
+	registerAPIRoutes(r.Group("/v1/v1"))
 
-	// 健康检查（无需认证）
+	// 健康检查
 	r.GET("/health", handleHealth)
 	r.GET("/", handleRoot)
 	r.HEAD("/v1", handleHeadV1)
 }
 
-// apiKeyAuthMiddleware API Key 认证中间件
-// 支持 Authorization: Bearer xxx 和 x-api-key: xxx
-func apiKeyAuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if config.APIPassword == "" {
-			c.Next()
-			return
-		}
-
-		var key string
-		authHeader := c.GetHeader("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			key = authHeader[7:]
-		} else {
-			key = c.GetHeader("x-api-key")
-		}
-
-		if key == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": gin.H{"message": "Missing Authorization header or x-api-key", "type": "auth_required"},
-			})
-			return
-		}
-		if key != config.APIPassword {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"error": gin.H{"message": "Invalid API key", "type": "forbidden"},
-			})
-			return
-		}
-		c.Next()
-	}
+// registerAPIRoutes 注册 API 路由组
+func registerAPIRoutes(g *gin.RouterGroup) {
+	g.POST("/chat/completions", handleChatCompletions)
+	g.GET("/models", handleModels)
+	g.POST("/messages", handleAnthropicMessages)
+	g.POST("/responses", handleResponses)
 }
 
 // handleChatCompletions POST /v1/chat/completions
@@ -68,7 +37,7 @@ func handleChatCompletions(c *gin.Context) {
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": gin.H{"message": "No token. Visit /auth/start to login first.", "type": "auth_required"},
+			"error": gin.H{"message": "No token. Visit /auth/start to login.", "type": "auth_required"},
 		})
 		return
 	}
@@ -139,10 +108,10 @@ func handleChatCompletions(c *gin.Context) {
 
 	if isStream {
 		// 流式响应：直接用 SSE 转发
-		StreamChatCompletions(payload, model, c.Writer)
+		StreamChatCompletions(payload, model, bearer, c.Writer)
 	} else {
 		// 非流式响应：收集所有 chunk 后组装
-		result, err := CollectUpstreamChunks(payload)
+		result, err := CollectUpstreamChunks(payload, bearer)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": gin.H{"message": err.Error(), "type": "proxy_error"},
@@ -207,22 +176,15 @@ func handleHealth(c *gin.Context) {
 
 // handleRoot GET /
 func handleRoot(c *gin.Context) {
-	hasToken := auth.LoadToken() != nil
 	c.JSON(http.StatusOK, gin.H{
-		"service":   "CodeBuddy CN -> OpenAI API Proxy",
-		"version":   "3.0.0",
-		"upstream":  config.ChatURL,
-		"auth":      "OAuth2 Device Flow",
-		"has_token": hasToken,
+		"service":  "CodeBuddy CN -> OpenAI API Proxy",
+		"version":  "3.0.0",
+		"upstream": config.ChatURL,
 		"endpoints": gin.H{
-			"auth_start":  "GET /auth/start",
-			"auth_poll":   "GET /auth/poll?auth_state=xxx",
-			"auth_manual": "POST /auth/manual  (set bearer token directly)",
-			"auth_status": "GET /auth/status",
-			"chat":        "POST /v1/chat/completions",
-			"messages":    "POST /v1/messages (Anthropic)",
-			"responses":   "POST /v1/responses",
-			"models":      "GET /v1/models",
+			"chat":      "POST /v1/chat/completions",
+			"messages":  "POST /v1/messages (Anthropic)",
+			"responses": "POST /v1/responses",
+			"models":    "GET /v1/models",
 		},
 		"usage": gin.H{
 			"base_url": fmt.Sprintf("http://localhost:%d/v1", config.Port),
@@ -239,7 +201,7 @@ func handleHeadV1(c *gin.Context) {
 func handleAnthropicMessages(c *gin.Context) {
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
-		anthropicErrorResponse(c, http.StatusUnauthorized, "authentication_error", "No token. Visit /auth/start to login first.")
+		anthropicErrorResponse(c, http.StatusUnauthorized, "authentication_error", "No token. Visit /auth/start to login.")
 		return
 	}
 
@@ -308,9 +270,9 @@ func handleAnthropicMessages(c *gin.Context) {
 	}
 
 	if isStream {
-		StreamAnthropicMessages(payload, model, c.Writer)
+		StreamAnthropicMessages(payload, model, bearer, c.Writer)
 	} else {
-		result, err := CollectUpstreamChunks(payload)
+		result, err := CollectUpstreamChunks(payload, bearer)
 		if err != nil {
 			anthropicErrorResponse(c, http.StatusInternalServerError, "api_error", err.Error())
 			return
@@ -328,7 +290,7 @@ func handleResponses(c *gin.Context) {
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": gin.H{"message": "No token. Visit /auth/start to login first.", "type": "auth_required"},
+			"error": gin.H{"message": "No token. Visit /auth/start to login.", "type": "auth_required"},
 		})
 		return
 	}
@@ -382,9 +344,9 @@ func handleResponses(c *gin.Context) {
 	requestID := "resp_" + randomHex(24)
 
 	if isStream {
-		StreamResponsesSSE(payload, model, c.Writer)
+		StreamResponsesSSE(payload, model, bearer, c.Writer)
 	} else {
-		result, err := CollectUpstreamChunks(payload)
+		result, err := CollectUpstreamChunks(payload, bearer)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": gin.H{"message": err.Error(), "type": "proxy_error"},

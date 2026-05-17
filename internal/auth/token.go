@@ -3,16 +3,12 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"log"
-	"os"
-	"path/filepath"
+	"sync"
 	"time"
-
-	"codebuddy-proxy/internal/config"
 )
 
-// TokenData 表示持久化的 token 数据
+// TokenData 表示缓存的 token 数据
 type TokenData struct {
 	BearerToken  string `json:"bearer_token"`
 	AccessToken  string `json:"access_token"`
@@ -26,45 +22,91 @@ type TokenData struct {
 	UserID       string `json:"user_id"`
 }
 
-func credentialsFile() string {
-	return filepath.Join(config.CredsDir, "token.json")
-}
+// 内存中的 token 缓存
+var (
+	cachedToken   *TokenData
+	tokenMu       sync.RWMutex
+	reloginMu     sync.Mutex // 防止并发触发自动登录
+	reloginInProgress bool
+)
 
-// LoadToken 从磁盘加载 token，过期返回 nil
+// LoadToken 从内存加载 token，过期时清除缓存并触发自动登录，返回 nil
 func LoadToken() *TokenData {
-	path := credentialsFile()
-	data, err := os.ReadFile(path)
-	if err != nil {
+	tokenMu.RLock()
+	defer tokenMu.RUnlock()
+
+	if cachedToken == nil {
 		return nil
 	}
-	var td TokenData
-	if err := json.Unmarshal(data, &td); err != nil {
-		return nil
-	}
-	bearer := td.BearerToken
+	bearer := cachedToken.BearerToken
 	if bearer == "" {
-		bearer = td.AccessToken
+		bearer = cachedToken.AccessToken
 	}
 	if bearer == "" {
 		return nil
 	}
-	if td.ExpiresAt > 0 && time.Now().Unix() > td.ExpiresAt {
-		log.Println("Token expired")
+	if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
+		// 过期后清除缓存，避免后续请求重复打日志
+		log.Println("Token expired, clearing cache and triggering auto-login")
+		go triggerAutoRelogin()
 		return nil
 	}
-	return &td
+	return cachedToken
 }
 
-// SaveToken 将 token 持久化到磁盘
-func SaveToken(td *TokenData) error {
-	if err := os.MkdirAll(config.CredsDir, 0700); err != nil {
-		return fmt.Errorf("create creds dir: %w", err)
+// triggerAutoRelogin 触发后台自动重新登录
+func triggerAutoRelogin() {
+	reloginMu.Lock()
+	if reloginInProgress {
+		reloginMu.Unlock()
+		return
 	}
-	data, err := json.MarshalIndent(td, "", "  ")
+	reloginInProgress = true
+	reloginMu.Unlock()
+
+	defer func() {
+		reloginMu.Lock()
+		reloginInProgress = false
+		reloginMu.Unlock()
+	}()
+
+	// 清除过期 token
+	tokenMu.Lock()
+	cachedToken = nil
+	tokenMu.Unlock()
+
+	// 尝试自动重新登录
+	authURL, authState, err := FetchAuthURL()
 	if err != nil {
-		return fmt.Errorf("marshal token: %w", err)
+		log.Printf("Auto-relogin failed (FetchAuthURL): %v", err)
+		return
 	}
-	return os.WriteFile(credentialsFile(), data, 0600)
+
+	log.Printf("Auto-relogin: opening browser for CodeBuddy login...")
+	OpenBrowser(authURL)
+
+	// 后台轮询等待登录完成
+	for i := 0; i < 60; i++ {
+		result := PollToken(authState)
+		if result.Status == "success" {
+			log.Printf("Auto-relogin success! User: %s", result.UserID)
+			return
+		}
+		if result.Status == "error" {
+			log.Printf("Auto-relogin poll error: %s", result.Message)
+			return
+		}
+		time.Sleep(3 * time.Second)
+	}
+	log.Println("Auto-relogin timed out after 3 minutes")
+}
+
+// SaveToken 将 token 缓存到内存
+func SaveToken(td *TokenData) error {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+	cachedToken = td
+	return nil
 }
 
 // GetBearerToken 返回当前 bearer token，无 token 返回空字符串

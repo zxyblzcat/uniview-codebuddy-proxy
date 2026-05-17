@@ -12,7 +12,6 @@ var (
 	Port         int
 	APIPassword  string
 	CKApiKey     string
-	CredsDir     string
 	BaseURL      string
 	Domain       string
 	AuthStateURL string
@@ -25,10 +24,9 @@ func init() {
 	// 加载 .env 文件（忽略不存在的错误，允许纯环境变量运行）
 	_ = godotenv.Load()
 
-	Port, _ = strconv.Atoi(getEnv("PORT", "8000"))
+	Port, _ = strconv.Atoi(getEnv("PORT", "1026"))
 	APIPassword = getEnv("API_PASSWORD", "")
 	CKApiKey = getEnv("CODEBUDDY_API_KEY", "")
-	CredsDir = getEnv("CREDS_DIR", ".codebuddy_creds")
 
 	BaseURL = "https://unvcoding.copilot.qq.com"
 	Domain = "unvcoding.copilot.qq.com"

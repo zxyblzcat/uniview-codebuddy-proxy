@@ -8,12 +8,18 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os/exec"
 	"time"
 
 	"codebuddy-proxy/internal/config"
 
 	"github.com/gin-gonic/gin"
 )
+
+// upstreamClient 用于非流式认证请求（带超时）
+var upstreamClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
 
 // RegisterRoutes 注册 /auth/* 路由组
 func RegisterRoutes(r *gin.Engine) {
@@ -49,7 +55,7 @@ func handleAuthStart(c *gin.Context) {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := upstreamClient.Do(req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
@@ -71,6 +77,8 @@ func handleAuthStart(c *gin.Context) {
 			authState, _ := d["state"].(string)
 			authURL, _ := d["authUrl"].(string)
 			if authState != "" && authURL != "" {
+				// 自动打开浏览器让用户登录
+				OpenBrowser(authURL)
 				c.JSON(http.StatusOK, gin.H{
 					"success":    true,
 					"auth_state": authState,
@@ -90,48 +98,43 @@ func handleAuthStart(c *gin.Context) {
 	})
 }
 
-// handleAuthPoll 轮询 token 状态
-func handleAuthPoll(c *gin.Context) {
-	authState := c.Query("auth_state")
-	if authState == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "auth_state is required"})
-		return
-	}
+// PollResult 表示轮询结果
+type PollResult struct {
+	Status     string    // "pending", "success", "error"
+	Message    string
+	UserID     string
+	ExpiresAt  int64
+	Detail     map[string]interface{}
+}
 
+// PollToken 向上游轮询 token 状态，返回轮询结果
+func PollToken(authState string) *PollResult {
 	url := fmt.Sprintf("%s?state=%s", config.AuthTokenURL, authState)
 	headers := authPollHeaders()
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
-		return
+		return &PollResult{Status: "error", Message: err.Error()}
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := upstreamClient.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
-		return
+		return &PollResult{Status: "error", Message: err.Error()}
 	}
 	defer resp.Body.Close()
 
 	var data map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "invalid response"})
-		return
+		return &PollResult{Status: "error", Message: "invalid response"}
 	}
 
 	// 11217 = 等待用户登录
 	code, _ := data["code"].(float64)
 	if code == 11217 {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "pending",
-			"message": "Waiting for login...",
-			"code":    11217,
-		})
-		return
+		return &PollResult{Status: "pending", Message: "Waiting for login..."}
 	}
 
 	if code == 0 {
@@ -166,18 +169,45 @@ func handleAuthPoll(c *gin.Context) {
 					log.Printf("save token error: %v", err)
 				}
 
-				c.JSON(http.StatusOK, gin.H{
-					"status":     "success",
-					"message":    "Login success! Token saved.",
-					"user_id":    td.UserID,
-					"expires_at": td.ExpiresAt,
-				})
-				return
+				return &PollResult{
+					Status:    "success",
+					Message:   "Login success! Token saved.",
+					UserID:    td.UserID,
+					ExpiresAt: td.ExpiresAt,
+				}
 			}
 		}
 	}
 
-	c.JSON(http.StatusBadRequest, gin.H{"status": "error", "detail": data})
+	return &PollResult{Status: "error", Message: "auth_poll_failed", Detail: data}
+}
+
+// handleAuthPoll 轮询 token 状态
+func handleAuthPoll(c *gin.Context) {
+	authState := c.Query("auth_state")
+	if authState == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "auth_state is required"})
+		return
+	}
+
+	result := PollToken(authState)
+	switch result.Status {
+	case "pending":
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "pending",
+			"message": result.Message,
+			"code":    11217,
+		})
+	case "success":
+		c.JSON(http.StatusOK, gin.H{
+			"status":     "success",
+			"message":    result.Message,
+			"user_id":    result.UserID,
+			"expires_at": result.ExpiresAt,
+		})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "detail": result.Detail})
+	}
 }
 
 // handleAuthManual 手动设置 Bearer Token
@@ -304,6 +334,7 @@ func BuildUpstreamHeaders(model string) map[string]string {
 		"X-User-Id":         GetUserID(),
 		"X-Machine-Id":     generateRequestID(),
 		"X-Request-ID":      generateRequestID(),
+		"User-Agent":        "CLI/1.0.8 CodeBuddy/1.0.8",
 	}
 }
 
@@ -364,4 +395,76 @@ func truncateJSON(data interface{}, maxLen int) string {
 		return s[:maxLen] + "..."
 	}
 	return s
+}
+
+// OpenBrowser 调用系统默认浏览器打开 URL
+func OpenBrowser(url string) {
+	var cmd *exec.Cmd
+	switch {
+	case commandExists("open"):
+		cmd = exec.Command("open", url)
+	case commandExists("xdg-open"):
+		cmd = exec.Command("xdg-open", url)
+	case commandExists("rundll32"):
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		log.Printf("Cannot open browser, please visit: %s", url)
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		log.Printf("Failed to open browser: %v", err)
+	}
+}
+
+// commandExists 检查系统命令是否存在
+func commandExists(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+// FetchAuthURL 调用上游 Device Flow 获取 CodeBuddy 登录 URL
+func FetchAuthURL() (authURL string, authState string, err error) {
+	nonce, nerr := generateNonce()
+	if nerr != nil {
+		return "", "", nerr
+	}
+
+	url := fmt.Sprintf("%s?platform=CLI&nonce=%s", config.AuthStateURL, nonce)
+	headers := authStartHeaders()
+
+	body := map[string]string{"nonce": nonce}
+	bodyJSON, _ := json.Marshal(body)
+
+	req, rerr := http.NewRequest("POST", url, bytes.NewReader(bodyJSON))
+	if rerr != nil {
+		return "", "", rerr
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, rerr := upstreamClient.Do(req)
+	if rerr != nil {
+		return "", "", rerr
+	}
+	defer resp.Body.Close()
+
+	var data map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return "", "", fmt.Errorf("invalid response")
+	}
+
+	code, _ := data["code"].(float64)
+	if resp.StatusCode == 200 && code == 0 {
+		d, _ := data["data"].(map[string]interface{})
+		if d != nil {
+			state, _ := d["state"].(string)
+			aURL, _ := d["authUrl"].(string)
+			if state != "" && aURL != "" {
+				return aURL, state, nil
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("auth_start_failed: %v", truncateJSON(data, 200))
 }

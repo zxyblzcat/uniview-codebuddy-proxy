@@ -15,12 +15,17 @@ import (
 )
 
 // StreamResponsesSSE 向上游发送请求，将 OpenAI Chat SSE 流实时转换为 Responses API SSE 流
-func StreamResponsesSSE(payload map[string]interface{}, model string, w http.ResponseWriter) {
+func StreamResponsesSSE(payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
 	respID := "resp_" + randomHex(24)
 	itemID := "msg_" + randomHex(24)
 	started := false
 	finished := false
 	textStarted := false
+	textOutputIndex := -1    // text 所在的 output_index，-1 表示未开始
+	nextOutputIndex := 0     // 下一个 output item 的 output_index
+	toolCallItemIDs := map[int]string{}  // OpenAI tcIdx → Responses item_id
+	toolCallOutputIdx := map[int]int{}   // OpenAI tcIdx → output_index
+	toolCallsStarted := map[int]bool{}   // OpenAI tcIdx → 是否已发送 output_item.added
 	inputTokens := 0
 	outputTokens := 0
 
@@ -37,12 +42,14 @@ func StreamResponsesSSE(payload map[string]interface{}, model string, w http.Res
 	}
 
 	headers := auth.BuildUpstreamHeaders(model)
-	headers["Authorization"] = "Bearer " + auth.GetBearerToken()
+	if bearer != "" {
+		headers["Authorization"] = "Bearer " + bearer
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := streamClient.Do(req)
 	if err != nil {
 		writeResponsesSSEError(w, "upstream request error: "+err.Error())
 		return
@@ -51,7 +58,7 @@ func StreamResponsesSSE(payload map[string]interface{}, model string, w http.Res
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		errText := string(body)
+		errText := stripHTML(string(body))
 		if len(errText) > 300 {
 			errText = errText[:300]
 		}
@@ -91,38 +98,49 @@ func StreamResponsesSSE(payload map[string]interface{}, model string, w http.Res
 		if dataStr == "[DONE]" {
 			if !finished {
 				finished = true
+				// 关闭文本 block
 				if textStarted {
 					textStarted = false
 					writeSSE(w, flusher, canFlush, responsesSSE("response.output_text.delta", map[string]interface{}{
-						"type":          "response.output_text.delta",
-						"item_id":       itemID,
-						"output_index":  0,
-						"content_index": 0,
-						"delta":         "",
+						"type": "response.output_text.delta", "item_id": itemID,
+						"output_index": textOutputIndex, "content_index": 0, "delta": "",
 					}))
 					writeSSE(w, flusher, canFlush, responsesSSE("response.content_part.done", map[string]interface{}{
-						"type":          "response.content_part.done",
-						"item_id":       itemID,
-						"output_index":  0,
-						"content_index": 0,
-						"part":          map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}},
+						"type": "response.content_part.done", "item_id": itemID,
+						"output_index": textOutputIndex, "content_index": 0,
+						"part": map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}},
 					}))
 					writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.done", map[string]interface{}{
-						"type":         "response.output_item.done",
-						"output_index": 0,
-						"item":         map[string]interface{}{"id": itemID, "type": "message", "role": "assistant", "content": []interface{}{map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}}}},
+						"type": "response.output_item.done", "output_index": textOutputIndex,
+						"item": map[string]interface{}{"id": itemID, "type": "message", "role": "assistant",
+							"content": []interface{}{map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}}}},
 					}))
+				}
+				// 关闭已开启的 tool call blocks
+				for tcIdx, tcStarted := range toolCallsStarted {
+					if tcStarted {
+						tcItemID := toolCallItemIDs[tcIdx]
+						tcOutputIdx := toolCallOutputIdx[tcIdx]
+						writeSSE(w, flusher, canFlush, responsesSSE("response.function_call_arguments.delta", map[string]interface{}{
+							"type": "response.function_call_arguments.delta", "item_id": tcItemID,
+							"output_index": tcOutputIdx, "call_id": tcItemID, "delta": "",
+						}))
+						writeSSE(w, flusher, canFlush, responsesSSE("response.function_call_arguments.done", map[string]interface{}{
+							"type": "response.function_call_arguments.done", "item_id": tcItemID,
+							"output_index": tcOutputIdx, "call_id": tcItemID, "arguments": "",
+						}))
+						writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.done", map[string]interface{}{
+							"type": "response.output_item.done", "output_index": tcOutputIdx,
+							"item": map[string]interface{}{"id": tcItemID, "type": "function_call", "call_id": tcItemID, "name": "", "arguments": ""},
+						}))
+					}
 				}
 				writeSSE(w, flusher, canFlush, responsesSSE("response.completed", map[string]interface{}{
 					"type": "response.completed",
 					"response": map[string]interface{}{
-						"id":         respID,
-						"object":     "response",
-						"created_at": time.Now().Unix(),
-						"model":      model,
-						"status":     "completed",
-						"output":     []interface{}{},
-						"usage":      map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens, "total_tokens": inputTokens + outputTokens},
+						"id": respID, "object": "response", "created_at": time.Now().Unix(),
+						"model": model, "status": "completed", "output": []interface{}{},
+						"usage": map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens, "total_tokens": inputTokens + outputTokens},
 					},
 				}))
 			}
@@ -163,77 +181,160 @@ func StreamResponsesSSE(payload map[string]interface{}, model string, w http.Res
 			// 首次收到有效内容时发送开始事件
 			if !started {
 				started = true
-				textStarted = true
 				writeSSE(w, flusher, canFlush, responsesSSE("response.created", map[string]interface{}{
 					"type": "response.created",
 					"response": map[string]interface{}{
-						"id": respID, "object": "response", "created_at": time.Now().Unix(), "model": model, "status": "in_progress", "output": []interface{}{},
+						"id": respID, "object": "response", "created_at": time.Now().Unix(),
+						"model": model, "status": "in_progress", "output": []interface{}{},
 					},
 				}))
 				writeSSE(w, flusher, canFlush, responsesSSE("response.in_progress", map[string]interface{}{
 					"type": "response.in_progress",
 					"response": map[string]interface{}{
-						"id": respID, "object": "response", "created_at": time.Now().Unix(), "model": model, "status": "in_progress", "output": []interface{}{},
+						"id": respID, "object": "response", "created_at": time.Now().Unix(),
+						"model": model, "status": "in_progress", "output": []interface{}{},
 					},
-				}))
-				writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.added", map[string]interface{}{
-					"type":         "response.output_item.added",
-					"output_index": 0,
-					"item":         map[string]interface{}{"id": itemID, "type": "message", "role": "assistant", "content": []interface{}{}},
-				}))
-				writeSSE(w, flusher, canFlush, responsesSSE("response.content_part.added", map[string]interface{}{
-					"type":          "response.content_part.added",
-					"item_id":       itemID,
-					"output_index":  0,
-					"content_index": 0,
-					"part":          map[string]interface{}{"type": "output_text", "text": ""},
 				}))
 			}
 
 			// 处理文本内容
 			if content, ok := delta["content"].(string); ok && content != "" {
+				// 延迟开启 text block
+				if !textStarted {
+					textStarted = true
+					textOutputIndex = nextOutputIndex
+					nextOutputIndex++
+					writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.added", map[string]interface{}{
+						"type": "response.output_item.added", "output_index": textOutputIndex,
+						"item": map[string]interface{}{"id": itemID, "type": "message", "role": "assistant", "content": []interface{}{}},
+					}))
+					writeSSE(w, flusher, canFlush, responsesSSE("response.content_part.added", map[string]interface{}{
+						"type": "response.content_part.added", "item_id": itemID,
+						"output_index": textOutputIndex, "content_index": 0,
+						"part": map[string]interface{}{"type": "output_text", "text": ""},
+					}))
+				}
 				writeSSE(w, flusher, canFlush, responsesSSE("response.output_text.delta", map[string]interface{}{
-					"type":          "response.output_text.delta",
-					"item_id":       itemID,
-					"output_index":  0,
-					"content_index": 0,
-					"delta":         content,
+					"type": "response.output_text.delta", "item_id": itemID,
+					"output_index": textOutputIndex, "content_index": 0, "delta": content,
 				}))
+			}
+
+			// 处理工具调用
+			if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+				for _, tc := range tcs {
+					tcMap, _ := tc.(map[string]interface{})
+					if tcMap == nil {
+						continue
+					}
+					tcIdx := 0
+					if v, ok := tcMap["index"].(float64); ok {
+						tcIdx = int(v)
+					}
+
+					// 首次出现该 tool call：分配 item_id 和 output_index
+					if _, exists := toolCallsStarted[tcIdx]; !exists {
+						toolCallsStarted[tcIdx] = false
+						toolCallItemIDs[tcIdx] = "fc_" + randomHex(24)
+						toolCallOutputIdx[tcIdx] = nextOutputIndex
+						nextOutputIndex++
+					}
+
+					// 关闭前面的 text block（如果有）
+					if textStarted {
+						textStarted = false
+						writeSSE(w, flusher, canFlush, responsesSSE("response.output_text.delta", map[string]interface{}{
+							"type": "response.output_text.delta", "item_id": itemID,
+							"output_index": textOutputIndex, "content_index": 0, "delta": "",
+						}))
+						writeSSE(w, flusher, canFlush, responsesSSE("response.content_part.done", map[string]interface{}{
+							"type": "response.content_part.done", "item_id": itemID,
+							"output_index": textOutputIndex, "content_index": 0,
+							"part": map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}},
+						}))
+						writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.done", map[string]interface{}{
+							"type": "response.output_item.done", "output_index": textOutputIndex,
+							"item": map[string]interface{}{"id": itemID, "type": "message", "role": "assistant",
+								"content": []interface{}{map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}}}},
+						}))
+					}
+
+					tcItemID := toolCallItemIDs[tcIdx]
+					tcOutputIdx := toolCallOutputIdx[tcIdx]
+
+					// 首次出现 id + name 时发送 output_item.added
+					if !toolCallsStarted[tcIdx] {
+						if id, ok := tcMap["id"].(string); ok && id != "" {
+							toolCallsStarted[tcIdx] = true
+							fnName := ""
+							if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+								fnName, _ = fn["name"].(string)
+							}
+							writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.added", map[string]interface{}{
+								"type": "response.output_item.added", "output_index": tcOutputIdx,
+								"item": map[string]interface{}{"id": tcItemID, "type": "function_call", "call_id": tcItemID, "name": fnName},
+							}))
+						}
+					}
+
+					// arguments 片段
+					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+						if args, ok := fn["arguments"].(string); ok && args != "" {
+							writeSSE(w, flusher, canFlush, responsesSSE("response.function_call_arguments.delta", map[string]interface{}{
+								"type": "response.function_call_arguments.delta", "item_id": tcItemID,
+								"output_index": tcOutputIdx, "call_id": tcItemID, "delta": args,
+							}))
+						}
+					}
+				}
 			}
 
 			// 处理 finish_reason
 			if fr != "" && !finished {
 				finished = true
-				textStarted = false
-				writeSSE(w, flusher, canFlush, responsesSSE("response.output_text.done", map[string]interface{}{
-					"type":          "response.output_text.done",
-					"item_id":       itemID,
-					"output_index":  0,
-					"content_index": 0,
-					"text":          "",
-				}))
-				writeSSE(w, flusher, canFlush, responsesSSE("response.content_part.done", map[string]interface{}{
-					"type":          "response.content_part.done",
-					"item_id":       itemID,
-					"output_index":  0,
-					"content_index": 0,
-					"part":          map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}},
-				}))
-				writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.done", map[string]interface{}{
-					"type":         "response.output_item.done",
-					"output_index": 0,
-					"item":         map[string]interface{}{"id": itemID, "type": "message", "role": "assistant", "content": []interface{}{map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}}}},
-				}))
+				// 关闭文本 block
+				if textStarted {
+					textStarted = false
+					writeSSE(w, flusher, canFlush, responsesSSE("response.output_text.done", map[string]interface{}{
+						"type": "response.output_text.done", "item_id": itemID,
+						"output_index": textOutputIndex, "content_index": 0, "text": "",
+					}))
+					writeSSE(w, flusher, canFlush, responsesSSE("response.content_part.done", map[string]interface{}{
+						"type": "response.content_part.done", "item_id": itemID,
+						"output_index": textOutputIndex, "content_index": 0,
+						"part": map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}},
+					}))
+					writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.done", map[string]interface{}{
+						"type": "response.output_item.done", "output_index": textOutputIndex,
+						"item": map[string]interface{}{"id": itemID, "type": "message", "role": "assistant",
+							"content": []interface{}{map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}}}},
+					}))
+				}
+				// 关闭已开启的 tool call blocks
+				for tcIdx2, tcStarted2 := range toolCallsStarted {
+					if tcStarted2 {
+						tcItemID2 := toolCallItemIDs[tcIdx2]
+						tcOutputIdx2 := toolCallOutputIdx[tcIdx2]
+						writeSSE(w, flusher, canFlush, responsesSSE("response.function_call_arguments.delta", map[string]interface{}{
+							"type": "response.function_call_arguments.delta", "item_id": tcItemID2,
+							"output_index": tcOutputIdx2, "call_id": tcItemID2, "delta": "",
+						}))
+						writeSSE(w, flusher, canFlush, responsesSSE("response.function_call_arguments.done", map[string]interface{}{
+							"type": "response.function_call_arguments.done", "item_id": tcItemID2,
+							"output_index": tcOutputIdx2, "call_id": tcItemID2, "arguments": "",
+						}))
+						writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.done", map[string]interface{}{
+							"type": "response.output_item.done", "output_index": tcOutputIdx2,
+							"item": map[string]interface{}{"id": tcItemID2, "type": "function_call", "call_id": tcItemID2, "name": "", "arguments": ""},
+						}))
+					}
+				}
 				writeSSE(w, flusher, canFlush, responsesSSE("response.completed", map[string]interface{}{
 					"type": "response.completed",
 					"response": map[string]interface{}{
-						"id":         respID,
-						"object":     "response",
-						"created_at": time.Now().Unix(),
-						"model":      model,
-						"status":     "completed",
-						"output":     []interface{}{},
-						"usage":      map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens, "total_tokens": inputTokens + outputTokens},
+						"id": respID, "object": "response", "created_at": time.Now().Unix(),
+						"model": model, "status": "completed", "output": []interface{}{},
+						"usage": map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens, "total_tokens": inputTokens + outputTokens},
 					},
 				}))
 			}

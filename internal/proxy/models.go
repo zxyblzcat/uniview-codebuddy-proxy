@@ -73,19 +73,15 @@ func FetchModels() []Model {
 	copy(result, extraModels)
 
 	bearer := auth.GetBearerToken()
-	if bearer == "" {
-		log.Println("No bearer token, cannot fetch /v2/config")
-		modelsCache = result
-		modelsExpires = now + 60 // 无 token 时缓存 1 分钟
-		return result
-	}
 
 	// 请求 /v2/config
 	headers := map[string]string{
-		"Authorization": "Bearer " + bearer,
-		"X-User-Id":     auth.GetUserID(),
-		"X-Domain":      config.Domain,
-		"X-Product":     "SaaS",
+		"X-Domain":  config.Domain,
+		"X-Product": "SaaS",
+	}
+	if bearer != "" {
+		headers["Authorization"] = "Bearer " + bearer
+		headers["X-User-Id"] = auth.GetUserID()
 	}
 
 	req, err := http.NewRequest("GET", config.ConfigURL, nil)
@@ -99,7 +95,7 @@ func FetchModels() []Model {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := upstreamClient.Do(req)
 	if err != nil {
 		log.Printf("fetch /v2/config error: %v", err)
 		modelsCache = result

@@ -9,15 +9,42 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// convertResponsesToChat 将 OpenAI Responses API 请求的 input 数组转换为 Chat Completions 的 messages 数组
+// convertResponsesToChat 将 OpenAI Responses API 请求的 input 转换为 Chat Completions 的 messages 数组
+// 支持 input 为纯字符串或数组（含 role+content、function_call_output 等项）
 func convertResponsesToChat(body map[string]interface{}) []interface{} {
 	var messages []interface{}
-	input, _ := body["input"].([]interface{})
-	for _, item := range input {
+	input := body["input"]
+
+	// 处理纯字符串 input：如 "input": "hello"
+	if inputStr, ok := input.(string); ok && inputStr != "" {
+		return []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": inputStr,
+			},
+		}
+	}
+
+	inputArr, _ := input.([]interface{})
+	for _, item := range inputArr {
 		m, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
+		itemType, _ := m["type"].(string)
+
+		// 处理 function_call_output：转换为 OpenAI tool 角色消息
+		if itemType == "function_call_output" {
+			callID, _ := m["call_id"].(string)
+			output, _ := m["output"].(string)
+			messages = append(messages, map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": callID,
+				"content":      output,
+			})
+			continue
+		}
+
 		role, _ := m["role"].(string)
 		content := m["content"]
 

@@ -9,17 +9,34 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	"codebuddy-proxy/internal/auth"
 	"codebuddy-proxy/internal/config"
 )
 
+// htmlTagRe 匹配 HTML 标签
+var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+
+// upstreamClient 用于非流式请求（带超时），避免上游无响应时 goroutine 永久阻塞
+var upstreamClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
+
+// streamClient 用于流式请求（仅连接超时，读取不设超时以支持长连接 SSE）
+var streamClient = &http.Client{
+	Timeout: 0, // 无总超时
+	Transport: &http.Transport{
+		ResponseHeaderTimeout: 30 * time.Second, // 等待响应头的超时
+	},
+}
+
 // StreamChatCompletions 向上游发送流式请求并实时转发 SSE 事件
 // 清理非标准字段，替换 model 和 id
-func StreamChatCompletions(payload map[string]interface{}, model string, w http.ResponseWriter) {
+func StreamChatCompletions(payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
 	requestID := "chatcmpl-" + randomHex(12)
-	bearer := auth.GetBearerToken()
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -35,12 +52,14 @@ func StreamChatCompletions(payload map[string]interface{}, model string, w http.
 
 	// 设置请求头
 	headers := auth.BuildUpstreamHeaders(model)
-	headers["Authorization"] = "Bearer " + bearer
+	if bearer != "" {
+		headers["Authorization"] = "Bearer " + bearer
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := streamClient.Do(req)
 	if err != nil {
 		writeSSEError(w, "upstream request error: "+err.Error())
 		return
@@ -49,7 +68,7 @@ func StreamChatCompletions(payload map[string]interface{}, model string, w http.
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		errText := string(body)
+		errText := stripHTML(string(body))
 		if len(errText) > 300 {
 			errText = errText[:300]
 		}
@@ -123,8 +142,7 @@ func StreamChatCompletions(payload map[string]interface{}, model string, w http.
 }
 
 // CollectUpstreamChunks 从上游收集所有流式 chunk，返回结构化数据
-func CollectUpstreamChunks(payload map[string]interface{}) (*CollectedResult, error) {
-	bearer := auth.GetBearerToken()
+func CollectUpstreamChunks(payload map[string]interface{}, bearer string) (*CollectedResult, error) {
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -139,12 +157,14 @@ func CollectUpstreamChunks(payload map[string]interface{}) (*CollectedResult, er
 	// 从 payload 提取 model 用于构建 headers
 	model, _ := payload["model"].(string)
 	headers := auth.BuildUpstreamHeaders(model)
-	headers["Authorization"] = "Bearer " + bearer
+	if bearer != "" {
+		headers["Authorization"] = "Bearer " + bearer
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := upstreamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("upstream request: %w", err)
 	}
@@ -152,7 +172,7 @@ func CollectUpstreamChunks(payload map[string]interface{}) (*CollectedResult, er
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		errText := string(body)
+		errText := stripHTML(string(body))
 		if len(errText) > 300 {
 			errText = errText[:300]
 		}
@@ -305,13 +325,21 @@ func cleanChunkChoices(chunk map[string]interface{}) {
 				delete(choice, key)
 			}
 		}
-		// 非标准 finish_reason 替换为 stop
+		// 保留已知的 finish_reason，未知值替换为 stop
 		if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
-			if fr != "stop" && fr != "tool_calls" {
+			switch fr {
+			case "stop", "tool_calls", "length", "content_filter":
+				// 已知合法值，保留原样
+			default:
 				choice["finish_reason"] = "stop"
 			}
 		}
 	}
+}
+
+// stripHTML 移除 HTML 标签，返回纯文本
+func stripHTML(s string) string {
+	return strings.TrimSpace(htmlTagRe.ReplaceAllString(s, ""))
 }
 
 func writeSSEError(w http.ResponseWriter, msg string) {

@@ -14,12 +14,13 @@ import (
 )
 
 // StreamAnthropicMessages 向上游发送请求，将 OpenAI SSE 流实时转换为 Anthropic SSE 流
-func StreamAnthropicMessages(payload map[string]interface{}, model string, w http.ResponseWriter) {
+func StreamAnthropicMessages(payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
 	msgID := "msg_" + randomHex(24)
-	bearer := auth.GetBearerToken()
 
 	// 状态机变量
-	textBlockStarted := false
+	nextBlockIdx := 0       // Anthropic content block 连续 index（从 0 开始递增）
+	textBlockIdx := -1      // text block 的 index，-1 表示未开启
+	toolBlockIdxMap := map[int]int{} // OpenAI tcIdx → Anthropic block index
 	toolBlocksStarted := map[int]bool{} // OpenAI tool_calls index → 是否已发 content_block_start
 	inputTokens := 0
 	outputTokens := 0
@@ -39,12 +40,14 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 	}
 
 	headers := auth.BuildUpstreamHeaders(model)
-	headers["Authorization"] = "Bearer " + bearer
+	if bearer != "" {
+		headers["Authorization"] = "Bearer " + bearer
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := streamClient.Do(req)
 	if err != nil {
 		writeAnthropicSSEError(w, "upstream request error: "+err.Error())
 		return
@@ -53,7 +56,7 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		errText := string(body)
+		errText := stripHTML(string(body))
 		if len(errText) > 300 {
 			errText = errText[:300]
 		}
@@ -94,22 +97,15 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 			if !finished {
 				finished = true
 				// 关闭所有已开启的 content block
-				if textBlockStarted {
-					textBlockStarted = false
+				if textBlockIdx >= 0 {
 					writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-						"type": "content_block_stop", "index": 0,
+						"type": "content_block_stop", "index": textBlockIdx,
 					}))
 				}
 				for tcIdx, tcStarted := range toolBlocksStarted {
 					if tcStarted {
-						blockIdx := tcIdx
-						if !textBlockStarted {
-							// 如果没有 text block，tool block 的 index 从 0 开始
-						} else {
-							blockIdx = tcIdx + 1
-						}
 						writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-							"type": "content_block_stop", "index": blockIdx,
+							"type": "content_block_stop", "index": toolBlockIdxMap[tcIdx],
 						}))
 					}
 				}
@@ -177,11 +173,12 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 
 			// 处理文本内容
 			if content, ok := delta["content"].(string); ok && content != "" {
-				if !textBlockStarted {
-					textBlockStarted = true
+				if textBlockIdx < 0 {
+					textBlockIdx = nextBlockIdx
+					nextBlockIdx++
 					writeSSE(w, flusher, canFlush, anthropicSSE("content_block_start", map[string]interface{}{
 						"type":  "content_block_start",
-						"index": 0,
+						"index": textBlockIdx,
 						"content_block": map[string]interface{}{
 							"type": "text",
 							"text": "",
@@ -190,7 +187,7 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 				}
 				writeSSE(w, flusher, canFlush, anthropicSSE("content_block_delta", map[string]interface{}{
 					"type":  "content_block_delta",
-					"index": 0,
+					"index": textBlockIdx,
 					"delta": map[string]interface{}{
 						"type": "text_delta",
 						"text": content,
@@ -213,17 +210,20 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 					// 首次出现：有 id 和 function.name，发送 content_block_start
 					if _, exists := toolBlocksStarted[tcIdx]; !exists {
 						toolBlocksStarted[tcIdx] = false
+						// 分配 Anthropic block index
+						toolBlockIdxMap[tcIdx] = nextBlockIdx
+						nextBlockIdx++
 					}
 
 					if !toolBlocksStarted[tcIdx] {
 						if id, ok := tcMap["id"].(string); ok && id != "" {
 							toolBlocksStarted[tcIdx] = true
 							// 关闭前面的文本 block
-							if textBlockStarted {
-								textBlockStarted = false
+							if textBlockIdx >= 0 {
 								writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-									"type": "content_block_stop", "index": 0,
+									"type": "content_block_stop", "index": textBlockIdx,
 								}))
+								textBlockIdx = -1
 							}
 							fnName := ""
 							if fn, ok := tcMap["function"].(map[string]interface{}); ok {
@@ -231,7 +231,7 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 							}
 							writeSSE(w, flusher, canFlush, anthropicSSE("content_block_start", map[string]interface{}{
 								"type":  "content_block_start",
-								"index": tcIdx,
+								"index": toolBlockIdxMap[tcIdx],
 								"content_block": map[string]interface{}{
 									"type":  "tool_use",
 									"id":    id,
@@ -247,10 +247,10 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 						if args, ok := fn["arguments"].(string); ok && args != "" {
 							writeSSE(w, flusher, canFlush, anthropicSSE("content_block_delta", map[string]interface{}{
 								"type":  "content_block_delta",
-								"index": tcIdx,
+								"index": toolBlockIdxMap[tcIdx],
 								"delta": map[string]interface{}{
-									"type":           "input_json_delta",
-									"partial_json":   args,
+									"type":         "input_json_delta",
+									"partial_json": args,
 								},
 							}))
 						}
@@ -262,16 +262,15 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, w htt
 			if fr != "" && !finished {
 				finished = true
 				// 关闭所有已开启的 content block
-				if textBlockStarted {
-					textBlockStarted = false
+				if textBlockIdx >= 0 {
 					writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-						"type": "content_block_stop", "index": 0,
+						"type": "content_block_stop", "index": textBlockIdx,
 					}))
 				}
 				for tcIdx2, tcStarted2 := range toolBlocksStarted {
 					if tcStarted2 {
 						writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-							"type": "content_block_stop", "index": tcIdx2,
+							"type": "content_block_stop", "index": toolBlockIdxMap[tcIdx2],
 						}))
 					}
 				}
