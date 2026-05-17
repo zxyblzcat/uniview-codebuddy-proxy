@@ -103,12 +103,10 @@ func StreamChatCompletions(payload map[string]interface{}, model string, w http.
 			continue
 		}
 
-		// 替换 model 和 id
+		// 替换 model 和 id（始终替换为本地生成的 id）
 		if _, ok := chunk["choices"]; ok {
 			chunk["model"] = model
-			if chunk["id"] == nil || chunk["id"] == "" {
-				chunk["id"] = requestID
-			}
+			chunk["id"] = requestID
 			// 清理上游非标准字段
 			cleanChunkChoices(chunk)
 		}
@@ -291,7 +289,7 @@ func cleanChunkChoices(chunk map[string]interface{}) {
 		if delta == nil {
 			continue
 		}
-		// 只保留 role, content, tool_calls
+		// 只保留 delta 中的 role, content, tool_calls
 		for key := range delta {
 			if key != "role" && key != "content" && key != "tool_calls" {
 				delete(delta, key)
@@ -300,6 +298,12 @@ func cleanChunkChoices(chunk map[string]interface{}) {
 		// 清理空的 tool_calls 数组
 		if tcs, ok := delta["tool_calls"].([]interface{}); ok && len(tcs) == 0 {
 			delete(delta, "tool_calls")
+		}
+		// 清理 choice 层级非标准字段（logprobs 等）
+		for key := range choice {
+			if key != "index" && key != "delta" && key != "finish_reason" {
+				delete(choice, key)
+			}
 		}
 		// 非标准 finish_reason 替换为 stop
 		if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
