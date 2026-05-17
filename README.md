@@ -13,7 +13,7 @@ Go 实现，编译为单个可执行文件，无需安装任何运行时。
 ./codebuddy-proxy
 ```
 
-3. 在 Claude Code 中切换模型提供商（`cc switch`），配置代理地址：
+3. 在 cc switch 中切换模型提供商，配置代理地址：
 
 ![HapiGo_2026-05-17_18.07.27](./assets/HapiGo_2026-05-17_18.07.27.png)
 
