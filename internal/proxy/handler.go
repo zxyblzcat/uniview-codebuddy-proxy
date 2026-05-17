@@ -21,6 +21,7 @@ func RegisterRoutes(r *gin.Engine) {
 		v1.POST("/chat/completions", handleChatCompletions)
 		v1.GET("/models", handleModels)
 		v1.POST("/messages", handleAnthropicMessages)
+		v1.POST("/responses", handleResponses)
 	}
 
 	// 健康检查（无需认证）
@@ -220,6 +221,7 @@ func handleRoot(c *gin.Context) {
 			"auth_status": "GET /auth/status",
 			"chat":        "POST /v1/chat/completions",
 			"messages":    "POST /v1/messages (Anthropic)",
+			"responses":   "POST /v1/responses",
 			"models":      "GET /v1/models",
 		},
 		"usage": gin.H{
@@ -318,5 +320,83 @@ func handleAnthropicMessages(c *gin.Context) {
 			return
 		}
 		convertOpenAIToAnthropicResponse(result, model, c)
+	}
+}
+
+// handleResponses POST /v1/responses — OpenAI Responses API 兼容端点
+func handleResponses(c *gin.Context) {
+	bearer := auth.GetBearerToken()
+	if bearer == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": gin.H{"message": "No token. Visit /auth/start to login first.", "type": "auth_required"},
+		})
+		return
+	}
+
+	var body map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{"message": "Invalid request body", "type": "invalid_request"},
+		})
+		return
+	}
+
+	model := "deepseek-v3"
+	if v, ok := body["model"].(string); ok {
+		model = v
+	}
+	isStream := false
+	if v, ok := body["stream"].(bool); ok {
+		isStream = v
+	}
+
+	// 转换 input → messages
+	messages := convertResponsesToChat(body)
+
+	// 构建上游 payload
+	payload := map[string]interface{}{
+		"model":    model,
+		"messages": messages,
+		"stream":   true,
+	}
+	if v, ok := body["max_output_tokens"]; ok {
+		payload["max_tokens"] = v
+	}
+	if v, ok := body["temperature"]; ok {
+		payload["temperature"] = v
+	}
+	if v, ok := body["tools"]; ok {
+		payload["tools"] = v
+	}
+	if v, ok := body["tool_choice"]; ok {
+		payload["tool_choice"] = v
+	}
+
+	// 确保至少 2 条消息
+	msgs, _ := payload["messages"].([]interface{})
+	if len(msgs) < 2 {
+		sysMsg := map[string]interface{}{"role": "system", "content": "You are a helpful assistant."}
+		payload["messages"] = append([]interface{}{sysMsg}, msgs...)
+	}
+
+	requestID := "resp_" + randomHex(24)
+
+	if isStream {
+		StreamResponsesSSE(payload, model, c.Writer)
+	} else {
+		result, err := CollectUpstreamChunks(payload)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": gin.H{"message": err.Error(), "type": "proxy_error"},
+			})
+			return
+		}
+		if result.StatusCode != 200 {
+			c.JSON(result.StatusCode, gin.H{
+				"error": gin.H{"message": result.ErrorText, "type": "upstream_error"},
+			})
+			return
+		}
+		convertChatToResponsesResult(result, model, requestID, c)
 	}
 }
