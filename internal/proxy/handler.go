@@ -20,6 +20,7 @@ func RegisterRoutes(r *gin.Engine) {
 	{
 		v1.POST("/chat/completions", handleChatCompletions)
 		v1.GET("/models", handleModels)
+		v1.POST("/messages", handleAnthropicMessages)
 	}
 
 	// 健康检查（无需认证）
@@ -218,6 +219,7 @@ func handleRoot(c *gin.Context) {
 			"auth_manual": "POST /auth/manual  (set bearer token directly)",
 			"auth_status": "GET /auth/status",
 			"chat":        "POST /v1/chat/completions",
+			"messages":    "POST /v1/messages (Anthropic)",
 			"models":      "GET /v1/models",
 		},
 		"usage": gin.H{
@@ -229,4 +231,92 @@ func handleRoot(c *gin.Context) {
 // handleHeadV1 HEAD /v1 — 连通性检查
 func handleHeadV1(c *gin.Context) {
 	c.Status(http.StatusOK)
+}
+
+// handleAnthropicMessages POST /v1/messages — Anthropic Messages API 兼容端点
+func handleAnthropicMessages(c *gin.Context) {
+	bearer := auth.GetBearerToken()
+	if bearer == "" {
+		anthropicErrorResponse(c, http.StatusUnauthorized, "authentication_error", "No token. Visit /auth/start to login first.")
+		return
+	}
+
+	var body map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Invalid request body")
+		return
+	}
+
+	model := "deepseek-v3"
+	if v, ok := body["model"].(string); ok {
+		model = v
+	}
+	isStream := false
+	if v, ok := body["stream"].(bool); ok {
+		isStream = v
+	}
+
+	// 转换 messages
+	system := body["system"]
+	messages, _ := body["messages"].([]interface{})
+	openaiMessages := convertAnthropicMessagesToOpenai(system, messages)
+
+	// 构建上游 payload
+	maxTokens := 4096
+	if v, ok := body["max_tokens"].(float64); ok {
+		maxTokens = int(v)
+	}
+	payload := map[string]interface{}{
+		"model":      model,
+		"messages":   openaiMessages,
+		"stream":     true,
+		"max_tokens": maxTokens,
+	}
+	if v, ok := body["temperature"]; ok {
+		payload["temperature"] = v
+	}
+	if tools, ok := body["tools"].([]interface{}); ok {
+		payload["tools"] = convertToolsAnthropicToOpenai(tools)
+	}
+	if v, ok := body["tool_choice"]; ok {
+		payload["tool_choice"] = convertToolChoiceAnthropicToOpenai(v)
+	}
+
+	// 确保至少 2 条消息
+	msgs, _ := payload["messages"].([]interface{})
+	if len(msgs) < 2 {
+		sysMsg := map[string]interface{}{"role": "system", "content": "You are a helpful assistant."}
+		payload["messages"] = append([]interface{}{sysMsg}, msgs...)
+	}
+
+	// 探活请求检测
+	if maxTokens == 1 && isStream {
+		msgID := "msg_" + randomHex(24)
+		c.JSON(http.StatusOK, map[string]interface{}{
+			"id":            msgID,
+			"type":          "message",
+			"role":          "assistant",
+			"content":       []interface{}{map[string]interface{}{"type": "text", "text": "ok"}},
+			"model":         model,
+			"stop_reason":   "end_turn",
+			"stop_sequence": nil,
+			"usage":         map[string]interface{}{"input_tokens": 0, "output_tokens": 1},
+		})
+		return
+	}
+
+	if isStream {
+		StreamAnthropicMessages(payload, model, c.Writer)
+	} else {
+		result, err := CollectUpstreamChunks(payload)
+		if err != nil {
+			anthropicErrorResponse(c, http.StatusInternalServerError, "api_error", err.Error())
+			return
+		}
+		if result.StatusCode != 200 {
+			anthropicErrorResponse(c, result.StatusCode, "api_error", result.ErrorText)
+			return
+		}
+		convertOpenAIToAnthropicResponse(result, model, c)
+	}
 }
