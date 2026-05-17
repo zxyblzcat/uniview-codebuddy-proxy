@@ -1,0 +1,8 @@
+docs/go-rewrite-plan.md
+*.DS_Store
+docs/superpowers
+.codebuddy_creds/
+.env
+codebuddy-proxy
+codebuddy-proxy-*
+*.exe
