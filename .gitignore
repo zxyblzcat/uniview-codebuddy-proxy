@@ -1,5 +1,5 @@
+docs/
 *.DS_Store
-docs/superpowers/
 .codebuddy_creds/
 .env
 codebuddy-proxy
