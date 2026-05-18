@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"codebuddy-proxy/internal/config"
@@ -397,8 +399,15 @@ func truncateJSON(data interface{}, maxLen int) string {
 	return s
 }
 
-// OpenBrowser 调用系统默认浏览器打开 URL
+// OpenBrowser 在有 GUI 时打开浏览器，无 GUI 时在终端显示 URL
 func OpenBrowser(url string) {
+	if url == "" {
+		return
+	}
+	if !isGUIAvailable() {
+		printAuthURL(url)
+		return
+	}
 	var cmd *exec.Cmd
 	switch {
 	case commandExists("open"):
@@ -408,12 +417,32 @@ func OpenBrowser(url string) {
 	case commandExists("rundll32"):
 		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
-		log.Printf("Cannot open browser, please visit: %s", url)
+		printAuthURL(url)
 		return
 	}
 	if err := cmd.Start(); err != nil {
 		log.Printf("Failed to open browser: %v", err)
+		printAuthURL(url)
 	}
+}
+
+// isGUIAvailable 检测当前环境是否有 GUI 可用
+func isGUIAvailable() bool {
+	if runtime.GOOS != "linux" {
+		return true
+	}
+	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
+}
+
+// printAuthURL 在终端输出登录 URL
+func printAuthURL(url string) {
+	fmt.Println()
+	fmt.Println("============================================")
+	fmt.Println("  请在浏览器中打开以下链接完成登录：")
+	fmt.Println()
+	fmt.Printf("  %s\n", url)
+	fmt.Println("============================================")
+	fmt.Println()
 }
 
 // commandExists 检查系统命令是否存在

@@ -20,16 +20,11 @@ import (
 // htmlTagRe 匹配 HTML 标签
 var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 
-// upstreamClient 用于非流式请求（带超时），避免上游无响应时 goroutine 永久阻塞
-var upstreamClient = &http.Client{
-	Timeout: 30 * time.Second,
-}
-
-// streamClient 用于流式请求（仅连接超时，读取不设超时以支持长连接 SSE）
-var streamClient = &http.Client{
-	Timeout: 0, // 无总超时
+// httpClient 用于所有上游请求（无总超时，支持长思考模型）
+var httpClient = &http.Client{
+	Timeout: 0, // 无总超时，模型思考可能很久
 	Transport: &http.Transport{
-		ResponseHeaderTimeout: 30 * time.Second, // 等待响应头的超时
+		ResponseHeaderTimeout: 30 * time.Minute, // 等待响应头的超时（推理模型思考可能很久）
 	},
 }
 
@@ -59,7 +54,7 @@ func StreamChatCompletions(payload map[string]interface{}, model string, bearer 
 		req.Header.Set(k, v)
 	}
 
-	resp, err := streamClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		writeSSEError(w, "upstream request error: "+err.Error())
 		return
@@ -164,7 +159,7 @@ func CollectUpstreamChunks(payload map[string]interface{}, bearer string) (*Coll
 		req.Header.Set(k, v)
 	}
 
-	resp, err := upstreamClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("upstream request: %w", err)
 	}

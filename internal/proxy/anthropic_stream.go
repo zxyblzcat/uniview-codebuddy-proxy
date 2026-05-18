@@ -47,7 +47,7 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, beare
 		req.Header.Set(k, v)
 	}
 
-	resp, err := streamClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		writeAnthropicSSEError(w, "upstream request error: "+err.Error())
 		return

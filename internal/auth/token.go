@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -24,34 +26,121 @@ type TokenData struct {
 
 // 内存中的 token 缓存
 var (
-	cachedToken   *TokenData
-	tokenMu       sync.RWMutex
-	reloginMu     sync.Mutex // 防止并发触发自动登录
+	cachedToken       *TokenData
+	tokenMu           sync.RWMutex
+	reloginMu         sync.Mutex // 防止并发触发自动登录
 	reloginInProgress bool
 )
 
-// LoadToken 从内存加载 token，过期时清除缓存并触发自动登录，返回 nil
+// tokenFilePath 返回 token 文件路径，优先使用 TOKEN_FILE_PATH 环境变量
+func tokenFilePath() string {
+	if p := os.Getenv("TOKEN_FILE_PATH"); p != "" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".codebuddy-proxy", "token.json")
+}
+
+// saveTokenToFile 将 TokenData 序列化写入文件，权限 0600
+func saveTokenToFile(td *TokenData) {
+	p := tokenFilePath()
+	if p == "" {
+		log.Println("Warning: cannot determine token file path, skipping persist")
+		return
+	}
+
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		log.Printf("Warning: failed to create token dir %s: %v", dir, err)
+		return
+	}
+
+	data, err := json.MarshalIndent(td, "", "  ")
+	if err != nil {
+		log.Printf("Warning: failed to marshal token: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(p, data, 0600); err != nil {
+		log.Printf("Warning: failed to write token file %s: %v", p, err)
+	}
+}
+
+// loadTokenFromFile 从文件加载 TokenData，文件不存在或已过期返回 nil
+func loadTokenFromFile() *TokenData {
+	p := tokenFilePath()
+	if p == "" {
+		log.Println("Warning: cannot determine token file path, skipping load")
+		return nil
+	}
+
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Warning: failed to read token file %s: %v", p, err)
+		}
+		return nil
+	}
+
+	var td TokenData
+	if err := json.Unmarshal(data, &td); err != nil {
+		log.Printf("Warning: failed to parse token file %s: %v", p, err)
+		return nil
+	}
+
+	// 文件中的 token 已过期则删除文件
+	if td.ExpiresAt > 0 && time.Now().Unix() > td.ExpiresAt {
+		log.Printf("Token file expired, removing %s", p)
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
+		}
+		return nil
+	}
+
+	return &td
+}
+
+// LoadToken 从内存或文件加载 token，过期时清除缓存和文件并触发自动登录
 func LoadToken() *TokenData {
 	tokenMu.RLock()
-	defer tokenMu.RUnlock()
+	if cachedToken != nil {
+		bearer := cachedToken.BearerToken
+		if bearer == "" {
+			bearer = cachedToken.AccessToken
+		}
+		if bearer != "" {
+			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
+				tokenMu.RUnlock()
+				log.Println("Token expired, clearing cache and triggering auto-login")
+				if p := tokenFilePath(); p != "" {
+					if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+						log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
+					}
+				}
+				go triggerAutoRelogin()
+				return nil
+			}
+			result := cachedToken
+			tokenMu.RUnlock()
+			return result
+		}
+	}
+	tokenMu.RUnlock()
 
-	if cachedToken == nil {
+	// 内存缓存为空，尝试从文件加载
+	td := loadTokenFromFile()
+	if td == nil {
 		return nil
 	}
-	bearer := cachedToken.BearerToken
-	if bearer == "" {
-		bearer = cachedToken.AccessToken
-	}
-	if bearer == "" {
-		return nil
-	}
-	if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
-		// 过期后清除缓存，避免后续请求重复打日志
-		log.Println("Token expired, clearing cache and triggering auto-login")
-		go triggerAutoRelogin()
-		return nil
-	}
-	return cachedToken
+
+	tokenMu.Lock()
+	cachedToken = td
+	tokenMu.Unlock()
+
+	return td
 }
 
 // triggerAutoRelogin 触发后台自动重新登录
@@ -70,10 +159,15 @@ func triggerAutoRelogin() {
 		reloginMu.Unlock()
 	}()
 
-	// 清除过期 token
+	// 清除过期 token（内存 + 文件）
 	tokenMu.Lock()
 	cachedToken = nil
 	tokenMu.Unlock()
+	if p := tokenFilePath(); p != "" {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
+		}
+	}
 
 	// 尝试自动重新登录
 	authURL, authState, err := FetchAuthURL()
@@ -82,7 +176,7 @@ func triggerAutoRelogin() {
 		return
 	}
 
-	log.Printf("Auto-relogin: opening browser for CodeBuddy login...")
+	log.Println("Auto-relogin: please complete login in browser...")
 	OpenBrowser(authURL)
 
 	// 后台轮询等待登录完成
@@ -101,11 +195,12 @@ func triggerAutoRelogin() {
 	log.Println("Auto-relogin timed out after 3 minutes")
 }
 
-// SaveToken 将 token 缓存到内存
+// SaveToken 将 token 缓存到内存并持久化到文件
 func SaveToken(td *TokenData) error {
 	tokenMu.Lock()
 	defer tokenMu.Unlock()
 	cachedToken = td
+	saveTokenToFile(td)
 	return nil
 }
 

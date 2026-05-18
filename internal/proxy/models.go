@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -95,7 +96,12 @@ func FetchModels() []Model {
 		req.Header.Set(k, v)
 	}
 
-	resp, err := upstreamClient.Do(req)
+	// 模型列表请求用独立超时控制
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	req = req.WithContext(ctx)
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("fetch /v2/config error: %v", err)
 		modelsCache = result

@@ -49,7 +49,7 @@ func StreamResponsesSSE(payload map[string]interface{}, model string, bearer str
 		req.Header.Set(k, v)
 	}
 
-	resp, err := streamClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		writeResponsesSSEError(w, "upstream request error: "+err.Error())
 		return
