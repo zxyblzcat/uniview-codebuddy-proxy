@@ -115,15 +115,17 @@ func LoadToken() *TokenData {
 			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
 				tokenMu.RUnlock()
 				log.Println("Token expired, clearing cache and triggering auto-login")
-				// 清除过期 token 文件
 				if p := tokenFilePath(); p != "" {
-					os.Remove(p)
+					if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+						log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
+					}
 				}
 				go triggerAutoRelogin()
 				return nil
 			}
+			result := cachedToken
 			tokenMu.RUnlock()
-			return cachedToken
+			return result
 		}
 	}
 	tokenMu.RUnlock()
