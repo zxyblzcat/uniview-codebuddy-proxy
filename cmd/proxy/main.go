@@ -77,7 +77,8 @@ func main() {
 	}()
 
 	// 等待信号退出
-	waitExit(context.Background())
+	fmt.Println("按 Ctrl+C 关闭代理...")
+	waitExit()
 
 	// 优雅关闭 HTTP 服务
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -88,13 +89,10 @@ func main() {
 }
 
 // waitExit 监听系统信号，触发时关闭程序
-func waitExit(ctx context.Context) {
+func waitExit() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	select {
-	case sig := <-sigCh:
-		fmt.Printf("\n收到信号 %v，正在关闭代理...\n", sig)
-	case <-ctx.Done():
-	}
+	sig := <-sigCh
+	fmt.Printf("\n收到信号 %v，正在关闭代理...\n", sig)
 }
