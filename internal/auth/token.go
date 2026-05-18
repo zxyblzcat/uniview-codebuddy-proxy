@@ -103,28 +103,42 @@ func loadTokenFromFile() *TokenData {
 	return &td
 }
 
-// LoadToken 从内存加载 token，过期时清除缓存并触发自动登录，返回 nil
+// LoadToken 从内存或文件加载 token，过期时清除缓存和文件并触发自动登录
 func LoadToken() *TokenData {
 	tokenMu.RLock()
-	defer tokenMu.RUnlock()
+	if cachedToken != nil {
+		bearer := cachedToken.BearerToken
+		if bearer == "" {
+			bearer = cachedToken.AccessToken
+		}
+		if bearer != "" {
+			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
+				tokenMu.RUnlock()
+				log.Println("Token expired, clearing cache and triggering auto-login")
+				// 清除过期 token 文件
+				if p := tokenFilePath(); p != "" {
+					os.Remove(p)
+				}
+				go triggerAutoRelogin()
+				return nil
+			}
+			tokenMu.RUnlock()
+			return cachedToken
+		}
+	}
+	tokenMu.RUnlock()
 
-	if cachedToken == nil {
+	// 内存缓存为空，尝试从文件加载
+	td := loadTokenFromFile()
+	if td == nil {
 		return nil
 	}
-	bearer := cachedToken.BearerToken
-	if bearer == "" {
-		bearer = cachedToken.AccessToken
-	}
-	if bearer == "" {
-		return nil
-	}
-	if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
-		// 过期后清除缓存，避免后续请求重复打日志
-		log.Println("Token expired, clearing cache and triggering auto-login")
-		go triggerAutoRelogin()
-		return nil
-	}
-	return cachedToken
+
+	tokenMu.Lock()
+	cachedToken = td
+	tokenMu.Unlock()
+
+	return td
 }
 
 // triggerAutoRelogin 触发后台自动重新登录
@@ -174,11 +188,12 @@ func triggerAutoRelogin() {
 	log.Println("Auto-relogin timed out after 3 minutes")
 }
 
-// SaveToken 将 token 缓存到内存
+// SaveToken 将 token 缓存到内存并持久化到文件
 func SaveToken(td *TokenData) error {
 	tokenMu.Lock()
 	defer tokenMu.Unlock()
 	cachedToken = td
+	saveTokenToFile(td)
 	return nil
 }
 
