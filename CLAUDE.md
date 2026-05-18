@@ -55,6 +55,7 @@ Responses    (/v1/responses)          ─┘
 | `PORT` | `1026` | Listen port |
 | `API_PASSWORD` | empty | When non-empty, requires auth on `/v1/*` endpoints |
 | `CODEBUDDY_API_KEY` | — | Loaded but currently unused |
+| `TOKEN_FILE_PATH` | `~/.codebuddy-proxy/token.json` | Token 文件存储路径 |
 
 The upstream base URL (`https://unvcoding.copilot.qq.com`) is hardcoded, not configurable.
 
@@ -69,6 +70,9 @@ The upstream base URL (`https://unvcoding.copilot.qq.com`) is hardcoded, not con
 3. Auto-relogin: expired tokens trigger a background goroutine that re-runs the Device Flow
 4. Manual token entry via `/auth/manual`
 5. On startup, if no cached token exists, the Device Flow starts automatically in the background
+6. 在无 GUI 环境（`DISPLAY` 和 `WAYLAND_DISPLAY` 均未设置）下，`OpenBrowser` 会在终端输出登录 URL 而不是打开浏览器
+7. Token 自动持久化到文件（默认 `~/.codebuddy-proxy/token.json`），进程重启后自动加载
+8. Token 过期时清除文件，触发 Device Flow 终端提示重新登录
 
 ### Model Defaults
 
