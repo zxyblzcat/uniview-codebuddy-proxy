@@ -34,7 +34,7 @@ Responses    (/v1/responses)          ─┘
 
 - `cmd/proxy/main.go` — Entry point; wires routes and triggers initial auth
 - `internal/config/` — Env-based config loaded via `init()` (PORT, API_PASSWORD, CODEBUDDY_API_KEY)
-- `internal/auth/` — OAuth2 Device Flow + in-memory token cache + upstream header builder
+- `internal/auth/` — OAuth2 Device Flow + token 缓存（内存+文件持久化）+ upstream header builder
 - `internal/proxy/` — Route handlers, format converters, SSE stream translators
 
 ### Key Design Decisions
@@ -66,13 +66,12 @@ The upstream base URL (`https://unvcoding.copilot.qq.com`) is hardcoded, not con
 ### Authentication Flow
 
 1. OAuth2 Device Flow via `/auth/start` → browser login → `/auth/poll` captures token
-2. Token stored in-memory only (no disk persistence; restarts require re-auth)
+2. Token 持久化到文件（默认 `~/.codebuddy-proxy/token.json`），进程重启后自动加载
 3. Auto-relogin: expired tokens trigger a background goroutine that re-runs the Device Flow
 4. Manual token entry via `/auth/manual`
 5. On startup, if no cached token exists, the Device Flow starts automatically in the background
 6. 在无 GUI 环境（`DISPLAY` 和 `WAYLAND_DISPLAY` 均未设置）下，`OpenBrowser` 会在终端输出登录 URL 而不是打开浏览器
-7. Token 自动持久化到文件（默认 `~/.codebuddy-proxy/token.json`），进程重启后自动加载
-8. Token 过期时清除文件，触发 Device Flow 终端提示重新登录
+7. Token 过期时清除文件，触发 Device Flow 终端提示重新登录
 
 ### Model Defaults
 
