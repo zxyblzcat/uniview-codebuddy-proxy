@@ -47,7 +47,6 @@ func main() {
 			log.Printf("Please visit http://localhost:%d/auth/start manually", config.Port)
 		} else {
 			log.Printf("Auth state: %s", authState)
-			log.Println("Opening browser for CodeBuddy login...")
 			auth.OpenBrowser(authURL)
 		}
 
