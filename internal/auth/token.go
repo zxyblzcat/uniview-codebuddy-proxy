@@ -26,9 +26,9 @@ type TokenData struct {
 
 // 内存中的 token 缓存
 var (
-	cachedToken   *TokenData
-	tokenMu       sync.RWMutex
-	reloginMu     sync.Mutex // 防止并发触发自动登录
+	cachedToken       *TokenData
+	tokenMu           sync.RWMutex
+	reloginMu         sync.Mutex // 防止并发触发自动登录
 	reloginInProgress bool
 )
 
@@ -73,6 +73,7 @@ func saveTokenToFile(td *TokenData) {
 func loadTokenFromFile() *TokenData {
 	p := tokenFilePath()
 	if p == "" {
+		log.Println("Warning: cannot determine token file path, skipping load")
 		return nil
 	}
 
@@ -92,7 +93,10 @@ func loadTokenFromFile() *TokenData {
 
 	// 文件中的 token 已过期则删除文件
 	if td.ExpiresAt > 0 && time.Now().Unix() > td.ExpiresAt {
-		os.Remove(p)
+		log.Printf("Token file expired, removing %s", p)
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
+		}
 		return nil
 	}
 
