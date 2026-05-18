@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -29,6 +31,73 @@ var (
 	reloginMu     sync.Mutex // 防止并发触发自动登录
 	reloginInProgress bool
 )
+
+// tokenFilePath 返回 token 文件路径，优先使用 TOKEN_FILE_PATH 环境变量
+func tokenFilePath() string {
+	if p := os.Getenv("TOKEN_FILE_PATH"); p != "" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".codebuddy-proxy", "token.json")
+}
+
+// saveTokenToFile 将 TokenData 序列化写入文件，权限 0600
+func saveTokenToFile(td *TokenData) {
+	p := tokenFilePath()
+	if p == "" {
+		log.Println("Warning: cannot determine token file path, skipping persist")
+		return
+	}
+
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		log.Printf("Warning: failed to create token dir %s: %v", dir, err)
+		return
+	}
+
+	data, err := json.MarshalIndent(td, "", "  ")
+	if err != nil {
+		log.Printf("Warning: failed to marshal token: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(p, data, 0600); err != nil {
+		log.Printf("Warning: failed to write token file %s: %v", p, err)
+	}
+}
+
+// loadTokenFromFile 从文件加载 TokenData，文件不存在或已过期返回 nil
+func loadTokenFromFile() *TokenData {
+	p := tokenFilePath()
+	if p == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Warning: failed to read token file %s: %v", p, err)
+		}
+		return nil
+	}
+
+	var td TokenData
+	if err := json.Unmarshal(data, &td); err != nil {
+		log.Printf("Warning: failed to parse token file %s: %v", p, err)
+		return nil
+	}
+
+	// 文件中的 token 已过期则删除文件
+	if td.ExpiresAt > 0 && time.Now().Unix() > td.ExpiresAt {
+		os.Remove(p)
+		return nil
+	}
+
+	return &td
+}
 
 // LoadToken 从内存加载 token，过期时清除缓存并触发自动登录，返回 nil
 func LoadToken() *TokenData {
