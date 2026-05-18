@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"codebuddy-proxy/internal/config"
@@ -400,6 +401,9 @@ func truncateJSON(data interface{}, maxLen int) string {
 
 // OpenBrowser 在有 GUI 时打开浏览器，无 GUI 时在终端显示 URL
 func OpenBrowser(url string) {
+	if url == "" {
+		return
+	}
 	if !isGUIAvailable() {
 		printAuthURL(url)
 		return
@@ -424,10 +428,13 @@ func OpenBrowser(url string) {
 
 // isGUIAvailable 检测当前环境是否有 GUI 可用
 func isGUIAvailable() bool {
+	if runtime.GOOS != "linux" {
+		return true
+	}
 	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
 }
 
-// printAuthURL 在终端高亮输出登录 URL
+// printAuthURL 在终端输出登录 URL
 func printAuthURL(url string) {
 	fmt.Println()
 	fmt.Println("============================================")
