@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
@@ -16,7 +15,6 @@ import (
 	"codebuddy-proxy/internal/proxy"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/term"
 )
 
 func main() {
@@ -78,8 +76,7 @@ func main() {
 		}
 	}()
 
-	// 等待任意按键或信号退出
-	fmt.Println("按任意键关闭代理...")
+	// 等待信号退出
 	waitExit(context.Background())
 
 	// 优雅关闭 HTTP 服务
@@ -90,24 +87,12 @@ func main() {
 	os.Exit(0)
 }
 
-// waitExit 监听任意按键和系统信号，触发时关闭程序
+// waitExit 监听系统信号，触发时关闭程序
 func waitExit(ctx context.Context) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	keyCh := make(chan struct{})
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		go func() {
-			bufio.NewReader(os.Stdin).ReadString('\n')
-			keyCh <- struct{}{}
-		}()
-	} else {
-		fmt.Println("(非终端模式，按 Ctrl+C 关闭)")
-	}
-
 	select {
-	case <-keyCh:
-		fmt.Println("\n收到按键，正在关闭代理...")
 	case sig := <-sigCh:
 		fmt.Printf("\n收到信号 %v，正在关闭代理...\n", sig)
 	case <-ctx.Done():
