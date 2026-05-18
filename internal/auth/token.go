@@ -159,10 +159,15 @@ func triggerAutoRelogin() {
 		reloginMu.Unlock()
 	}()
 
-	// 清除过期 token
+	// 清除过期 token（内存 + 文件）
 	tokenMu.Lock()
 	cachedToken = nil
 	tokenMu.Unlock()
+	if p := tokenFilePath(); p != "" {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
+		}
+	}
 
 	// 尝试自动重新登录
 	authURL, authState, err := FetchAuthURL()
@@ -171,7 +176,7 @@ func triggerAutoRelogin() {
 		return
 	}
 
-	log.Printf("Auto-relogin: opening browser for CodeBuddy login...")
+	log.Println("Auto-relogin: please complete login in browser...")
 	OpenBrowser(authURL)
 
 	// 后台轮询等待登录完成
