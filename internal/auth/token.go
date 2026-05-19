@@ -27,7 +27,7 @@ type TokenData struct {
 // 内存中的 token 缓存
 var (
 	cachedToken       *TokenData
-	tokenMu           sync.RWMutex
+	tokenMu           sync.Mutex
 	reloginMu         sync.Mutex
 	reloginInProgress bool
 	reloginDone       chan struct{} // relogin 完成时关闭此 channel
@@ -105,8 +105,13 @@ func loadTokenFromFile() *TokenData {
 }
 
 // LoadToken 从内存或文件加载 token，过期时清除缓存和文件并触发自动登录
+//
+// 使用写锁路径避免 RLock→RUnlock→Lock 升级中的竞态条件：
+// 在 RUnlock 和 Lock 之间，另一个 goroutine 可能已保存新 token，
+// 旧代码会丢失该 token 导致瞬时 401。
 func LoadToken() *TokenData {
-	tokenMu.RLock()
+	tokenMu.Lock()
+
 	if cachedToken != nil {
 		bearer := cachedToken.BearerToken
 		if bearer == "" {
@@ -114,32 +119,25 @@ func LoadToken() *TokenData {
 		}
 		if bearer != "" {
 			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
-				tokenMu.RUnlock()
-				// 在写锁下清除过期 token
-				tokenMu.Lock()
-				if cachedToken != nil && cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
-					log.Println("Token expired, clearing cache and triggering auto-login")
-					filePath := tokenFilePath()
-					cachedToken = nil
-					tokenMu.Unlock()
-					// 在锁外删除文件
-					if filePath != "" {
-						if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
-							log.Printf("Warning: failed to remove expired token file %s: %v", filePath, err)
-						}
+				log.Println("Token expired, clearing cache and triggering auto-login")
+				filePath := tokenFilePath()
+				cachedToken = nil
+				tokenMu.Unlock()
+				// 锁外执行 I/O 和触发重登录
+				if filePath != "" {
+					if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+						log.Printf("Warning: failed to remove expired token file %s: %v", filePath, err)
 					}
-					go triggerAutoRelogin()
-				} else {
-					tokenMu.Unlock()
 				}
+				go triggerAutoRelogin()
 				return nil
 			}
 			result := cachedToken
-			tokenMu.RUnlock()
+			tokenMu.Unlock()
 			return result
 		}
 	}
-	tokenMu.RUnlock()
+	tokenMu.Unlock()
 
 	// 内存缓存为空，尝试从文件加载
 	td := loadTokenFromFile()

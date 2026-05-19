@@ -18,6 +18,75 @@ import (
 	"codebuddy-proxy/internal/config"
 )
 
+// upstreamIdleTimeout 上游 SSE 流读取空闲超时
+// 上游停止发送数据但保持连接时，防止 goroutine 无限挂起
+const upstreamIdleTimeout = 2 * time.Minute
+
+// idleTimeoutReader 使用 io.Pipe 在后台 goroutine 中读取，
+// 每次成功读取后重置定时器，超时时关闭 pipe 使 scanner 解除阻塞
+type idleTimeoutReader struct {
+	pr *io.PipeReader
+}
+
+func newIdleTimeoutReader(r io.ReadCloser, idle time.Duration) *idleTimeoutReader {
+	pr, pw := io.Pipe()
+	tr := &idleTimeoutReader{pr: pr}
+
+	go func() {
+		defer r.Close()
+		defer pw.Close()
+
+		buf := make([]byte, 4096)
+		timer := time.NewTimer(idle)
+		defer timer.Stop()
+
+		for {
+			// 使用 channel 竞争：读取完成 vs 超时
+			type readResult struct {
+				n   int
+				err error
+			}
+			done := make(chan readResult, 1)
+			go func() {
+				n, err := r.Read(buf)
+				done <- readResult{n, err}
+			}()
+
+			select {
+			case res := <-done:
+				if !timer.Stop() {
+					// timer 已触发，但读取成功完成，忽略过期信号
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(idle)
+				if res.err != nil {
+					pw.CloseWithError(res.err)
+					return
+				}
+				if _, err := pw.Write(buf[:res.n]); err != nil {
+					return
+				}
+			case <-timer.C:
+				pw.CloseWithError(fmt.Errorf("upstream stream idle for %v", idle))
+				return
+			}
+		}
+	}()
+
+	return tr
+}
+
+func (t *idleTimeoutReader) Read(p []byte) (int, error) {
+	return t.pr.Read(p)
+}
+
+func (t *idleTimeoutReader) Close() error {
+	return t.pr.Close()
+}
+
 // htmlTagRe 匹配 HTML 标签
 var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 
@@ -27,6 +96,12 @@ var httpClient = &http.Client{
 	Transport: &http.Transport{
 		ResponseHeaderTimeout: 30 * time.Minute, // 等待响应头的超时（推理模型思考可能很久）
 	},
+}
+
+// wrapWithIdleTimeout 包装响应体，添加读取空闲超时
+// 防止上游半开连接导致 goroutine 泄漏
+func wrapWithIdleTimeout(body io.ReadCloser) io.ReadCloser {
+	return newIdleTimeoutReader(body, upstreamIdleTimeout)
 }
 
 // doUpstreamRequest 构建上游请求并发送，返回响应
@@ -121,6 +196,7 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 		return
 	}
 	defer resp.Body.Close()
+	body := wrapWithIdleTimeout(resp.Body)
 
 	// 设置 SSE 响应头
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -130,7 +206,7 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 
 	flusher, canFlush := w.(http.Flusher)
 
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
@@ -202,10 +278,11 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 		return nil, err
 	}
 	defer resp.Body.Close()
+	body := wrapWithIdleTimeout(resp.Body)
 
 	result := &CollectedResult{StatusCode: 200}
 
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {

@@ -21,7 +21,7 @@ func RegisterRoutes(r *gin.Engine) {
 
 	// 健康检查
 	r.GET("/health", handleHealth)
-	r.GET("/", handleRoot)
+	r.GET("/", optionalAuthMiddleware(), handleRoot)
 	r.HEAD("/v1", handleHeadV1)
 }
 
@@ -198,6 +198,29 @@ func handleModels(c *gin.Context) {
 	})
 }
 
+// optionalAuthMiddleware 当 API_PASSWORD 已设置时要求认证，否则放行
+// 用于 / 等需要保护但不属于 /v1/* 路由组的端点
+func optionalAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if config.APIPassword == "" {
+			c.Next()
+			return
+		}
+		authHeader := c.GetHeader("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIPassword)) == 1 {
+				c.Set("authenticated", true)
+				c.Next()
+				return
+			}
+		}
+		// 未认证但密码已设置：放行但标记，handler 可据此过滤敏感信息
+		c.Set("authenticated", false)
+		c.Next()
+	}
+}
+
 // handleHealth GET /health
 func handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -209,20 +232,26 @@ func handleHealth(c *gin.Context) {
 
 // handleRoot GET /
 func handleRoot(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+	result := gin.H{
 		"service":  "CodeBuddy CN -> OpenAI API Proxy",
 		"version":  "3.0.0",
-		"upstream": config.ChatURL,
 		"endpoints": gin.H{
 			"chat":      "POST /v1/chat/completions",
 			"messages":  "POST /v1/messages (Anthropic)",
 			"responses": "POST /v1/responses",
 			"models":    "GET /v1/models",
 		},
-		"usage": gin.H{
+	}
+
+	// 仅在已认证时返回敏感信息
+	if authed, _ := c.Get("authenticated"); authed == true {
+		result["upstream"] = config.ChatURL
+		result["usage"] = gin.H{
 			"base_url": fmt.Sprintf("http://localhost:%d/v1", config.Port),
-		},
-	})
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 // handleHeadV1 HEAD /v1 — 连通性检查

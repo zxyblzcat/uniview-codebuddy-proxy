@@ -34,6 +34,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 		return
 	}
 	defer resp.Body.Close()
+	body := wrapWithIdleTimeout(resp.Body)
 
 	// 设置 SSE 响应头
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -43,7 +44,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 
 	flusher, canFlush := w.(http.Flusher)
 
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	// closeOpenBlocks 关闭所有已开启的 content block

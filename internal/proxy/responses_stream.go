@@ -40,6 +40,7 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 		return
 	}
 	defer resp.Body.Close()
+	body := wrapWithIdleTimeout(resp.Body)
 
 	// 设置 SSE 响应头
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -49,7 +50,7 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 
 	flusher, canFlush := w.(http.Flusher)
 
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	// closeTextBlock 关闭文本 block，发送 content_part.done 和 output_item.done
