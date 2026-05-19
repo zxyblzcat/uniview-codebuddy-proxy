@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,10 +27,42 @@ func RegisterRoutes(r *gin.Engine) {
 
 // registerAPIRoutes 注册 API 路由组
 func registerAPIRoutes(g *gin.RouterGroup) {
+	if config.APIPassword != "" {
+		g.Use(apiAuthMiddleware())
+	}
 	g.POST("/chat/completions", handleChatCompletions)
 	g.GET("/models", handleModels)
 	g.POST("/messages", handleAnthropicMessages)
 	g.POST("/responses", handleResponses)
+}
+
+// apiAuthMiddleware 验证 API_PASSWORD
+func apiAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.Header("WWW-Authenticate", "Bearer realm=\"codebuddy-proxy\"")
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},
+			})
+			c.Abort()
+			return
+		}
+
+		// 支持 Bearer <password> 格式
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIPassword)) == 1 {
+				c.Next()
+				return
+			}
+		}
+
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": gin.H{"message": "Invalid API password", "type": "authentication_error"},
+		})
+		c.Abort()
+	}
 }
 
 // handleChatCompletions POST /v1/chat/completions
@@ -108,10 +141,10 @@ func handleChatCompletions(c *gin.Context) {
 
 	if isStream {
 		// 流式响应：直接用 SSE 转发
-		StreamChatCompletions(payload, model, bearer, c.Writer)
+		StreamChatCompletions(c.Request.Context(), payload, model, bearer, c.Writer)
 	} else {
 		// 非流式响应：收集所有 chunk 后组装
-		result, err := CollectUpstreamChunks(payload, bearer)
+		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": gin.H{"message": err.Error(), "type": "proxy_error"},
@@ -270,9 +303,9 @@ func handleAnthropicMessages(c *gin.Context) {
 	}
 
 	if isStream {
-		StreamAnthropicMessages(payload, model, bearer, c.Writer)
+		StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer)
 	} else {
-		result, err := CollectUpstreamChunks(payload, bearer)
+		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer)
 		if err != nil {
 			anthropicErrorResponse(c, http.StatusInternalServerError, "api_error", err.Error())
 			return
@@ -344,9 +377,9 @@ func handleResponses(c *gin.Context) {
 	requestID := "resp_" + randomHex(24)
 
 	if isStream {
-		StreamResponsesSSE(payload, model, bearer, c.Writer)
+		StreamResponsesSSE(c.Request.Context(), payload, model, bearer, c.Writer)
 	} else {
-		result, err := CollectUpstreamChunks(payload, bearer)
+		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": gin.H{"message": err.Error(), "type": "proxy_error"},

@@ -28,8 +28,9 @@ type TokenData struct {
 var (
 	cachedToken       *TokenData
 	tokenMu           sync.RWMutex
-	reloginMu         sync.Mutex // 防止并发触发自动登录
+	reloginMu         sync.Mutex
 	reloginInProgress bool
+	reloginDone       chan struct{} // relogin 完成时关闭此 channel
 )
 
 // tokenFilePath 返回 token 文件路径，优先使用 TOKEN_FILE_PATH 环境变量
@@ -114,13 +115,23 @@ func LoadToken() *TokenData {
 		if bearer != "" {
 			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
 				tokenMu.RUnlock()
-				log.Println("Token expired, clearing cache and triggering auto-login")
-				if p := tokenFilePath(); p != "" {
-					if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-						log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
+				// 在写锁下清除过期 token
+				tokenMu.Lock()
+				if cachedToken != nil && cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
+					log.Println("Token expired, clearing cache and triggering auto-login")
+					filePath := tokenFilePath()
+					cachedToken = nil
+					tokenMu.Unlock()
+					// 在锁外删除文件
+					if filePath != "" {
+						if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+							log.Printf("Warning: failed to remove expired token file %s: %v", filePath, err)
+						}
 					}
+					go triggerAutoRelogin()
+				} else {
+					tokenMu.Unlock()
 				}
-				go triggerAutoRelogin()
 				return nil
 			}
 			result := cachedToken
@@ -137,10 +148,13 @@ func LoadToken() *TokenData {
 	}
 
 	tokenMu.Lock()
-	cachedToken = td
+	if cachedToken == nil {
+		cachedToken = td
+	}
+	result := cachedToken
 	tokenMu.Unlock()
 
-	return td
+	return result
 }
 
 // triggerAutoRelogin 触发后台自动重新登录
@@ -151,23 +165,19 @@ func triggerAutoRelogin() {
 		return
 	}
 	reloginInProgress = true
+	// 创建新的 reloginDone channel 并保存到局部变量
+	// 必须在锁内创建并赋值，在锁外用局部变量关闭，
+	// 避免 Unlock→close 之间新 relogin 覆盖 reloginDone 导致等待者丢失信号
+	ch := make(chan struct{})
+	reloginDone = ch
 	reloginMu.Unlock()
 
 	defer func() {
 		reloginMu.Lock()
 		reloginInProgress = false
 		reloginMu.Unlock()
+		close(ch)
 	}()
-
-	// 清除过期 token（内存 + 文件）
-	tokenMu.Lock()
-	cachedToken = nil
-	tokenMu.Unlock()
-	if p := tokenFilePath(); p != "" {
-		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
-		}
-	}
 
 	// 尝试自动重新登录
 	authURL, authState, err := FetchAuthURL()
@@ -198,22 +208,59 @@ func triggerAutoRelogin() {
 // SaveToken 将 token 缓存到内存并持久化到文件
 func SaveToken(td *TokenData) error {
 	tokenMu.Lock()
-	defer tokenMu.Unlock()
 	cachedToken = td
+	tokenMu.Unlock()
+	// 在锁外持久化和通知，避免死锁
 	saveTokenToFile(td)
 	return nil
 }
 
-// GetBearerToken 返回当前 bearer token，无 token 返回空字符串
+// GetBearerToken 返回当前 bearer token，如果正在重登录则等待最多 3 分钟
 func GetBearerToken() string {
 	td := LoadToken()
-	if td == nil {
+	if td != nil {
+		if td.BearerToken != "" {
+			return td.BearerToken
+		}
+		return td.AccessToken
+	}
+
+	// Token 为空，检查是否有重登录正在进行
+	reloginMu.Lock()
+	inProgress := reloginInProgress
+	ch := reloginDone
+	reloginMu.Unlock()
+
+	if !inProgress {
+		// 重登录可能刚完成，再试一次
+		td = LoadToken()
+		if td != nil {
+			if td.BearerToken != "" {
+				return td.BearerToken
+			}
+			return td.AccessToken
+		}
 		return ""
 	}
-	if td.BearerToken != "" {
-		return td.BearerToken
+
+	// 等待重登录完成，最多 3 分钟
+	if ch != nil {
+		select {
+		case <-ch:
+			// 重登录完成，重新加载 token
+			td = LoadToken()
+			if td != nil {
+				if td.BearerToken != "" {
+					return td.BearerToken
+				}
+				return td.AccessToken
+			}
+		case <-time.After(3 * time.Minute):
+			log.Println("Timed out waiting for token reload")
+		}
 	}
-	return td.AccessToken
+
+	return ""
 }
 
 // GetUserID 返回当前 user_id
@@ -251,7 +298,6 @@ func ExtractUserIDFromJWT(token string) string {
 }
 
 func splitJWT(token string) []string {
-	// 按 . 分割，最多 3 段
 	result := make([]string, 0, 3)
 	start := 0
 	for i := 0; i < len(token) && len(result) < 2; i++ {

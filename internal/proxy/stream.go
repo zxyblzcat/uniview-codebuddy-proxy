@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -28,24 +29,21 @@ var httpClient = &http.Client{
 	},
 }
 
-// StreamChatCompletions 向上游发送流式请求并实时转发 SSE 事件
-// 清理非标准字段，替换 model 和 id
-func StreamChatCompletions(payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
-	requestID := "chatcmpl-" + randomHex(12)
-
+// doUpstreamRequest 构建上游请求并发送，返回响应
+// 上游非 200 时读取错误体并返回 (nil, upstreamError)；其他错误返回 (nil, err)
+// 调用方负责关闭 resp.Body 和处理错误
+func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, model string, bearer string) (*http.Response, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		writeSSEError(w, "marshal payload error: "+err.Error())
-		return
+		return nil, fmt.Errorf("marshal payload: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", config.ChatURL, strings.NewReader(string(payloadJSON)))
 	if err != nil {
-		writeSSEError(w, "create request error: "+err.Error())
-		return
+		return nil, fmt.Errorf("create request: %w", err)
 	}
+	req = req.WithContext(ctx)
 
-	// 设置请求头
 	headers := auth.BuildUpstreamHeaders(model)
 	if bearer != "" {
 		headers["Authorization"] = "Bearer " + bearer
@@ -56,21 +54,73 @@ func StreamChatCompletions(payload map[string]interface{}, model string, bearer 
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		writeSSEError(w, "upstream request error: "+err.Error())
-		return
+		return nil, fmt.Errorf("upstream request: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		errText := stripHTML(string(body))
 		if len(errText) > 300 {
 			errText = errText[:300]
 		}
 		log.Printf("upstream error %d: %s", resp.StatusCode, errText)
-		writeSSEError(w, fmt.Sprintf("upstream %d: %s", resp.StatusCode, errText))
+		return nil, &upstreamError{StatusCode: resp.StatusCode, Message: errText}
+	}
+
+	return resp, nil
+}
+
+// upstreamError 表示上游返回的非 200 错误
+type upstreamError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *upstreamError) Error() string {
+	return fmt.Sprintf("upstream %d: %s", e.StatusCode, e.Message)
+}
+
+// parseSSELine 解析 SSE 行，返回 (data, done, ok)
+// ok=false 表示非数据行应跳过，done=true 表示收到 [DONE]
+func parseSSELine(line string) (data string, done bool, ok bool) {
+	dataStr := line
+	if strings.HasPrefix(line, "data: ") {
+		dataStr = line[6:]
+	} else if strings.HasPrefix(line, "data:") {
+		dataStr = line[5:]
+	} else {
+		return "", false, false
+	}
+
+	dataStr = strings.TrimSpace(dataStr)
+
+	if dataStr == "[DONE]" {
+		return "", true, true
+	}
+
+	if dataStr == "" {
+		return "", false, false
+	}
+
+	return dataStr, false, true
+}
+
+// StreamChatCompletions 向上游发送流式请求并实时转发 SSE 事件
+// 清理非标准字段，替换 model 和 id
+func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
+	requestID := "chatcmpl-" + randomHex(12)
+
+	resp, err := doUpstreamRequest(ctx, payload, model, bearer)
+	if err != nil {
+		if ue, ok := err.(*upstreamError); ok {
+			writeSSEError(w, ue.Error())
+		} else {
+			writeSSEError(w, err.Error())
+		}
 		return
 	}
+	defer resp.Body.Close()
 
 	// 设置 SSE 响应头
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -84,31 +134,28 @@ func StreamChatCompletions(payload map[string]interface{}, model string, bearer 
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
+		// 客户端断连时停止读取上游
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		line := scanner.Text()
 		if line == "" {
 			continue
 		}
 
-		dataStr := line
-		if strings.HasPrefix(line, "data: ") {
-			dataStr = line[6:]
-		} else if strings.HasPrefix(line, "data:") {
-			dataStr = line[5:]
-		} else {
+		dataStr, done, ok := parseSSELine(line)
+		if !ok {
 			continue
 		}
 
-		dataStr = strings.TrimSpace(dataStr)
-
-		if dataStr == "[DONE]" {
+		if done {
 			fmt.Fprintf(w, "data: [DONE]\n\n")
 			if canFlush {
 				flusher.Flush()
 			}
-			continue
-		}
-
-		if dataStr == "" {
 			continue
 		}
 
@@ -134,45 +181,27 @@ func StreamChatCompletions(payload map[string]interface{}, model string, bearer 
 			flusher.Flush()
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("SSE scan error: %v", err)
+	}
 }
 
 // CollectUpstreamChunks 从上游收集所有流式 chunk，返回结构化数据
-func CollectUpstreamChunks(payload map[string]interface{}, bearer string) (*CollectedResult, error) {
-
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal payload: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", config.ChatURL, strings.NewReader(string(payloadJSON)))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	// 从 payload 提取 model 用于构建 headers
+func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, bearer string) (*CollectedResult, error) {
 	model, _ := payload["model"].(string)
-	headers := auth.BuildUpstreamHeaders(model)
-	if bearer != "" {
-		headers["Authorization"] = "Bearer " + bearer
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
 
-	resp, err := httpClient.Do(req)
+	// 为非流式路径设置 10 分钟总超时
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	resp, err := doUpstreamRequest(ctx, payload, model, bearer)
 	if err != nil {
-		return nil, fmt.Errorf("upstream request: %w", err)
+		if ue, ok := err.(*upstreamError); ok {
+			return &CollectedResult{StatusCode: ue.StatusCode, ErrorText: ue.Message}, nil
+		}
+		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		errText := stripHTML(string(body))
-		if len(errText) > 300 {
-			errText = errText[:300]
-		}
-		return &CollectedResult{StatusCode: resp.StatusCode, ErrorText: errText}, nil
-	}
 
 	result := &CollectedResult{StatusCode: 200}
 
@@ -185,17 +214,8 @@ func CollectUpstreamChunks(payload map[string]interface{}, bearer string) (*Coll
 			continue
 		}
 
-		dataStr := line
-		if strings.HasPrefix(line, "data: ") {
-			dataStr = line[6:]
-		} else if strings.HasPrefix(line, "data:") {
-			dataStr = line[5:]
-		} else {
-			continue
-		}
-
-		dataStr = strings.TrimSpace(dataStr)
-		if dataStr == "" || dataStr == "[DONE]" {
+		dataStr, done, ok := parseSSELine(line)
+		if !ok || done {
 			continue
 		}
 
@@ -239,7 +259,7 @@ func CollectUpstreamChunks(payload map[string]interface{}, bearer string) (*Coll
 						}
 						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
 							if name, ok := fn["name"].(string); ok && name != "" {
-								result.ToolCalls[idx].Function.Name += name
+								result.ToolCalls[idx].Function.Name = name
 							}
 							if args, ok := fn["arguments"].(string); ok && args != "" {
 								result.ToolCalls[idx].Function.Arguments += args
@@ -263,6 +283,9 @@ func CollectUpstreamChunks(payload map[string]interface{}, bearer string) (*Coll
 				result.CompletionTokens = int(ct)
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("SSE scan error: %v", err)
 	}
 
 	return result, nil
@@ -355,6 +378,8 @@ func getIntFromMap(m map[string]interface{}, key string) int {
 // randomHex 生成指定长度的随机十六进制字符串
 func randomHex(n int) string {
 	b := make([]byte, n)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+	}
 	return hex.EncodeToString(b)
 }
