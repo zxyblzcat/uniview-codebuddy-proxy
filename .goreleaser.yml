@@ -1,0 +1,41 @@
+version: 2
+
+builds:
+  - main: ./cmd/proxy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X codebuddy-proxy/internal/version.Version={{.Version}} -X codebuddy-proxy/internal/version.Commit={{.Commit}} -X codebuddy-proxy/internal/version.Date={{.Date}}
+    binary: codebuddy-proxy
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: zxyblzcat
+    name: uniview-codebuddy-proxy
