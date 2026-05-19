@@ -13,6 +13,7 @@ import (
 	"codebuddy-proxy/internal/auth"
 	"codebuddy-proxy/internal/config"
 	"codebuddy-proxy/internal/proxy"
+	"codebuddy-proxy/internal/version"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,7 +31,8 @@ func main() {
 	addr := config.ListenAddr()
 	fmt.Println()
 	fmt.Println("==================================================")
-	fmt.Println("  CodeBuddy CN -> OpenAI API Proxy v3 (Go)")
+	fmt.Printf("  CodeBuddy CN -> OpenAI API Proxy %s\n", version.Version)
+	fmt.Printf("  Commit: %s | Built: %s\n", version.Commit, version.Date)
 	fmt.Printf("  URL: http://localhost:%d\n", config.Port)
 	fmt.Printf("  Auth: http://localhost:%d/auth/start\n", config.Port)
 	fmt.Println("==================================================")
