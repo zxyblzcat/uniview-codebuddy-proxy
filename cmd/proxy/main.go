@@ -19,7 +19,8 @@ import (
 
 func main() {
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
+	r := gin.New()
+	r.Use(requestLogger(), gin.Recovery(), maxBodySize(10<<20))
 
 	// 注册路由
 	auth.RegisterRoutes(r)
@@ -69,7 +70,12 @@ func main() {
 	}
 
 	// 启动 HTTP 服务
-	srv := &http.Server{Addr: addr, Handler: r}
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      r,
+		ReadTimeout:  30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
@@ -84,7 +90,7 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer shutdownCancel()
 	_ = srv.Shutdown(shutdownCtx)
-	log.Println("Proxy stopped.")
+	log.Println("代理已停止")
 	os.Exit(0)
 }
 
@@ -95,4 +101,30 @@ func waitExit() {
 
 	sig := <-sigCh
 	fmt.Printf("\n收到信号 %v，正在关闭代理...\n", sig)
+}
+
+// requestLogger 按状态码分级输出请求日志：4xx/5xx 始终打印，2xx 仅打印慢请求
+func requestLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		elapsed := time.Since(start).Truncate(time.Millisecond)
+		status := c.Writer.Status()
+		path := c.Request.URL.Path
+		if q := c.Request.URL.RawQuery; q != "" {
+			path += "?" + q
+		}
+		if status >= 400 || elapsed >= 20*time.Second {
+			log.Printf("[GIN] %v | %d | %13v | %15s | %6d | %-7s %s",
+				start.Format("2006/01/02 - 15:04:05"), status, elapsed, c.ClientIP(), c.Writer.Size(), c.Request.Method, path)
+		}
+	}
+}
+
+// maxBodySize 限制请求体大小（防止 OOM 攻击）
+func maxBodySize(maxBytes int) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, int64(maxBytes))
+		c.Next()
+	}
 }

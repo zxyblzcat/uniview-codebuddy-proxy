@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"codebuddy-proxy/internal/config"
@@ -27,6 +29,9 @@ var upstreamClient = &http.Client{
 func RegisterRoutes(r *gin.Engine) {
 	auth := r.Group("/auth")
 	{
+		if config.APIPassword != "" {
+			auth.Use(authPasswordMiddleware())
+		}
 		auth.GET("/start", handleAuthStart)
 		auth.GET("/poll", handleAuthPoll)
 		auth.POST("/manual", handleAuthManual)
@@ -34,79 +39,52 @@ func RegisterRoutes(r *gin.Engine) {
 	}
 }
 
-// handleAuthStart 发起 OAuth2 Device Flow
-func handleAuthStart(c *gin.Context) {
-	nonce, err := generateNonce()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-
-	url := fmt.Sprintf("%s?platform=CLI&nonce=%s", config.AuthStateURL, nonce)
-	headers := authStartHeaders()
-
-	body := map[string]string{"nonce": nonce}
-	bodyJSON, _ := json.Marshal(body)
-
-	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyJSON))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := upstreamClient.Do(req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-
-	var data map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "invalid response"})
-		return
-	}
-
-	log.Printf("auth/state response: %v", truncateJSON(data, 200))
-
-	code, _ := data["code"].(float64)
-	if resp.StatusCode == 200 && code == 0 {
-		d, _ := data["data"].(map[string]interface{})
-		if d != nil {
-			authState, _ := d["state"].(string)
-			authURL, _ := d["authUrl"].(string)
-			if authState != "" && authURL != "" {
-				// 自动打开浏览器让用户登录
-				OpenBrowser(authURL)
-				c.JSON(http.StatusOK, gin.H{
-					"success":    true,
-					"auth_state": authState,
-					"auth_url":   authURL,
-					"message":    "Please open auth_url in browser and login",
-					"poll_url":   fmt.Sprintf("http://localhost:%d/auth/poll?auth_state=%s", config.Port, authState),
-				})
+// authPasswordMiddleware 验证 /auth/* 路由的 API_PASSWORD
+func authPasswordMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if config.APIPassword == "" {
+			c.Next()
+			return
+		}
+		authHeader := c.GetHeader("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIPassword)) == 1 {
+				c.Next()
 				return
 			}
 		}
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		c.Abort()
+	}
+}
+
+// handleAuthStart 发起 OAuth2 Device Flow
+func handleAuthStart(c *gin.Context) {
+	authURL, authState, err := FetchAuthURL()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "auth_start_failed", "detail": err.Error()})
+		return
 	}
 
-	c.JSON(http.StatusBadRequest, gin.H{
-		"success": false,
-		"error":   "auth_start_failed",
-		"detail":  data,
+	// 自动打开浏览器让用户登录
+	OpenBrowser(authURL)
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"auth_state": authState,
+		"auth_url":   authURL,
+		"message":    "Please open auth_url in browser and login",
+		"poll_url":   fmt.Sprintf("http://localhost:%d/auth/poll?auth_state=%s", config.Port, authState),
 	})
 }
 
 // PollResult 表示轮询结果
 type PollResult struct {
-	Status     string    // "pending", "success", "error"
-	Message    string
-	UserID     string
-	ExpiresAt  int64
-	Detail     map[string]interface{}
+	Status    string // "pending", "success", "error"
+	Message   string
+	UserID    string
+	ExpiresAt int64
+	Detail    map[string]interface{}
 }
 
 // PollToken 向上游轮询 token 状态，返回轮询结果
@@ -277,14 +255,14 @@ func handleAuthStatus(c *gin.Context) {
 
 func authStartHeaders() map[string]string {
 	return map[string]string{
-		"Host":                  config.Domain,
-		"Accept":                "application/json, text/plain, */*",
-		"Content-Type":          "application/json",
-		"Cache-Control":         "no-cache",
-		"Pragma":                "no-cache",
-		"Connection":            "close",
+		"Host":                 config.Domain,
+		"Accept":               "application/json, text/plain, */*",
+		"Content-Type":         "application/json",
+		"Cache-Control":        "no-cache",
+		"Pragma":               "no-cache",
+		"Connection":           "close",
 		"X-Requested-With":     "XMLHttpRequest",
-		"X-Domain":              config.Domain,
+		"X-Domain":             config.Domain,
 		"X-No-Authorization":   "true",
 		"X-No-User-Id":         "true",
 		"X-No-Enterprise-Id":   "true",
@@ -299,11 +277,11 @@ func authPollHeaders() map[string]string {
 	rid := generateRequestID()
 	span := generateSpanID()
 	return map[string]string{
-		"Host":                  config.Domain,
-		"Accept":                "application/json, text/plain, */*",
-		"Cache-Control":         "no-cache",
-		"Pragma":                "no-cache",
-		"Connection":            "close",
+		"Host":                 config.Domain,
+		"Accept":               "application/json, text/plain, */*",
+		"Cache-Control":        "no-cache",
+		"Pragma":               "no-cache",
+		"Connection":           "close",
 		"X-Requested-With":     "XMLHttpRequest",
 		"X-Request-ID":         rid,
 		"b3":                   fmt.Sprintf("%s-%s-1-", rid, span),
@@ -324,8 +302,8 @@ func authPollHeaders() map[string]string {
 // BuildUpstreamHeaders 构建发送到上游的请求头
 func BuildUpstreamHeaders(model string) map[string]string {
 	return map[string]string{
-		"Accept":             "text/event-stream",
-		"Content-Type":       "application/json",
+		"Accept":            "text/event-stream",
+		"Content-Type":      "application/json",
 		"X-Requested-With":  "XMLHttpRequest",
 		"X-B3-ParentSpanId": "",
 		"X-B3-Sampled":      "1",
@@ -334,7 +312,7 @@ func BuildUpstreamHeaders(model string) map[string]string {
 		"X-Domain":          config.Domain,
 		"X-Product":         "SaaS",
 		"X-User-Id":         GetUserID(),
-		"X-Machine-Id":     generateRequestID(),
+		"X-Machine-Id":      generateRequestID(),
 		"X-Request-ID":      generateRequestID(),
 		"User-Agent":        "CLI/1.0.8 CodeBuddy/1.0.8",
 	}
@@ -352,13 +330,17 @@ func generateNonce() (string, error) {
 
 func generateRequestID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+	}
 	return hex.EncodeToString(b)
 }
 
 func generateSpanID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -451,7 +433,7 @@ func commandExists(name string) bool {
 	return err == nil
 }
 
-// FetchAuthURL 调用上游 Device Flow 获取 CodeBuddy 登录 URL
+// FetchAuthURL 调用上游 Device Flow 获取 CodeBuddy 登录 URL 和 state
 func FetchAuthURL() (authURL string, authState string, err error) {
 	nonce, nerr := generateNonce()
 	if nerr != nil {
@@ -482,6 +464,8 @@ func FetchAuthURL() (authURL string, authState string, err error) {
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return "", "", fmt.Errorf("invalid response")
 	}
+
+	log.Printf("auth/state response: %v", truncateJSON(data, 200))
 
 	code, _ := data["code"].(float64)
 	if resp.StatusCode == 200 && code == 0 {

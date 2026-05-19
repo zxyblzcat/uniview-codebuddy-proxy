@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,7 +38,7 @@ var extraModels = []Model{
 var (
 	modelsCache   []Model
 	modelsExpires int64
-	modelsMu      sync.Mutex
+	modelsMu      sync.RWMutex
 )
 
 const modelsCacheTTL = 300 // 5 分钟缓存
@@ -52,7 +53,7 @@ func inferOwnedBy(name string) string {
 		"kimi":     "moonshot",
 	}
 	for prefix, owner := range prefixes {
-		if len(name) >= len(prefix) && name[:len(prefix)] == prefix {
+		if strings.HasPrefix(name, prefix) {
 			return owner
 		}
 	}
@@ -61,11 +62,20 @@ func inferOwnedBy(name string) string {
 
 // FetchModels 获取模型列表（带缓存）
 func FetchModels() []Model {
+	modelsMu.RLock()
+	if modelsCache != nil && modelsExpires > time.Now().Unix() {
+		result := make([]Model, len(modelsCache))
+		copy(result, modelsCache)
+		modelsMu.RUnlock()
+		return result
+	}
+	modelsMu.RUnlock()
+
 	modelsMu.Lock()
 	defer modelsMu.Unlock()
 
-	now := time.Now().Unix()
-	if modelsCache != nil && modelsExpires > now {
+	// 双检锁：等待写锁期间可能已被其他 goroutine 刷新
+	if modelsCache != nil && modelsExpires > time.Now().Unix() {
 		return modelsCache
 	}
 
@@ -89,7 +99,7 @@ func FetchModels() []Model {
 	if err != nil {
 		log.Printf("create config request error: %v", err)
 		modelsCache = result
-		modelsExpires = now + modelsCacheTTL
+		modelsExpires = time.Now().Unix() + modelsCacheTTL
 		return result
 	}
 	for k, v := range headers {
@@ -105,7 +115,7 @@ func FetchModels() []Model {
 	if err != nil {
 		log.Printf("fetch /v2/config error: %v", err)
 		modelsCache = result
-		modelsExpires = now + modelsCacheTTL
+		modelsExpires = time.Now().Unix() + modelsCacheTTL
 		return result
 	}
 	defer resp.Body.Close()
@@ -113,7 +123,7 @@ func FetchModels() []Model {
 	if resp.StatusCode != 200 {
 		log.Printf("/v2/config returned status %d", resp.StatusCode)
 		modelsCache = result
-		modelsExpires = now + modelsCacheTTL
+		modelsExpires = time.Now().Unix() + modelsCacheTTL
 		return result
 	}
 
@@ -121,7 +131,7 @@ func FetchModels() []Model {
 	if err := json.NewDecoder(resp.Body).Decode(&configResp); err != nil {
 		log.Printf("decode /v2/config error: %v", err)
 		modelsCache = result
-		modelsExpires = now + modelsCacheTTL
+		modelsExpires = time.Now().Unix() + modelsCacheTTL
 		return result
 	}
 
@@ -169,6 +179,6 @@ func FetchModels() []Model {
 
 	log.Printf("Fetched %d models from /v2/config", len(result))
 	modelsCache = result
-	modelsExpires = now + modelsCacheTTL
+	modelsExpires = time.Now().Unix() + modelsCacheTTL
 	return result
 }

@@ -2,68 +2,38 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"strings"
-
-	"codebuddy-proxy/internal/auth"
-	"codebuddy-proxy/internal/config"
+	"sort"
 )
 
 // StreamAnthropicMessages 向上游发送请求，将 OpenAI SSE 流实时转换为 Anthropic SSE 流
-func StreamAnthropicMessages(payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
+func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
 	msgID := "msg_" + randomHex(24)
 
 	// 状态机变量
-	nextBlockIdx := 0       // Anthropic content block 连续 index（从 0 开始递增）
-	textBlockIdx := -1      // text block 的 index，-1 表示未开启
-	toolBlockIdxMap := map[int]int{} // OpenAI tcIdx → Anthropic block index
-	toolBlocksStarted := map[int]bool{} // OpenAI tool_calls index → 是否已发 content_block_start
+	nextBlockIdx := 0
+	textBlockIdx := -1
+	toolBlockIdxMap := map[int]int{}
+	toolBlocksStarted := map[int]bool{}
 	inputTokens := 0
 	outputTokens := 0
 	started := false
 	finished := false
 
-	payloadJSON, err := json.Marshal(payload)
+	resp, err := doUpstreamRequest(ctx, payload, model, bearer)
 	if err != nil {
-		writeAnthropicSSEError(w, "marshal payload error: "+err.Error())
-		return
-	}
-
-	req, err := http.NewRequest("POST", config.ChatURL, strings.NewReader(string(payloadJSON)))
-	if err != nil {
-		writeAnthropicSSEError(w, "create request error: "+err.Error())
-		return
-	}
-
-	headers := auth.BuildUpstreamHeaders(model)
-	if bearer != "" {
-		headers["Authorization"] = "Bearer " + bearer
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		writeAnthropicSSEError(w, "upstream request error: "+err.Error())
+		if ue, ok := err.(*upstreamError); ok {
+			writeAnthropicSSEError(w, ue.Error())
+		} else {
+			writeAnthropicSSEError(w, err.Error())
+		}
 		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		errText := stripHTML(string(body))
-		if len(errText) > 300 {
-			errText = errText[:300]
-		}
-		log.Printf("upstream error %d: %s", resp.StatusCode, errText)
-		writeAnthropicSSEError(w, fmt.Sprintf("upstream %d: %s", resp.StatusCode, errText))
-		return
-	}
 
 	// 设置 SSE 响应头
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -76,40 +46,50 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, beare
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	// closeOpenBlocks 关闭所有已开启的 content block
+	closeOpenBlocks := func() {
+		if textBlockIdx >= 0 {
+			writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
+				"type": "content_block_stop", "index": textBlockIdx,
+			}))
+			textBlockIdx = -1
+		}
+		var tcIndices []int
+		for tcIdx := range toolBlocksStarted {
+			tcIndices = append(tcIndices, tcIdx)
+		}
+		sort.Ints(tcIndices)
+		for _, tcIdx := range tcIndices {
+			if toolBlocksStarted[tcIdx] {
+				writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
+					"type": "content_block_stop", "index": toolBlockIdxMap[tcIdx],
+				}))
+			}
+		}
+	}
+
 	for scanner.Scan() {
+		// 客户端断连时停止读取上游
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		line := scanner.Text()
 		if line == "" {
 			continue
 		}
 
-		dataStr := line
-		if strings.HasPrefix(line, "data: ") {
-			dataStr = line[6:]
-		} else if strings.HasPrefix(line, "data:") {
-			dataStr = line[5:]
-		} else {
+		dataStr, done, ok := parseSSELine(line)
+		if !ok {
 			continue
 		}
 
-		dataStr = strings.TrimSpace(dataStr)
-
-		if dataStr == "[DONE]" {
+		if done {
 			if !finished {
 				finished = true
-				// 关闭所有已开启的 content block
-				if textBlockIdx >= 0 {
-					writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-						"type": "content_block_stop", "index": textBlockIdx,
-					}))
-				}
-				for tcIdx, tcStarted := range toolBlocksStarted {
-					if tcStarted {
-						writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-							"type": "content_block_stop", "index": toolBlockIdxMap[tcIdx],
-						}))
-					}
-				}
-				// 发送 message_delta 和 message_stop
+				closeOpenBlocks()
 				writeSSE(w, flusher, canFlush, anthropicSSE("message_delta", map[string]interface{}{
 					"type":  "message_delta",
 					"delta": map[string]interface{}{"stop_reason": "end_turn", "stop_sequence": nil},
@@ -119,10 +99,6 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, beare
 					"type": "message_stop",
 				}))
 			}
-			continue
-		}
-
-		if dataStr == "" {
 			continue
 		}
 
@@ -207,10 +183,8 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, beare
 						tcIdx = int(v)
 					}
 
-					// 首次出现：有 id 和 function.name，发送 content_block_start
 					if _, exists := toolBlocksStarted[tcIdx]; !exists {
 						toolBlocksStarted[tcIdx] = false
-						// 分配 Anthropic block index
 						toolBlockIdxMap[tcIdx] = nextBlockIdx
 						nextBlockIdx++
 					}
@@ -242,17 +216,18 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, beare
 						}
 					}
 
-					// arguments 片段：发送 content_block_delta
-					if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-						if args, ok := fn["arguments"].(string); ok && args != "" {
-							writeSSE(w, flusher, canFlush, anthropicSSE("content_block_delta", map[string]interface{}{
-								"type":  "content_block_delta",
-								"index": toolBlockIdxMap[tcIdx],
-								"delta": map[string]interface{}{
-									"type":         "input_json_delta",
-									"partial_json": args,
-								},
-							}))
+					if toolBlocksStarted[tcIdx] {
+						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+							if args, ok := fn["arguments"].(string); ok && args != "" {
+								writeSSE(w, flusher, canFlush, anthropicSSE("content_block_delta", map[string]interface{}{
+									"type":  "content_block_delta",
+									"index": toolBlockIdxMap[tcIdx],
+									"delta": map[string]interface{}{
+										"type":         "input_json_delta",
+										"partial_json": args,
+									},
+								}))
+							}
 						}
 					}
 				}
@@ -261,19 +236,7 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, beare
 			// 处理 finish_reason
 			if fr != "" && !finished {
 				finished = true
-				// 关闭所有已开启的 content block
-				if textBlockIdx >= 0 {
-					writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-						"type": "content_block_stop", "index": textBlockIdx,
-					}))
-				}
-				for tcIdx2, tcStarted2 := range toolBlocksStarted {
-					if tcStarted2 {
-						writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
-							"type": "content_block_stop", "index": toolBlockIdxMap[tcIdx2],
-						}))
-					}
-				}
+				closeOpenBlocks()
 				writeSSE(w, flusher, canFlush, anthropicSSE("message_delta", map[string]interface{}{
 					"type":  "message_delta",
 					"delta": map[string]interface{}{"stop_reason": finishReasonToStopReason(fr), "stop_sequence": nil},
@@ -284,6 +247,9 @@ func StreamAnthropicMessages(payload map[string]interface{}, model string, beare
 				}))
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("SSE scan error: %v", err)
 	}
 }
 
@@ -308,4 +274,6 @@ func writeAnthropicSSEError(w http.ResponseWriter, msg string) {
 		},
 	})
 	fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(errData))
+	// 发送 message_stop 以便客户端知道流已结束
+	fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
 }
