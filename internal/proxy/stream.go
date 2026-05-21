@@ -62,11 +62,16 @@ func newIdleTimeoutReader(r io.ReadCloser, idle time.Duration) *idleTimeoutReade
 					}
 				}
 				timer.Reset(idle)
+				// 先写入数据，再检查错误
+				// io.Reader 可以在一次 Read 中同时返回 n>0 和 err（如 io.EOF），
+				// 必须先写数据再关闭 pipe，否则最后一批数据会丢失
+				if res.n > 0 {
+					if _, err := pw.Write(buf[:res.n]); err != nil {
+						return
+					}
+				}
 				if res.err != nil {
 					pw.CloseWithError(res.err)
-					return
-				}
-				if _, err := pw.Write(buf[:res.n]); err != nil {
 					return
 				}
 			case <-timer.C:

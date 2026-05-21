@@ -106,9 +106,8 @@ func loadTokenFromFile() *TokenData {
 
 // LoadToken 从内存或文件加载 token，过期时清除缓存和文件并触发自动登录
 //
-// 使用写锁路径避免 RLock→RUnlock→Lock 升级中的竞态条件：
-// 在 RUnlock 和 Lock 之间，另一个 goroutine 可能已保存新 token，
-// 旧代码会丢失该 token 导致瞬时 401。
+// 所有对 cachedToken 的读写和文件删除都在 tokenMu 锁内完成，
+// 防止其他 goroutine 在缓存清空和文件删除之间从文件加载已过期的 token。
 func LoadToken() *TokenData {
 	tokenMu.Lock()
 
@@ -122,13 +121,13 @@ func LoadToken() *TokenData {
 				log.Println("Token expired, clearing cache and triggering auto-login")
 				filePath := tokenFilePath()
 				cachedToken = nil
-				tokenMu.Unlock()
-				// 锁外执行 I/O 和触发重登录
+				// 在锁内删除文件，防止其他 goroutine 在锁外窗口加载到已过期的 token
 				if filePath != "" {
 					if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
 						log.Printf("Warning: failed to remove expired token file %s: %v", filePath, err)
 					}
 				}
+				tokenMu.Unlock()
 				go triggerAutoRelogin()
 				return nil
 			}

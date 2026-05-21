@@ -13,9 +13,7 @@ Go 实现，编译为单个可执行文件，无需安装任何运行时。
 ./codebuddy-proxy
 ```
 
-3. 在 cc switch 中切换模型提供商，配置代理地址：
-
-![HapiGo_2026-05-17_18.07.27](./assets/HapiGo_2026-05-17_18.07.27.png)
+3. 在客户端中切换模型提供商，配置代理地址：
 
 ```
 API Base URL: http://localhost:1026/v1
@@ -29,9 +27,10 @@ API Base URL: http://localhost:1026/v1
 - **Anthropic Messages** — `/v1/messages`，流式 + 非流式，支持 tool_use / tool_result
 - **OpenAI Responses** — `/v1/responses`，流式 + 非流式，支持 function_call
 - **动态模型列表** — `/v1/models`，从上游 `/v2/config` 获取并缓存
-- **OAuth2 Device Flow** — 浏览器扫码登录，Token 存储于内存，过期自动重登录
-- **API Key 认证** — 可选，支持 `Authorization: Bearer` 和 `x-api-key`
-- **跨平台** — 单个二进制文件，支持 macOS / Windows / Linux
+- **OAuth2 Device Flow** — 浏览器扫码登录，Token 持久化到文件，过期自动重登录
+- **API Key 认证** — 可选，设置 `API_PASSWORD` 后所有 `/v1/*` 端点需 `Authorization: Bearer <password>`
+- **跨平台** — 单个二进制文件，支持 macOS / Windows / Linux（amd64 + arm64）
+- **自动发布** — 通过 GoReleaser + GitHub Actions 自动构建和发布
 
 ## 快速开始
 
@@ -43,11 +42,12 @@ make build
 
 ### 配置
 
-编辑 `.env`：
+编辑 `.env` 或设置环境变量：
 
 ```
 PORT=1026
 API_PASSWORD=
+TOKEN_FILE_PATH=~/.codebuddy-proxy/token.json
 ```
 
 ### 登录
@@ -55,13 +55,12 @@ API_PASSWORD=
 首次使用需通过 OAuth2 获取 Token：
 
 ```bash
-# 1. 发起认证
+# 1. 发起认证（自动打开浏览器，无 GUI 时在终端输出登录 URL）
 curl http://localhost:1026/auth/start
 # 返回 auth_url，在浏览器中打开并登录
 
 # 2. 轮询 Token（使用返回的 auth_state）
 curl "http://localhost:1026/auth/poll?auth_state=xxx"
-# 登录成功后 Token 存储于内存，进程重启需重新登录
 ```
 
 也可以手动设置 Token：
@@ -72,7 +71,7 @@ curl -X POST http://localhost:1026/auth/manual \
   -d '{"bearer_token": "your-token-here"}'
 ```
 
-Token 过期后会自动触发重新登录，打开浏览器等待用户授权。
+Token 会持久化到文件（默认 `~/.codebuddy-proxy/token.json`），进程重启后自动加载。Token 过期后会自动触发重新登录。
 
 ### 使用
 
@@ -107,12 +106,39 @@ curl http://localhost:1026/v1/responses \
 | `/auth/status` | GET | — | 查看 Token 状态 |
 | `/health` | GET | — | 健康检查 |
 
+> 所有 `/v1/` 路由同时注册在 `/v1/v1/` 下，兼容会双重拼接路径前缀的客户端。
+
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PORT` | `1026` | 服务监听端口 |
-| `API_PASSWORD` | 空 | 非空时所有 `/v1/*` 端点需认证 |
+| `API_PASSWORD` | 空 | 非空时所有 `/v1/*` 端点需 Bearer 认证 |
+| `TOKEN_FILE_PATH` | `~/.codebuddy-proxy/token.json` | Token 文件存储路径 |
+
+## 可用模型
+
+代理内置以下模型，同时从上游动态获取更多模型：
+
+| 模型 | 提供方 |
+|------|--------|
+| glm-5.1, glm-5.0, glm-4.7, glm-4.6 | 智谱 |
+| minimax-m2.7, minimax-m2.5 | MiniMax |
+| kimi-k2.5 | Moonshot |
+| deepseek-r1, deepseek-v3-1-lkeap | DeepSeek |
+| hunyuan-2.0-instruct | 腾讯 |
+
+默认模型：Chat Completions 使用 `auto-chat`，Anthropic/Responses 使用 `deepseek-v3`。
+
+## 架构
+
+```
+OpenAI Chat  (/v1/chat/completions)  ─┐
+Anthropic    (/v1/messages)           ─┼─→ Proxy ─→ CodeBuddy /v2/chat/completions
+Responses    (/v1/responses)          ─┘
+```
+
+所有入站请求转换为上游统一格式（`stream: true`），再由状态机 SSE 翻译器将上游响应转回客户端所需的格式。
 
 ## 交叉编译
 
@@ -139,20 +165,22 @@ GOOS=linux GOARCH=amd64 go build -o codebuddy-proxy-linux ./cmd/proxy
 ## 项目结构
 
 ```
-├── cmd/proxy/main.go               # 入口
+├── cmd/proxy/main.go               # 入口，注册路由，触发初始认证
 ├── internal/
-│   ├── config/config.go            # 配置
+│   ├── config/config.go            # 环境变量配置
+│   ├── version/version.go          # 版本号（构建时注入）
 │   ├── auth/
-│   │   ├── token.go                # Token 内存缓存 + JWT 解析 + 过期自动重登录
-│   │   └── handler.go              # OAuth2 路由 + 上游请求头
+│   │   ├── token.go                # Token 缓存 + 文件持久化 + JWT 解析 + 过期自动重登录
+│   │   └── handler.go              # OAuth2 路由 + 上游请求头构建
 │   └── proxy/
-│       ├── handler.go              # 路由注册 + 请求处理
-│       ├── stream.go               # OpenAI Chat SSE 流式转发 + HTTP Client
-│       ├── models.go               # 动态模型列表
+│       ├── handler.go              # 路由注册 + 请求处理 + 认证中间件
+│       ├── stream.go               # OpenAI Chat SSE 流式转发 + HTTP Client + 空闲超时
+│       ├── models.go               # 动态模型列表 + 缓存
 │       ├── anthropic.go            # Anthropic 格式转换
 │       ├── anthropic_stream.go     # Anthropic 流式转换状态机
 │       ├── responses.go            # Responses API 格式转换
-│       └── responses_stream.go     # Responses 流式转换
+│       └── responses_stream.go     # Responses 流式转换状态机
+├── .goreleaser.yml                 # GoReleaser 自动发布配置
 ├── Makefile
 ├── go.mod
 └── .env
@@ -160,4 +188,8 @@ GOOS=linux GOARCH=amd64 go build -o codebuddy-proxy-linux ./cmd/proxy
 
 ## 技术栈
 
-Go + Gin + godotenv + 标准库 `net/http` / `bufio.Scanner` / `encoding/json`
+Go 1.25 + Gin + godotenv + GoReleaser
+
+## License
+
+[MIT](./LICENSE)
