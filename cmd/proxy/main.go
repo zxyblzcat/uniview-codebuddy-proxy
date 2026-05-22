@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -27,18 +26,14 @@ func main() {
 	log.SetOutput(mw)
 
 	// Print startup info (goes to ring buffer + file)
-	fmt.Println()
-	fmt.Println("==================================================")
-	fmt.Printf("  CodeBuddy CN -> OpenAI API Proxy %s\n", version.Version)
-	fmt.Printf("  Commit: %s | Built: %s\n", version.Commit, version.Date)
-	fmt.Println("==================================================")
-	fmt.Println()
+	log.Println("==================================================")
+	log.Printf("  CodeBuddy CN -> OpenAI API Proxy %s", version.Version)
+	log.Printf("  Commit: %s | Built: %s", version.Commit, version.Date)
+	log.Println("==================================================")
 
 	app := systrayapp.New(mw)
 	app.Run()
-
-	// Cleanup
-	mw.Close()
+	// onExit in app.go handles logWriter.Close()
 }
 
 // launchMainApp is called in --login-item mode to start the main application.

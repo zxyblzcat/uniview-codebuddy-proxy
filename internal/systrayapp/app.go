@@ -30,12 +30,15 @@ type App struct {
 	autostartItem *systray.MenuItem
 	statusItem    *systray.MenuItem
 	running       bool
+	authPending   bool
+	statusCh      chan string // dispatches status updates to main goroutine
 }
 
 // New creates a new App instance.
 func New(logWriter *logbuf.MultiWriter) *App {
 	return &App{
 		logWriter: logWriter,
+		statusCh:  make(chan string, 32),
 	}
 }
 
@@ -48,13 +51,13 @@ func (a *App) Run() {
 // where systray is unavailable, e.g., headless Linux, CI).
 func (a *App) RunHeadless() {
 	a.startServer()
-	a.updateStatus()
+	a.applyStatus()
 
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			a.updateStatus()
+			a.applyStatus()
 		}
 	}()
 
@@ -136,13 +139,20 @@ func (a *App) onReady() {
 	}()
 
 	a.startServer()
-	a.updateStatus()
+
+	// Dispatch status updates on main goroutine to avoid Cocoa threading issues
+	go func() {
+		for range a.statusCh {
+			a.applyStatus()
+		}
+	}()
+	a.scheduleStatusUpdate()
 
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			a.updateStatus()
+			a.scheduleStatusUpdate()
 		}
 	}()
 }
@@ -157,6 +167,10 @@ func (a *App) handleAuth() {
 	if td != nil {
 		return
 	}
+	if a.authPending {
+		log.Println("Auth already in progress")
+		return
+	}
 
 	authURL, authState, err := auth.FetchAuthURL()
 	if err != nil {
@@ -164,16 +178,18 @@ func (a *App) handleAuth() {
 		return
 	}
 
+	a.authPending = true
 	log.Println("Opening browser for authentication...")
 	auth.OpenBrowser(authURL)
 
 	if authState != "" {
 		go func() {
+			defer func() { a.authPending = false }()
 			for i := 0; i < 60; i++ {
 				result := auth.PollToken(authState)
 				if result.Status == "success" {
 					log.Printf("Login success! User: %s", result.UserID)
-					a.updateStatus()
+					a.scheduleStatusUpdate()
 					return
 				}
 				if result.Status == "error" {
@@ -187,10 +203,17 @@ func (a *App) handleAuth() {
 	}
 }
 
-func (a *App) updateStatus() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+// scheduleStatusUpdate sends a status update request to the main goroutine.
+// Safe to call from any goroutine.
+func (a *App) scheduleStatusUpdate() {
+	select {
+	case a.statusCh <- "update":
+	default:
+	}
+}
 
+// applyStatus updates tray icon and menu items. Must be called from the main goroutine.
+func (a *App) applyStatus() {
 	td := auth.LoadToken()
 	if td != nil {
 		setIconNormal()
@@ -229,15 +252,13 @@ func (a *App) startServer() {
 	proxy.RegisterRoutes(r)
 	RegisterLogViewRoute(r, a.logWriter)
 
-	fmt.Println()
-	fmt.Println("==================================================")
-	fmt.Printf("  CodeBuddy CN -> OpenAI API Proxy %s\n", version.Version)
-	fmt.Printf("  Commit: %s | Built: %s\n", version.Commit, version.Date)
-	fmt.Printf("  URL: http://localhost:%d\n", config.Port)
-	fmt.Printf("  Auth: http://localhost:%d/auth/start\n", config.Port)
-	fmt.Printf("  Logs: http://localhost:%d/_logs\n", config.Port)
-	fmt.Println("==================================================")
-	fmt.Println()
+	log.Println("==================================================")
+	log.Printf("  CodeBuddy CN -> OpenAI API Proxy %s", version.Version)
+	log.Printf("  Commit: %s | Built: %s", version.Commit, version.Date)
+	log.Printf("  URL: http://localhost:%d", config.Port)
+	log.Printf("  Auth: http://localhost:%d/auth/start", config.Port)
+	log.Printf("  Logs: http://localhost:%d/_logs", config.Port)
+	log.Println("==================================================")
 
 	if auth.LoadToken() != nil {
 		log.Println("Token loaded from cache")
@@ -254,7 +275,8 @@ func (a *App) startServer() {
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Printf("Failed to start server: %v", err)
+			systray.Quit()
 		}
 	}()
 

@@ -12,10 +12,10 @@ build:
 build-all: build-darwin-arm64 build-darwin-amd64 build-linux-amd64 build-linux-arm64 build-windows-amd64 build-windows-arm64
 
 build-darwin-arm64:
-	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(APP_NAME)_$(VERSION)_darwin_arm64 ./cmd/proxy
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(APP_NAME)_$(VERSION)_darwin_arm64 ./cmd/proxy
 
 build-darwin-amd64:
-	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(APP_NAME)_$(VERSION)_darwin_amd64 ./cmd/proxy
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(APP_NAME)_$(VERSION)_darwin_amd64 ./cmd/proxy
 
 build-linux-amd64:
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(APP_NAME)_$(VERSION)_linux_amd64 ./cmd/proxy
