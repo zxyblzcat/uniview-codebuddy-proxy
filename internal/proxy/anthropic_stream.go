@@ -44,13 +44,22 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 
 	flusher, canFlush := w.(http.Flusher)
 
+	// 写入错误跟踪：客户端断连后跳过后续写入和上游处理
+	var writeErr error
+	safeWrite := func(data string) {
+		if writeErr != nil {
+			return
+		}
+		writeErr = writeSSE(w, flusher, canFlush, data)
+	}
+
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	// closeOpenBlocks 关闭所有已开启的 content block
 	closeOpenBlocks := func() {
 		if textBlockIdx >= 0 {
-			writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
+			safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
 				"type": "content_block_stop", "index": textBlockIdx,
 			}))
 			textBlockIdx = -1
@@ -62,7 +71,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 		sort.Ints(tcIndices)
 		for _, tcIdx := range tcIndices {
 			if toolBlocksStarted[tcIdx] {
-				writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
+				safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
 					"type": "content_block_stop", "index": toolBlockIdxMap[tcIdx],
 				}))
 			}
@@ -70,11 +79,14 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 	}
 
 	for scanner.Scan() {
-		// 客户端断连时停止读取上游
+		// 客户端断连或写入失败时停止
 		select {
 		case <-ctx.Done():
 			return
 		default:
+		}
+		if writeErr != nil {
+			return
 		}
 
 		line := scanner.Text()
@@ -91,12 +103,12 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			if !finished {
 				finished = true
 				closeOpenBlocks()
-				writeSSE(w, flusher, canFlush, anthropicSSE("message_delta", map[string]interface{}{
+				safeWrite(anthropicSSE("message_delta", map[string]interface{}{
 					"type":  "message_delta",
 					"delta": map[string]interface{}{"stop_reason": "end_turn", "stop_sequence": nil},
 					"usage": map[string]interface{}{"output_tokens": outputTokens},
 				}))
-				writeSSE(w, flusher, canFlush, anthropicSSE("message_stop", map[string]interface{}{
+				safeWrite(anthropicSSE("message_stop", map[string]interface{}{
 					"type": "message_stop",
 				}))
 			}
@@ -133,7 +145,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			// 首次收到有效内容时发送 message_start
 			if !started {
 				started = true
-				writeSSE(w, flusher, canFlush, anthropicSSE("message_start", map[string]interface{}{
+				safeWrite(anthropicSSE("message_start", map[string]interface{}{
 					"type": "message_start",
 					"message": map[string]interface{}{
 						"id":            msgID,
@@ -153,7 +165,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 				if textBlockIdx < 0 {
 					textBlockIdx = nextBlockIdx
 					nextBlockIdx++
-					writeSSE(w, flusher, canFlush, anthropicSSE("content_block_start", map[string]interface{}{
+					safeWrite(anthropicSSE("content_block_start", map[string]interface{}{
 						"type":  "content_block_start",
 						"index": textBlockIdx,
 						"content_block": map[string]interface{}{
@@ -162,7 +174,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 						},
 					}))
 				}
-				writeSSE(w, flusher, canFlush, anthropicSSE("content_block_delta", map[string]interface{}{
+				safeWrite(anthropicSSE("content_block_delta", map[string]interface{}{
 					"type":  "content_block_delta",
 					"index": textBlockIdx,
 					"delta": map[string]interface{}{
@@ -195,7 +207,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 							toolBlocksStarted[tcIdx] = true
 							// 关闭前面的文本 block
 							if textBlockIdx >= 0 {
-								writeSSE(w, flusher, canFlush, anthropicSSE("content_block_stop", map[string]interface{}{
+								safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
 									"type": "content_block_stop", "index": textBlockIdx,
 								}))
 								textBlockIdx = -1
@@ -204,7 +216,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 							if fn, ok := tcMap["function"].(map[string]interface{}); ok {
 								fnName, _ = fn["name"].(string)
 							}
-							writeSSE(w, flusher, canFlush, anthropicSSE("content_block_start", map[string]interface{}{
+							safeWrite(anthropicSSE("content_block_start", map[string]interface{}{
 								"type":  "content_block_start",
 								"index": toolBlockIdxMap[tcIdx],
 								"content_block": map[string]interface{}{
@@ -220,7 +232,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 					if toolBlocksStarted[tcIdx] {
 						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
 							if args, ok := fn["arguments"].(string); ok && args != "" {
-								writeSSE(w, flusher, canFlush, anthropicSSE("content_block_delta", map[string]interface{}{
+								safeWrite(anthropicSSE("content_block_delta", map[string]interface{}{
 									"type":  "content_block_delta",
 									"index": toolBlockIdxMap[tcIdx],
 									"delta": map[string]interface{}{
@@ -238,12 +250,12 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			if fr != "" && !finished {
 				finished = true
 				closeOpenBlocks()
-				writeSSE(w, flusher, canFlush, anthropicSSE("message_delta", map[string]interface{}{
+				safeWrite(anthropicSSE("message_delta", map[string]interface{}{
 					"type":  "message_delta",
 					"delta": map[string]interface{}{"stop_reason": finishReasonToStopReason(fr), "stop_sequence": nil},
 					"usage": map[string]interface{}{"output_tokens": outputTokens},
 				}))
-				writeSSE(w, flusher, canFlush, anthropicSSE("message_stop", map[string]interface{}{
+				safeWrite(anthropicSSE("message_stop", map[string]interface{}{
 					"type": "message_stop",
 				}))
 			}
@@ -254,12 +266,13 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 	}
 }
 
-// writeSSE 写入 SSE 数据并 flush
-func writeSSE(w http.ResponseWriter, flusher http.Flusher, canFlush bool, data string) {
-	fmt.Fprint(w, data)
+// writeSSE 写入 SSE 数据并 flush，返回写入错误
+func writeSSE(w http.ResponseWriter, flusher http.Flusher, canFlush bool, data string) error {
+	_, err := fmt.Fprint(w, data)
 	if canFlush {
 		flusher.Flush()
 	}
+	return err
 }
 
 // writeAnthropicSSEError 写入 Anthropic 格式的 SSE 错误
@@ -275,6 +288,5 @@ func writeAnthropicSSEError(w http.ResponseWriter, msg string) {
 		},
 	})
 	fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(errData))
-	// 发送 message_stop 以便客户端知道流已结束
 	fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
 }

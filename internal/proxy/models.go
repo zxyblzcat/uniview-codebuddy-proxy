@@ -76,7 +76,9 @@ func FetchModels() []Model {
 
 	// 双检锁：等待写锁期间可能已被其他 goroutine 刷新
 	if modelsCache != nil && modelsExpires > time.Now().Unix() {
-		return modelsCache
+		result := make([]Model, len(modelsCache))
+		copy(result, modelsCache)
+		return result
 	}
 
 	// 以 extraModels 为基础
