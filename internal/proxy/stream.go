@@ -18,12 +18,8 @@ import (
 	"codebuddy-proxy/internal/config"
 )
 
-// upstreamIdleTimeout 上游 SSE 流读取空闲超时
-// 上游停止发送数据但保持连接时，防止 goroutine 无限挂起
 const upstreamIdleTimeout = 2 * time.Minute
 
-// idleTimeoutReader 使用 io.Pipe 在后台 goroutine 中读取，
-// 每次成功读取后重置定时器，超时时关闭 pipe 使 scanner 解除阻塞
 type idleTimeoutReader struct {
 	pr *io.PipeReader
 }
@@ -41,7 +37,6 @@ func newIdleTimeoutReader(r io.ReadCloser, idle time.Duration) *idleTimeoutReade
 		defer timer.Stop()
 
 		for {
-			// 使用 channel 竞争：读取完成 vs 超时
 			type readResult struct {
 				n   int
 				err error
@@ -55,16 +50,13 @@ func newIdleTimeoutReader(r io.ReadCloser, idle time.Duration) *idleTimeoutReade
 			select {
 			case res := <-done:
 				if !timer.Stop() {
-					// timer 已触发，但读取成功完成，忽略过期信号
 					select {
 					case <-timer.C:
 					default:
 					}
 				}
 				timer.Reset(idle)
-				// 先写入数据，再检查错误
-				// io.Reader 可以在一次 Read 中同时返回 n>0 和 err（如 io.EOF），
-				// 必须先写数据再关闭 pipe，否则最后一批数据会丢失
+				// 先写数据再处理错误：Read 可同时返回 n>0 和 io.EOF
 				if res.n > 0 {
 					if _, err := pw.Write(buf[:res.n]); err != nil {
 						return
@@ -92,26 +84,19 @@ func (t *idleTimeoutReader) Close() error {
 	return t.pr.Close()
 }
 
-// htmlTagRe 匹配 HTML 标签
 var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 
-// httpClient 用于所有上游请求（无总超时，支持长思考模型）
 var httpClient = &http.Client{
-	Timeout: 0, // 无总超时，模型思考可能很久
+	Timeout: 0,
 	Transport: &http.Transport{
-		ResponseHeaderTimeout: 30 * time.Minute, // 等待响应头的超时（推理模型思考可能很久）
+		ResponseHeaderTimeout: 30 * time.Minute,
 	},
 }
 
-// wrapWithIdleTimeout 包装响应体，添加读取空闲超时
-// 防止上游半开连接导致 goroutine 泄漏
 func wrapWithIdleTimeout(body io.ReadCloser) io.ReadCloser {
 	return newIdleTimeoutReader(body, upstreamIdleTimeout)
 }
 
-// doUpstreamRequest 构建上游请求并发送，返回响应
-// 上游非 200 时读取错误体并返回 (nil, upstreamError)；其他错误返回 (nil, err)
-// 调用方负责关闭 resp.Body 和处理错误
 func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, model string, bearer string) (*http.Response, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -151,7 +136,6 @@ func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, mode
 	return resp, nil
 }
 
-// upstreamError 表示上游返回的非 200 错误
 type upstreamError struct {
 	StatusCode int
 	Message    string
@@ -161,8 +145,6 @@ func (e *upstreamError) Error() string {
 	return fmt.Sprintf("upstream %d: %s", e.StatusCode, e.Message)
 }
 
-// parseSSELine 解析 SSE 行，返回 (data, done, ok)
-// ok=false 表示非数据行应跳过，done=true 表示收到 [DONE]
 func parseSSELine(line string) (data string, done bool, ok bool) {
 	dataStr := line
 	if strings.HasPrefix(line, "data: ") {
@@ -186,8 +168,6 @@ func parseSSELine(line string) (data string, done bool, ok bool) {
 	return dataStr, false, true
 }
 
-// StreamChatCompletions 向上游发送流式请求并实时转发 SSE 事件
-// 清理非标准字段，替换 model 和 id
 func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
 	requestID := "chatcmpl-" + randomHex(12)
 
@@ -203,7 +183,6 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 	defer resp.Body.Close()
 	body := wrapWithIdleTimeout(resp.Body)
 
-	// 设置 SSE 响应头
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -211,15 +190,19 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 
 	flusher, canFlush := w.(http.Flusher)
 
+	var writeErr error
+
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
-		// 客户端断连时停止读取上游
 		select {
 		case <-ctx.Done():
 			return
 		default:
+		}
+		if writeErr != nil {
+			return
 		}
 
 		line := scanner.Text()
@@ -233,7 +216,7 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 		}
 
 		if done {
-			fmt.Fprintf(w, "data: [DONE]\n\n")
+			_, writeErr = fmt.Fprintf(w, "data: [DONE]\n\n")
 			if canFlush {
 				flusher.Flush()
 			}
@@ -245,11 +228,9 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 			continue
 		}
 
-		// 替换 model 和 id（始终替换为本地生成的 id）
 		if _, ok := chunk["choices"]; ok {
 			chunk["model"] = model
 			chunk["id"] = requestID
-			// 清理上游非标准字段
 			cleanChunkChoices(chunk)
 		}
 
@@ -257,7 +238,7 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 		if err != nil {
 			continue
 		}
-		fmt.Fprintf(w, "data: %s\n\n", string(cleaned))
+		_, writeErr = fmt.Fprintf(w, "data: %s\n\n", string(cleaned))
 		if canFlush {
 			flusher.Flush()
 		}
@@ -267,11 +248,9 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 	}
 }
 
-// CollectUpstreamChunks 从上游收集所有流式 chunk，返回结构化数据
 func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, bearer string) (*CollectedResult, error) {
 	model, _ := payload["model"].(string)
 
-	// 为非流式路径设置 10 分钟总超时
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
@@ -314,11 +293,9 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 			}
 			delta, _ := choice["delta"].(map[string]interface{})
 			if delta != nil {
-				// 文本内容
 				if c, ok := delta["content"].(string); ok && c != "" {
 					result.ContentParts = append(result.ContentParts, c)
 				}
-				// 工具调用
 				if tcs, ok := delta["tool_calls"].([]interface{}); ok {
 					for _, tc := range tcs {
 						tcMap, _ := tc.(map[string]interface{})
@@ -350,13 +327,11 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 					}
 				}
 			}
-			// finish_reason
 			if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
 				result.FinishReason = fr
 			}
 		}
 
-		// usage
 		if u, ok := chunk["usage"].(map[string]interface{}); ok {
 			if pt, ok := u["prompt_tokens"].(float64); ok {
 				result.PromptTokens = int(pt)
@@ -373,7 +348,6 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 	return result, nil
 }
 
-// CollectedResult 从上游收集的完整响应数据
 type CollectedResult struct {
 	StatusCode       int
 	ErrorText        string
@@ -384,20 +358,17 @@ type CollectedResult struct {
 	CompletionTokens int
 }
 
-// ToolCall 表示 OpenAI 格式的工具调用
 type ToolCall struct {
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
 	Function FunctionCall `json:"function"`
 }
 
-// FunctionCall 表示工具调用的函数信息
 type FunctionCall struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
 
-// cleanChunkChoices 清理上游返回的非标准字段
 func cleanChunkChoices(chunk map[string]interface{}) {
 	choices, _ := chunk["choices"].([]interface{})
 	for _, ch := range choices {
@@ -409,27 +380,22 @@ func cleanChunkChoices(chunk map[string]interface{}) {
 		if delta == nil {
 			continue
 		}
-		// 只保留 delta 中的 role, content, tool_calls
 		for key := range delta {
 			if key != "role" && key != "content" && key != "tool_calls" {
 				delete(delta, key)
 			}
 		}
-		// 清理空的 tool_calls 数组
 		if tcs, ok := delta["tool_calls"].([]interface{}); ok && len(tcs) == 0 {
 			delete(delta, "tool_calls")
 		}
-		// 清理 choice 层级非标准字段（logprobs 等）
 		for key := range choice {
 			if key != "index" && key != "delta" && key != "finish_reason" {
 				delete(choice, key)
 			}
 		}
-		// 保留已知的 finish_reason，未知值替换为 stop
 		if fr, ok := choice["finish_reason"].(string); ok && fr != "" {
 			switch fr {
 			case "stop", "tool_calls", "length", "content_filter":
-				// 已知合法值，保留原样
 			default:
 				choice["finish_reason"] = "stop"
 			}
@@ -437,7 +403,6 @@ func cleanChunkChoices(chunk map[string]interface{}) {
 	}
 }
 
-// stripHTML 移除 HTML 标签，返回纯文本
 func stripHTML(s string) string {
 	return strings.TrimSpace(htmlTagRe.ReplaceAllString(s, ""))
 }
@@ -457,7 +422,6 @@ func getIntFromMap(m map[string]interface{}, key string) int {
 	return int(v)
 }
 
-// randomHex 生成指定长度的随机十六进制字符串
 func randomHex(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

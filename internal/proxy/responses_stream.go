@@ -50,6 +50,15 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 
 	flusher, canFlush := w.(http.Flusher)
 
+	// 写入错误跟踪：客户端断连后跳过后续写入和上游处理
+	var writeErr error
+	safeWrite := func(data string) {
+		if writeErr != nil {
+			return
+		}
+		writeErr = writeSSE(w, flusher, canFlush, data)
+	}
+
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
@@ -60,20 +69,20 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 		}
 		textStarted = false
 		fullText := textContent.String()
-		writeSSE(w, flusher, canFlush, responsesSSE("response.output_text.delta", map[string]interface{}{
+		safeWrite(responsesSSE("response.output_text.delta", map[string]interface{}{
 			"type": "response.output_text.delta", "item_id": itemID,
 			"output_index": textOutputIndex, "content_index": 0, "delta": "",
 		}))
-		writeSSE(w, flusher, canFlush, responsesSSE("response.output_text.done", map[string]interface{}{
+		safeWrite(responsesSSE("response.output_text.done", map[string]interface{}{
 			"type": "response.output_text.done", "item_id": itemID,
 			"output_index": textOutputIndex, "content_index": 0, "text": fullText,
 		}))
-		writeSSE(w, flusher, canFlush, responsesSSE("response.content_part.done", map[string]interface{}{
+		safeWrite(responsesSSE("response.content_part.done", map[string]interface{}{
 			"type": "response.content_part.done", "item_id": itemID,
 			"output_index": textOutputIndex, "content_index": 0,
 			"part": map[string]interface{}{"type": "output_text", "text": fullText, "annotations": []interface{}{}},
 		}))
-		writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.done", map[string]interface{}{
+		safeWrite(responsesSSE("response.output_item.done", map[string]interface{}{
 			"type": "response.output_item.done", "output_index": textOutputIndex,
 			"item": map[string]interface{}{"id": itemID, "type": "message", "role": "assistant",
 				"content": []interface{}{map[string]interface{}{"type": "output_text", "text": fullText, "annotations": []interface{}{}}}},
@@ -91,15 +100,15 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 			if toolCallsStarted[tcIdx] {
 				tcItemID := toolCallItemIDs[tcIdx]
 				tcOutputIdx := toolCallOutputIdx[tcIdx]
-				writeSSE(w, flusher, canFlush, responsesSSE("response.function_call_arguments.delta", map[string]interface{}{
+				safeWrite(responsesSSE("response.function_call_arguments.delta", map[string]interface{}{
 					"type": "response.function_call_arguments.delta", "item_id": tcItemID,
 					"output_index": tcOutputIdx, "call_id": tcItemID, "delta": "",
 				}))
-				writeSSE(w, flusher, canFlush, responsesSSE("response.function_call_arguments.done", map[string]interface{}{
+				safeWrite(responsesSSE("response.function_call_arguments.done", map[string]interface{}{
 					"type": "response.function_call_arguments.done", "item_id": tcItemID,
 					"output_index": tcOutputIdx, "call_id": tcItemID, "arguments": toolCallArgs[tcIdx],
 				}))
-				writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.done", map[string]interface{}{
+				safeWrite(responsesSSE("response.output_item.done", map[string]interface{}{
 					"type": "response.output_item.done", "output_index": tcOutputIdx,
 					"item": map[string]interface{}{"id": tcItemID, "type": "function_call", "call_id": tcItemID, "name": toolCallNames[tcIdx], "arguments": toolCallArgs[tcIdx]},
 				}))
@@ -109,7 +118,7 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 
 	// emitCompleted 发送 response.completed 事件
 	emitCompleted := func() {
-		writeSSE(w, flusher, canFlush, responsesSSE("response.completed", map[string]interface{}{
+		safeWrite(responsesSSE("response.completed", map[string]interface{}{
 			"type": "response.completed",
 			"response": map[string]interface{}{
 				"id": respID, "object": "response", "created_at": time.Now().Unix(),
@@ -120,11 +129,14 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 	}
 
 	for scanner.Scan() {
-		// 客户端断连时停止读取上游
+		// 客户端断连或写入失败时停止
 		select {
 		case <-ctx.Done():
 			return
 		default:
+		}
+		if writeErr != nil {
+			return
 		}
 
 		line := scanner.Text()
@@ -177,14 +189,14 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 			// 首次收到有效内容时发送开始事件
 			if !started {
 				started = true
-				writeSSE(w, flusher, canFlush, responsesSSE("response.created", map[string]interface{}{
+				safeWrite(responsesSSE("response.created", map[string]interface{}{
 					"type": "response.created",
 					"response": map[string]interface{}{
 						"id": respID, "object": "response", "created_at": time.Now().Unix(),
 						"model": model, "status": "in_progress", "output": []interface{}{},
 					},
 				}))
-				writeSSE(w, flusher, canFlush, responsesSSE("response.in_progress", map[string]interface{}{
+				safeWrite(responsesSSE("response.in_progress", map[string]interface{}{
 					"type": "response.in_progress",
 					"response": map[string]interface{}{
 						"id": respID, "object": "response", "created_at": time.Now().Unix(),
@@ -199,18 +211,18 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 					textStarted = true
 					textOutputIndex = nextOutputIndex
 					nextOutputIndex++
-					writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.added", map[string]interface{}{
+					safeWrite(responsesSSE("response.output_item.added", map[string]interface{}{
 						"type": "response.output_item.added", "output_index": textOutputIndex,
 						"item": map[string]interface{}{"id": itemID, "type": "message", "role": "assistant", "content": []interface{}{}},
 					}))
-					writeSSE(w, flusher, canFlush, responsesSSE("response.content_part.added", map[string]interface{}{
+					safeWrite(responsesSSE("response.content_part.added", map[string]interface{}{
 						"type": "response.content_part.added", "item_id": itemID,
 						"output_index": textOutputIndex, "content_index": 0,
 						"part": map[string]interface{}{"type": "output_text", "text": ""},
 					}))
 				}
 				textContent.WriteString(content)
-				writeSSE(w, flusher, canFlush, responsesSSE("response.output_text.delta", map[string]interface{}{
+				safeWrite(responsesSSE("response.output_text.delta", map[string]interface{}{
 					"type": "response.output_text.delta", "item_id": itemID,
 					"output_index": textOutputIndex, "content_index": 0, "delta": content,
 				}))
@@ -249,7 +261,7 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 								fnName, _ = fn["name"].(string)
 							}
 							toolCallNames[tcIdx] = fnName
-							writeSSE(w, flusher, canFlush, responsesSSE("response.output_item.added", map[string]interface{}{
+							safeWrite(responsesSSE("response.output_item.added", map[string]interface{}{
 								"type": "response.output_item.added", "output_index": tcOutputIdx,
 								"item": map[string]interface{}{"id": tcItemID, "type": "function_call", "call_id": tcItemID, "name": fnName},
 							}))
@@ -261,7 +273,7 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
 							if args, ok := fn["arguments"].(string); ok && args != "" {
 								toolCallArgs[tcIdx] += args
-								writeSSE(w, flusher, canFlush, responsesSSE("response.function_call_arguments.delta", map[string]interface{}{
+								safeWrite(responsesSSE("response.function_call_arguments.delta", map[string]interface{}{
 									"type": "response.function_call_arguments.delta", "item_id": tcItemID,
 									"output_index": tcOutputIdx, "call_id": tcItemID, "delta": args,
 								}))
@@ -295,6 +307,5 @@ func writeResponsesSSEError(w http.ResponseWriter, msg string) {
 		"error": map[string]interface{}{"message": msg},
 	})
 	fmt.Fprintf(w, "event: response.error\ndata: %s\n\n", string(errData))
-	// 发送 response.completed 以便客户端知道流已结束
 	fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n")
 }

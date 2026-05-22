@@ -9,6 +9,7 @@ import (
 
 	"codebuddy-proxy/internal/auth"
 	"codebuddy-proxy/internal/config"
+	"codebuddy-proxy/internal/version"
 
 	"github.com/gin-gonic/gin"
 )
@@ -226,7 +227,7 @@ func handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "ok",
 		"service": "codebuddy-proxy",
-		"version": "3.0.0",
+		"version": version.Version,
 	})
 }
 
@@ -234,7 +235,7 @@ func handleHealth(c *gin.Context) {
 func handleRoot(c *gin.Context) {
 	result := gin.H{
 		"service":  "CodeBuddy CN -> OpenAI API Proxy",
-		"version":  "3.0.0",
+		"version":  version.Version,
 		"endpoints": gin.H{
 			"chat":      "POST /v1/chat/completions",
 			"messages":  "POST /v1/messages (Anthropic)",
@@ -273,7 +274,7 @@ func handleAnthropicMessages(c *gin.Context) {
 		return
 	}
 
-	model := "deepseek-v3"
+	model := "auto-chat"
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
@@ -365,7 +366,7 @@ func handleResponses(c *gin.Context) {
 		return
 	}
 
-	model := "deepseek-v3"
+	model := "auto-chat"
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}

@@ -31,6 +31,7 @@ var (
 	reloginMu         sync.Mutex
 	reloginInProgress bool
 	reloginDone       chan struct{} // relogin 完成时关闭此 channel
+	fileLoadOnce      sync.Once    // 确保文件只加载一次
 )
 
 // tokenFilePath 返回 token 文件路径，优先使用 TOKEN_FILE_PATH 环境变量
@@ -105,9 +106,6 @@ func loadTokenFromFile() *TokenData {
 }
 
 // LoadToken 从内存或文件加载 token，过期时清除缓存和文件并触发自动登录
-//
-// 所有对 cachedToken 的读写和文件删除都在 tokenMu 锁内完成，
-// 防止其他 goroutine 在缓存清空和文件删除之间从文件加载已过期的 token。
 func LoadToken() *TokenData {
 	tokenMu.Lock()
 
@@ -138,19 +136,23 @@ func LoadToken() *TokenData {
 	}
 	tokenMu.Unlock()
 
-	// 内存缓存为空，尝试从文件加载
-	td := loadTokenFromFile()
-	if td == nil {
-		return nil
-	}
+	// 内存缓存为空，用 sync.Once 确保文件只加载一次
+	fileLoadOnce.Do(func() {
+		td := loadTokenFromFile()
+		if td == nil {
+			return
+		}
+		tokenMu.Lock()
+		if cachedToken == nil {
+			cachedToken = td
+		}
+		tokenMu.Unlock()
+	})
 
+	// SaveToken 可能在 Once 执行期间被调用，重新检查缓存
 	tokenMu.Lock()
-	if cachedToken == nil {
-		cachedToken = td
-	}
 	result := cachedToken
 	tokenMu.Unlock()
-
 	return result
 }
 
@@ -162,9 +164,6 @@ func triggerAutoRelogin() {
 		return
 	}
 	reloginInProgress = true
-	// 创建新的 reloginDone channel 并保存到局部变量
-	// 必须在锁内创建并赋值，在锁外用局部变量关闭，
-	// 避免 Unlock→close 之间新 relogin 覆盖 reloginDone 导致等待者丢失信号
 	ch := make(chan struct{})
 	reloginDone = ch
 	reloginMu.Unlock()
@@ -207,7 +206,6 @@ func SaveToken(td *TokenData) error {
 	tokenMu.Lock()
 	cachedToken = td
 	tokenMu.Unlock()
-	// 在锁外持久化和通知，避免死锁
 	saveTokenToFile(td)
 	return nil
 }
@@ -229,7 +227,6 @@ func GetBearerToken() string {
 	reloginMu.Unlock()
 
 	if !inProgress {
-		// 重登录可能刚完成，再试一次
 		td = LoadToken()
 		if td != nil {
 			if td.BearerToken != "" {
@@ -244,7 +241,6 @@ func GetBearerToken() string {
 	if ch != nil {
 		select {
 		case <-ch:
-			// 重登录完成，重新加载 token
 			td = LoadToken()
 			if td != nil {
 				if td.BearerToken != "" {
@@ -283,7 +279,6 @@ func ExtractUserIDFromJWT(token string) string {
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		return ""
 	}
-	// 优先级: email > preferred_username > sub
 	for _, key := range []string{"email", "preferred_username", "sub"} {
 		if v, ok := claims[key]; ok {
 			if s, ok := v.(string); ok && s != "" {
@@ -308,7 +303,6 @@ func splitJWT(token string) []string {
 }
 
 func base64urlDecode(s string) ([]byte, error) {
-	// 补齐 base64url padding
 	switch len(s) % 4 {
 	case 2:
 		s += "=="
