@@ -76,16 +76,16 @@ func (a *App) onReady() {
 
 	systray.AddSeparator()
 
-	a.authItem = systray.AddMenuItem("🔑 登录", "Start OAuth2 Device Flow")
+	a.authItem = systray.AddMenuItem("登录", "Start OAuth2 Device Flow")
 
-	logItem := systray.AddMenuItem("📋 查看日志", "Open log viewer in browser")
+	logItem := systray.AddMenuItem("查看日志", "Open log viewer in browser")
 	go func() {
 		for range logItem.ClickedCh {
 			auth.OpenBrowser(fmt.Sprintf("http://localhost:%d/_logs", config.Port))
 		}
 	}()
 
-	restartItem := systray.AddMenuItem("🔄 重启代理", "Restart HTTP server")
+	restartItem := systray.AddMenuItem("重启代理", "Restart HTTP server")
 	go func() {
 		for range restartItem.ClickedCh {
 			log.Println("Restarting HTTP server via tray menu...")
@@ -97,7 +97,7 @@ func (a *App) onReady() {
 
 	systray.AddSeparator()
 
-	a.autostartItem = systray.AddMenuItem("⏱ 开机自启", "Toggle autostart")
+	a.autostartItem = systray.AddMenuItem("开机自启", "Toggle autostart")
 	if IsAutoStartEnabled() {
 		a.autostartItem.Check()
 	}
@@ -123,7 +123,7 @@ func (a *App) onReady() {
 
 	systray.AddSeparator()
 
-	quitItem := systray.AddMenuItem("❌ 退出", "Quit CodeBuddy Proxy")
+	quitItem := systray.AddMenuItem("退出", "Quit CodeBuddy Proxy")
 	go func() {
 		for range quitItem.ClickedCh {
 			log.Println("Quitting via tray menu...")
@@ -218,20 +218,20 @@ func (a *App) applyStatus() {
 	if td != nil {
 		setIconNormal()
 		if a.authItem != nil {
-			a.authItem.SetTitle("✅ 已认证: " + td.UserID)
+			a.authItem.SetTitle("已认证: " + td.UserID)
 			a.authItem.SetTooltip("Authenticated as " + td.UserID)
 		}
 		if a.statusItem != nil {
-			a.statusItem.SetTitle("🟢 CodeBuddy Proxy — Running")
+			a.statusItem.SetTitle("CodeBuddy Proxy — Running")
 		}
 	} else {
 		setIconError()
 		if a.authItem != nil {
-			a.authItem.SetTitle("🔑 登录")
+			a.authItem.SetTitle("登录")
 			a.authItem.SetTooltip("Start OAuth2 Device Flow")
 		}
 		if a.statusItem != nil {
-			a.statusItem.SetTitle("🔴 CodeBuddy Proxy — Not Authenticated")
+			a.statusItem.SetTitle("CodeBuddy Proxy — Not Authenticated")
 		}
 	}
 }
