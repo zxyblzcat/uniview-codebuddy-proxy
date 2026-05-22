@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"codebuddy-proxy/internal/auth"
 	"codebuddy-proxy/internal/config"
@@ -22,6 +23,7 @@ func RegisterRoutes(r *gin.Engine) {
 	// 健康检查
 	r.GET("/health", handleHealth)
 	r.GET("/", optionalAuthMiddleware(), handleRoot)
+	r.HEAD("/", handleHeadV1)
 	r.HEAD("/v1", handleHeadV1)
 }
 
@@ -33,6 +35,7 @@ func registerAPIRoutes(g *gin.RouterGroup) {
 	g.POST("/chat/completions", handleChatCompletions)
 	g.GET("/models", handleModels)
 	g.POST("/messages", handleAnthropicMessages)
+	g.POST("/messages/count_tokens", handleCountTokens)
 	g.POST("/responses", handleResponses)
 }
 
@@ -257,6 +260,129 @@ func handleRoot(c *gin.Context) {
 // handleHeadV1 HEAD /v1 — 连通性检查
 func handleHeadV1(c *gin.Context) {
 	c.Status(http.StatusOK)
+}
+
+// handleCountTokens POST /v1/messages/count_tokens — Anthropic token counting 兼容端点
+// 上游不提供此 API，返回基于字符数的估算值
+func handleCountTokens(c *gin.Context) {
+	var body map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Invalid request body")
+		return
+	}
+
+	// 基于 rune 数估算 token 数（约 1.3 token/字符）
+	charCount := countContentChars(body)
+
+	// tools 定义也计入 token
+	if tools, ok := body["tools"].([]interface{}); ok {
+		for _, t := range tools {
+			if tool, ok := t.(map[string]interface{}); ok {
+				if name, ok := tool["name"].(string); ok {
+					charCount += utf8.RuneCountInString(name)
+				}
+				if desc, ok := tool["description"].(string); ok {
+					charCount += utf8.RuneCountInString(desc)
+				}
+			}
+		}
+	}
+
+	tokens := charCount * 13 / 10 // ~1.3 token/char
+	if tokens == 0 {
+		tokens = 1
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"input_tokens": tokens,
+	})
+}
+
+// countContentChars 统计 messages 和 system 中所有文本的 rune 数
+func countContentChars(body map[string]interface{}) int {
+	charCount := 0
+
+	if msgs, ok := body["messages"].([]interface{}); ok {
+		for _, m := range msgs {
+			if msg, ok := m.(map[string]interface{}); ok {
+				charCount += countMessageChars(msg)
+			}
+		}
+	}
+	if sys, ok := body["system"].(string); ok {
+		charCount += utf8.RuneCountInString(sys)
+	} else if sysBlocks, ok := body["system"].([]interface{}); ok {
+		for _, block := range sysBlocks {
+			charCount += countBlockChars(block)
+		}
+	}
+
+	return charCount
+}
+
+// countMessageChars 统计单条 message 中 content 的 rune 数
+func countMessageChars(msg map[string]interface{}) int {
+	n := 0
+	if content, ok := msg["content"].(string); ok {
+		n += utf8.RuneCountInString(content)
+	} else if contentArr, ok := msg["content"].([]interface{}); ok {
+		for _, block := range contentArr {
+			n += countBlockChars(block)
+		}
+	}
+	return n
+}
+
+// countBlockChars 统计内容块中文本的 rune 数，覆盖 text/tool_result/tool_use/thinking
+func countBlockChars(block interface{}) int {
+	b, ok := block.(map[string]interface{})
+	if !ok {
+		return 0
+	}
+	n := 0
+	switch b["type"] {
+	case "text":
+		if text, ok := b["text"].(string); ok {
+			n += utf8.RuneCountInString(text)
+		}
+	case "tool_result":
+		if content, ok := b["content"].(string); ok {
+			n += utf8.RuneCountInString(content)
+		} else if contentArr, ok := b["content"].([]interface{}); ok {
+			for _, sub := range contentArr {
+				n += countBlockChars(sub)
+			}
+		}
+	case "tool_use":
+		if name, ok := b["name"].(string); ok {
+			n += utf8.RuneCountInString(name)
+		}
+		if input, ok := b["input"].(map[string]interface{}); ok {
+			n += estimateMapChars(input)
+		}
+	case "thinking":
+		if text, ok := b["thinking"].(string); ok {
+			n += utf8.RuneCountInString(text)
+		}
+	default:
+		// 兜底：提取所有字符串值
+		if text, ok := b["text"].(string); ok {
+			n += utf8.RuneCountInString(text)
+		}
+	}
+	return n
+}
+
+// estimateMapChars 粗略估算 map 序列化后的字符数
+func estimateMapChars(m map[string]interface{}) int {
+	n := 0
+	for k, v := range m {
+		n += utf8.RuneCountInString(k)
+		if s, ok := v.(string); ok {
+			n += utf8.RuneCountInString(s)
+		}
+	}
+	return n
 }
 
 // handleAnthropicMessages POST /v1/messages — Anthropic Messages API 兼容端点
