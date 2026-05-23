@@ -3,6 +3,8 @@ docs/
 .env
 codebuddy-proxy
 codebuddy-proxy-*
+uniview-codebuddy-proxy
+uniview-codebuddy-proxy-*
 *.exe
 *.app
 *.syso
