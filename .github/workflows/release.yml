@@ -28,8 +28,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CodeBuddyProxy-macos-arm64
-          path: 'CodeBuddy Proxy.app'
+          name: UniviewCodeBuddyProxy-macos-arm64
+          path: 'UniviewCodeBuddyProxy.app'
 
   build-windows:
     runs-on: windows-latest
@@ -60,14 +60,14 @@ jobs:
           $VERSION = git describe --tags --always --dirty 2>$null; if (-not $VERSION) { $VERSION = "dev" }
           $COMMIT = git rev-parse --short HEAD 2>$null; if (-not $COMMIT) { $COMMIT = "none" }
           $DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-          $LDFLAGS = "-s -w -H=windowsgui -X codebuddy-proxy/internal/version.Version=$VERSION -X codebuddy-proxy/internal/version.Commit=$COMMIT -X codebuddy-proxy/internal/version.Date=$DATE"
-          go build -ldflags $LDFLAGS -o codebuddy-proxy.exe ./cmd/proxy
+          $LDFLAGS = "-s -w -H=windowsgui -X uniview-codebuddy-proxy/internal/version.Version=$VERSION -X uniview-codebuddy-proxy/internal/version.Commit=$COMMIT -X uniview-codebuddy-proxy/internal/version.Date=$DATE"
+          go build -ldflags $LDFLAGS -o uniview-codebuddy-proxy.exe ./cmd/proxy
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CodeBuddyProxy-windows-amd64
-          path: codebuddy-proxy.exe
+          name: UniviewCodeBuddyProxy-windows-amd64
+          path: uniview-codebuddy-proxy.exe
 
   build-linux:
     runs-on: ubuntu-latest
@@ -87,14 +87,14 @@ jobs:
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
           COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo none)
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          LDFLAGS="-s -w -X codebuddy-proxy/internal/version.Version=${VERSION} -X codebuddy-proxy/internal/version.Commit=${COMMIT} -X codebuddy-proxy/internal/version.Date=${DATE}"
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o codebuddy-proxy-linux-amd64 ./cmd/proxy
+          LDFLAGS="-s -w -X uniview-codebuddy-proxy/internal/version.Version=${VERSION} -X uniview-codebuddy-proxy/internal/version.Commit=${COMMIT} -X uniview-codebuddy-proxy/internal/version.Date=${DATE}"
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o uniview-codebuddy-proxy-linux-amd64 ./cmd/proxy
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CodeBuddyProxy-linux-amd64
-          path: codebuddy-proxy-linux-amd64
+          name: UniviewCodeBuddyProxy-linux-amd64
+          path: uniview-codebuddy-proxy-linux-amd64
 
   release:
     needs: [build-macos, build-windows, build-linux]
@@ -108,25 +108,25 @@ jobs:
       - name: Package artifacts
         run: |
           # macOS .app → zip
-          cd artifacts/CodeBuddyProxy-macos-arm64
-          zip -r ../../CodeBuddyProxy-macos-arm64.zip 'CodeBuddy Proxy.app'
+          cd artifacts/UniviewCodeBuddyProxy-macos-arm64
+          zip -r ../../UniviewCodeBuddyProxy-macos-arm64.zip 'UniviewCodeBuddyProxy.app'
           cd ../..
 
           # Windows .exe → zip
-          cd artifacts/CodeBuddyProxy-windows-amd64
-          zip ../../CodeBuddyProxy-windows-amd64.zip codebuddy-proxy.exe
+          cd artifacts/UniviewCodeBuddyProxy-windows-amd64
+          zip ../../UniviewCodeBuddyProxy-windows-amd64.zip uniview-codebuddy-proxy.exe
           cd ../..
 
           # Linux binary → tar.gz
-          cd artifacts/CodeBuddyProxy-linux-amd64
-          tar czf ../../CodeBuddyProxy-linux-amd64.tar.gz codebuddy-proxy-linux-amd64
+          cd artifacts/UniviewCodeBuddyProxy-linux-amd64
+          tar czf ../../UniviewCodeBuddyProxy-linux-amd64.tar.gz uniview-codebuddy-proxy-linux-amd64
           cd ../..
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            CodeBuddyProxy-macos-arm64.zip
-            CodeBuddyProxy-windows-amd64.zip
-            CodeBuddyProxy-linux-amd64.tar.gz
+            UniviewCodeBuddyProxy-macos-arm64.zip
+            UniviewCodeBuddyProxy-windows-amd64.zip
+            UniviewCodeBuddyProxy-linux-amd64.tar.gz
           generate_release_notes: true

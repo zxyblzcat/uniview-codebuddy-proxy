@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/config"
 
 	"github.com/gin-gonic/gin"
 )

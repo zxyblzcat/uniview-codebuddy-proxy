@@ -10,7 +10,7 @@ import (
 )
 
 const regKey = `Software\Microsoft\Windows\CurrentVersion\Run`
-const regValueName = "CodeBuddyProxy"
+const regValueName = "UniviewCodeBuddyProxy"
 
 // IsAutoStartEnabled returns true if the registry entry exists.
 func IsAutoStartEnabled() bool {

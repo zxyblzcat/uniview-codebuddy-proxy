@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"codebuddy-proxy/internal/auth"
-	"codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/auth"
+	"uniview-codebuddy-proxy/internal/config"
 )
 
 const upstreamIdleTimeout = 2 * time.Minute

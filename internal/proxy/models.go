@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"codebuddy-proxy/internal/auth"
-	"codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/auth"
+	"uniview-codebuddy-proxy/internal/config"
 )
 
 // Model 表示 OpenAI 格式的模型条目

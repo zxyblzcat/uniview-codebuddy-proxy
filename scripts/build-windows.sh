@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BINARY_NAME="codebuddy-proxy"
+BINARY_NAME="uniview-codebuddy-proxy"
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS="-s -w -H=windowsgui -X codebuddy-proxy/internal/version.Version=${VERSION} -X codebuddy-proxy/internal/version.Commit=${COMMIT} -X codebuddy-proxy/internal/version.Date=${DATE}"
+LDFLAGS="-s -w -H=windowsgui -X uniview-codebuddy-proxy/internal/version.Version=${VERSION} -X uniview-codebuddy-proxy/internal/version.Commit=${COMMIT} -X uniview-codebuddy-proxy/internal/version.Date=${DATE}"
 
 ARCH=${1:-amd64}
 case "$ARCH" in

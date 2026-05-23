@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"strings"
 
-	"codebuddy-proxy/internal/logbuf"
-	"codebuddy-proxy/internal/systrayapp"
-	"codebuddy-proxy/internal/version"
+	"uniview-codebuddy-proxy/internal/logbuf"
+	"uniview-codebuddy-proxy/internal/systrayapp"
+	"uniview-codebuddy-proxy/internal/version"
 )
 
 func main() {

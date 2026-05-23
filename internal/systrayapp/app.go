@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"codebuddy-proxy/internal/auth"
-	"codebuddy-proxy/internal/config"
-	"codebuddy-proxy/internal/logbuf"
-	"codebuddy-proxy/internal/proxy"
-	"codebuddy-proxy/internal/version"
+	"uniview-codebuddy-proxy/internal/auth"
+	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/logbuf"
+	"uniview-codebuddy-proxy/internal/proxy"
+	"uniview-codebuddy-proxy/internal/version"
 
 	"fyne.io/systray"
 	"github.com/gin-gonic/gin"

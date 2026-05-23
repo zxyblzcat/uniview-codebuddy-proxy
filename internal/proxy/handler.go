@@ -8,9 +8,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"codebuddy-proxy/internal/auth"
-	"codebuddy-proxy/internal/config"
-	"codebuddy-proxy/internal/version"
+	"uniview-codebuddy-proxy/internal/auth"
+	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/version"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,7 +45,7 @@ func apiAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.Header("WWW-Authenticate", "Bearer realm=\"codebuddy-proxy\"")
+			c.Header("WWW-Authenticate", "Bearer realm=\"uniview-codebuddy-proxy\"")
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},
 			})
@@ -229,7 +229,7 @@ func optionalAuthMiddleware() gin.HandlerFunc {
 func handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "ok",
-		"service": "codebuddy-proxy",
+		"service": "uniview-codebuddy-proxy",
 		"version": version.Version,
 	})
 }

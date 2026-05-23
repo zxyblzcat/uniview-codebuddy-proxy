@@ -1,4 +1,4 @@
-module codebuddy-proxy
+module uniview-codebuddy-proxy
 
 go 1.25.6
 

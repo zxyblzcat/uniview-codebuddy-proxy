@@ -1,8 +1,8 @@
-APP_NAME := codebuddy-proxy
+APP_NAME := uniview-codebuddy-proxy
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS := -s -w -X codebuddy-proxy/internal/version.Version=$(VERSION) -X codebuddy-proxy/internal/version.Commit=$(COMMIT) -X codebuddy-proxy/internal/version.Date=$(DATE)
+LDFLAGS := -s -w -X uniview-codebuddy-proxy/internal/version.Version=$(VERSION) -X uniview-codebuddy-proxy/internal/version.Commit=$(COMMIT) -X uniview-codebuddy-proxy/internal/version.Date=$(DATE)
 
 .PHONY: build build-all clean run build-mac-app build-mac-app-intel build-windows-gui build-windows-gui-arm64
 
@@ -31,7 +31,7 @@ build-windows-arm64:
 
 clean:
 	rm -f $(APP_NAME) $(APP_NAME)_$(VERSION)_darwin_arm64 $(APP_NAME)_$(VERSION)_darwin_amd64 $(APP_NAME)_$(VERSION)_linux_amd64 $(APP_NAME)_$(VERSION)_linux_arm64 $(APP_NAME)_$(VERSION)_windows_amd64.exe $(APP_NAME)_$(VERSION)_windows_arm64.exe $(APP_NAME).exe
-	rm -rf "CodeBuddy Proxy.app"
+	rm -rf "UniviewCodeBuddyProxy.app"
 
 run:
 	go run ./cmd/proxy

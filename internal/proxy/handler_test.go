@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/config"
 )
 
 // parseSSEEvents 从 httptest ResponseRecorder 中解析所有 SSE 事件

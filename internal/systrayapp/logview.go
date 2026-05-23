@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"codebuddy-proxy/internal/logbuf"
+	"uniview-codebuddy-proxy/internal/logbuf"
 
 	"github.com/gin-gonic/gin"
 )
