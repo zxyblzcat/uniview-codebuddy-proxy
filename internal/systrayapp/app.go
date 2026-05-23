@@ -6,7 +6,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -338,13 +341,98 @@ func (a *App) startServerE() error {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("listen: %w", err)
+	if err := a.listenWithRetry(srv); err != nil {
+		return err
 	}
 
 	log.Printf("HTTP server listening on :%d", config.Port)
 	a.server = srv
 	a.running = true
+	return nil
+}
+
+// listenWithRetry starts the HTTP server and retries once if the port is in use.
+func (a *App) listenWithRetry(srv *http.Server) error {
+	listenErr := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			listenErr <- err
+			return
+		}
+		close(listenErr)
+	}()
+
+	select {
+	case err := <-listenErr:
+		if isAddrInUse(err) {
+			log.Printf("Port %d is in use, killing occupying process...", config.Port)
+			if killErr := killProcessOnPort(config.Port); killErr != nil {
+				log.Printf("Failed to kill process on port %d: %v", config.Port, killErr)
+				return fmt.Errorf("listen: %w", err)
+			}
+			log.Printf("Port %d freed, retrying...", config.Port)
+
+			// Retry listening
+			listenErr2 := make(chan error, 1)
+			go func() {
+				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					listenErr2 <- err
+					return
+				}
+				close(listenErr2)
+			}()
+
+			select {
+			case err2 := <-listenErr2:
+				return fmt.Errorf("listen after kill: %w", err2)
+			case <-time.After(500 * time.Millisecond):
+				return nil
+			}
+		}
+		return fmt.Errorf("listen: %w", err)
+	case <-time.After(500 * time.Millisecond):
+		return nil
+	}
+}
+
+// isAddrInUse checks if the error is "address already in use".
+func isAddrInUse(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "address already in use")
+}
+
+// killProcessOnPort kills the process occupying the given port using lsof.
+func killProcessOnPort(port int) error {
+	cmd := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-ti", fmt.Sprintf(":%d", port))
+	out, err := cmd.Output()
+	if err != nil {
+		// lsof exits non-zero when nothing is listening — that's fine
+		return nil
+	}
+
+	pidStr := strings.TrimSpace(string(out))
+	if pidStr == "" {
+		return nil
+	}
+
+	for _, pidStr := range strings.Split(pidStr, "\n") {
+		pid, err := strconv.Atoi(strings.TrimSpace(pidStr))
+		if err != nil {
+			continue
+		}
+
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			continue
+		}
+
+		log.Printf("Killing process %d on port %d...", pid, port)
+		if err := proc.Signal(syscall.SIGTERM); err != nil {
+			return fmt.Errorf("failed to kill PID %d: %w", pid, err)
+		}
+	}
+
+	// Wait for the process to release the port
+	time.Sleep(300 * time.Millisecond)
 	return nil
 }
 
