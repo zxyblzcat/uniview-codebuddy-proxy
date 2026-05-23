@@ -161,6 +161,7 @@ func convertChatToResponsesResult(result *CollectedResult, model string, request
 			"input_tokens":  result.PromptTokens,
 			"output_tokens": result.CompletionTokens,
 			"total_tokens":  result.PromptTokens + result.CompletionTokens,
+			"cached_tokens": result.CachedTokens,
 		},
 	})
 }

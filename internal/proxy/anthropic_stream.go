@@ -21,6 +21,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 	toolBlocksStarted := map[int]bool{}
 	inputTokens := 0
 	outputTokens := 0
+	cachedTokens := 0
 	started := false
 	finished := false
 
@@ -106,7 +107,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 				safeWrite(anthropicSSE("message_delta", map[string]interface{}{
 					"type":  "message_delta",
 					"delta": map[string]interface{}{"stop_reason": "end_turn", "stop_sequence": nil},
-					"usage": map[string]interface{}{"output_tokens": outputTokens},
+					"usage": map[string]interface{}{"output_tokens": outputTokens, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
 				}))
 				safeWrite(anthropicSSE("message_stop", map[string]interface{}{
 					"type": "message_stop",
@@ -127,6 +128,11 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			}
 			if ct, ok := u["completion_tokens"].(float64); ok && int(ct) > 0 {
 				outputTokens = int(ct)
+			}
+			if details, ok := u["prompt_tokens_details"].(map[string]interface{}); ok {
+				if ct, ok := details["cached_tokens"].(float64); ok && int(ct) > 0 {
+					cachedTokens = int(ct)
+				}
 			}
 		}
 
@@ -155,7 +161,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 						"model":         model,
 						"stop_reason":   nil,
 						"stop_sequence": nil,
-						"usage":         map[string]interface{}{"input_tokens": inputTokens, "output_tokens": 0},
+						"usage":         map[string]interface{}{"input_tokens": inputTokens, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
 					},
 				}))
 			}
@@ -253,7 +259,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 				safeWrite(anthropicSSE("message_delta", map[string]interface{}{
 					"type":  "message_delta",
 					"delta": map[string]interface{}{"stop_reason": finishReasonToStopReason(fr), "stop_sequence": nil},
-					"usage": map[string]interface{}{"output_tokens": outputTokens},
+					"usage": map[string]interface{}{"output_tokens": outputTokens, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
 				}))
 				safeWrite(anthropicSSE("message_stop", map[string]interface{}{
 					"type": "message_stop",

@@ -326,8 +326,10 @@ func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, c *
 		"stop_reason":   finishReasonToStopReason(result.FinishReason),
 		"stop_sequence": nil,
 		"usage": map[string]interface{}{
-			"input_tokens":  result.PromptTokens,
-			"output_tokens": result.CompletionTokens,
+			"input_tokens":                result.PromptTokens,
+			"output_tokens":               result.CompletionTokens,
+			"cache_creation_input_tokens": 0,
+			"cache_read_input_tokens":     result.CachedTokens,
 		},
 	})
 }
