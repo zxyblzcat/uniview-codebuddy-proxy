@@ -85,6 +85,41 @@ func convertAnthropicMessagesToOpenai(system interface{}, messages []interface{}
 						if t, ok := b["text"].(string); ok {
 							textParts = append(textParts, t)
 						}
+					case "image":
+						// 转换 Anthropic image block 为 OpenAI image_url 格式
+						source, _ := b["source"].(map[string]interface{})
+						if source != nil {
+							url := ""
+							mediaType, _ := source["media_type"].(string)
+							switch source["type"] {
+							case "base64":
+								if data, ok := source["data"].(string); ok {
+									url = fmt.Sprintf("data:%s;base64,%s", mediaType, data)
+								}
+							case "url":
+								url, _ = source["url"].(string)
+							}
+							if url != "" {
+								if len(textParts) > 0 {
+									openaiMessages = append(openaiMessages, map[string]interface{}{
+										"role":    "user",
+										"content": strings.Join(textParts, ""),
+									})
+									textParts = nil
+								}
+								openaiMessages = append(openaiMessages, map[string]interface{}{
+									"role": "user",
+									"content": []interface{}{
+										map[string]interface{}{
+											"type": "image_url",
+											"image_url": map[string]interface{}{
+												"url": url,
+											},
+										},
+									},
+								})
+							}
+						}
 					case "tool_result":
 						// tool_result 转换为 OpenAI 的 tool 角色消息
 						toolContent := ""
@@ -187,13 +222,20 @@ func convertToolsAnthropicToOpenai(tools []interface{}) []interface{} {
 		if !ok {
 			continue
 		}
+		name, _ := t["name"].(string)
+		if name == "" {
+			continue
+		}
+		fn := map[string]interface{}{"name": name}
+		if desc, ok := t["description"].(string); ok {
+			fn["description"] = desc
+		}
+		if schema, ok := t["input_schema"]; ok {
+			fn["parameters"] = schema
+		}
 		openaiTools = append(openaiTools, map[string]interface{}{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        t["name"],
-				"description": t["description"],
-				"parameters":  t["input_schema"],
-			},
+			"type":     "function",
+			"function": fn,
 		})
 	}
 	return openaiTools

@@ -46,10 +46,12 @@ func SetAutoStart(enabled bool) error {
 
 	k, err := registry.OpenKey(registry.CURRENT_USER, regKey, registry.SET_VALUE)
 	if err != nil {
-		return nil
+		return fmt.Errorf("cannot open registry key for removal: %w", err)
 	}
 	defer k.Close()
 
-	_ = k.DeleteValue(regValueName)
+	if err := k.DeleteValue(regValueName); err != nil {
+		return fmt.Errorf("cannot delete registry value: %w", err)
+	}
 	return nil
 }

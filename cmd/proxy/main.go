@@ -51,7 +51,9 @@ func launchMainApp() {
 		// Fallback: just run without --login-item
 		log.Println("--login-item: could not find main .app bundle, launching self without flag")
 		cmd := exec.Command(exePath)
-		cmd.Start()
+		if err := cmd.Start(); err != nil {
+			log.Fatalf("failed to launch self: %v", err)
+		}
 		return
 	}
 
@@ -74,17 +76,16 @@ func findMainAppBundle(exePath string) string {
 	for i := 0; i < 10; i++ {
 		if filepath.Ext(dir) == ".app" {
 			// This is the helper .app inside LoginItems — keep going up
-			parent := filepath.Dir(dir)
-			// Walk up further to find the main .app
+			cur := filepath.Dir(dir)
 			for j := 0; j < 5; j++ {
-				if filepath.Ext(parent) == ".app" && !strings.Contains(parent, "Helper") {
-					return parent
+				if filepath.Ext(cur) == ".app" && !strings.Contains(cur, "Helper") {
+					return cur
 				}
-				parent = filepath.Dir(parent)
-				if parent == dir {
+				parent := filepath.Dir(cur)
+				if parent == cur {
 					break
 				}
-				dir = parent
+				cur = parent
 			}
 			return ""
 		}

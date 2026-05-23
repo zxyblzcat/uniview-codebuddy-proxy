@@ -31,7 +31,7 @@ func RegisterRoutes(r *gin.Engine) {
 // registerAPIRoutes 注册 API 路由组
 func registerAPIRoutes(g *gin.RouterGroup) {
 	if config.APIPassword != "" {
-		g.Use(apiAuthMiddleware())
+		g.Use(auth.APIPasswordMiddleware())
 	}
 	g.POST("/chat/completions", handleChatCompletions)
 	g.GET("/models", handleModels)
@@ -40,32 +40,35 @@ func registerAPIRoutes(g *gin.RouterGroup) {
 	g.POST("/responses", handleResponses)
 }
 
-// apiAuthMiddleware 验证 API_PASSWORD
-func apiAuthMiddleware() gin.HandlerFunc {
+// optionalAuthMiddleware 当 API_PASSWORD 已设置时要求认证，否则放行
+// 用于 / 等需要保护但不属于 /v1/* 路由组的端点
+func optionalAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.Header("WWW-Authenticate", "Bearer realm=\"uniview-codebuddy-proxy\"")
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},
-			})
-			c.Abort()
+		if config.APIPassword == "" {
+			c.Next()
 			return
 		}
-
-		// 支持 Bearer <password> 格式
+		authHeader := c.GetHeader("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIPassword)) == 1 {
+				c.Set("authenticated", true)
 				c.Next()
 				return
 			}
 		}
+		// 未认证但密码已设置：放行但标记，handler 可据此过滤敏感信息
+		c.Set("authenticated", false)
+		c.Next()
+	}
+}
 
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": gin.H{"message": "Invalid API password", "type": "authentication_error"},
-		})
-		c.Abort()
+// ensureMinMessages 确保 payload 中至少有 2 条消息，不足则在前面添加系统消息
+func ensureMinMessages(payload map[string]interface{}) {
+	messages, _ := payload["messages"].([]interface{})
+	if len(messages) < 2 {
+		sysMsg := map[string]interface{}{"role": "system", "content": "You are a helpful assistant."}
+		payload["messages"] = append([]interface{}{sysMsg}, messages...)
 	}
 }
 
@@ -110,11 +113,7 @@ func handleChatCompletions(c *gin.Context) {
 	}
 
 	// 确保至少 2 条消息
-	messages, _ := payload["messages"].([]interface{})
-	if len(messages) < 2 {
-		sysMsg := map[string]interface{}{"role": "system", "content": "You are a helpful assistant."}
-		payload["messages"] = append([]interface{}{sysMsg}, messages...)
-	}
+	ensureMinMessages(payload)
 
 	// 探活请求检测
 	if maxTokens, ok := body["max_tokens"].(float64); ok && maxTokens == 1 && isStream {
@@ -202,29 +201,6 @@ func handleModels(c *gin.Context) {
 	})
 }
 
-// optionalAuthMiddleware 当 API_PASSWORD 已设置时要求认证，否则放行
-// 用于 / 等需要保护但不属于 /v1/* 路由组的端点
-func optionalAuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if config.APIPassword == "" {
-			c.Next()
-			return
-		}
-		authHeader := c.GetHeader("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-			if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIPassword)) == 1 {
-				c.Set("authenticated", true)
-				c.Next()
-				return
-			}
-		}
-		// 未认证但密码已设置：放行但标记，handler 可据此过滤敏感信息
-		c.Set("authenticated", false)
-		c.Next()
-	}
-}
-
 // handleHealth GET /health
 func handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -237,8 +213,8 @@ func handleHealth(c *gin.Context) {
 // handleRoot GET /
 func handleRoot(c *gin.Context) {
 	result := gin.H{
-		"service":  "CodeBuddy CN -> OpenAI API Proxy",
-		"version":  version.Version,
+		"service": "CodeBuddy CN -> OpenAI API Proxy",
+		"version": version.Version,
 		"endpoints": gin.H{
 			"chat":      "POST /v1/chat/completions",
 			"messages":  "POST /v1/messages (Anthropic)",
@@ -248,10 +224,12 @@ func handleRoot(c *gin.Context) {
 	}
 
 	// 仅在已认证时返回敏感信息
-	if authed, _ := c.Get("authenticated"); authed == true {
-		result["upstream"] = config.ChatURL
-		result["usage"] = gin.H{
-			"base_url": fmt.Sprintf("http://localhost:%d/v1", config.Port),
+	if authed, ok := c.Get("authenticated"); ok {
+		if isAuthed, _ := authed.(bool); isAuthed {
+			result["upstream"] = config.ChatURL
+			result["usage"] = gin.H{
+				"base_url": fmt.Sprintf("http://localhost:%d/v1", config.Port),
+			}
 		}
 	}
 
@@ -400,7 +378,7 @@ func handleAnthropicMessages(c *gin.Context) {
 		return
 	}
 
-	model := "auto-chat"
+	model := "deepseek-v3"
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
@@ -436,11 +414,7 @@ func handleAnthropicMessages(c *gin.Context) {
 	}
 
 	// 确保至少 2 条消息
-	msgs, _ := payload["messages"].([]interface{})
-	if len(msgs) < 2 {
-		sysMsg := map[string]interface{}{"role": "system", "content": "You are a helpful assistant."}
-		payload["messages"] = append([]interface{}{sysMsg}, msgs...)
-	}
+	ensureMinMessages(payload)
 
 	// 探活请求检测
 	if maxTokens == 1 && isStream {
@@ -492,7 +466,7 @@ func handleResponses(c *gin.Context) {
 		return
 	}
 
-	model := "auto-chat"
+	model := "deepseek-v3"
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
@@ -524,11 +498,7 @@ func handleResponses(c *gin.Context) {
 	}
 
 	// 确保至少 2 条消息
-	msgs, _ := payload["messages"].([]interface{})
-	if len(msgs) < 2 {
-		sysMsg := map[string]interface{}{"role": "system", "content": "You are a helpful assistant."}
-		payload["messages"] = append([]interface{}{sysMsg}, msgs...)
-	}
+	ensureMinMessages(payload)
 
 	requestID := "resp_" + randomHex(24)
 

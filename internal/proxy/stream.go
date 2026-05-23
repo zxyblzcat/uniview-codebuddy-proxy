@@ -56,7 +56,6 @@ func newIdleTimeoutReader(r io.ReadCloser, idle time.Duration) *idleTimeoutReade
 					}
 				}
 				timer.Reset(idle)
-				// 先写数据再处理错误：Read 可同时返回 n>0 和 io.EOF
 				if res.n > 0 {
 					if _, err := pw.Write(buf[:res.n]); err != nil {
 						return
@@ -67,7 +66,10 @@ func newIdleTimeoutReader(r io.ReadCloser, idle time.Duration) *idleTimeoutReade
 					return
 				}
 			case <-timer.C:
+				// 关闭 pipe writer 让读取 goroutine 的后续 r.Read 返回错误
 				pw.CloseWithError(fmt.Errorf("upstream stream idle for %v", idle))
+				// 排空 done channel 防止读取 goroutine 泄漏
+				<-done
 				return
 			}
 		}
@@ -123,7 +125,7 @@ func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, mode
 	}
 
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 限制最多读取 1MB
 		resp.Body.Close()
 		errText := stripHTML(string(body))
 		if len(errText) > 300 {
@@ -342,7 +344,10 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		log.Printf("SSE scan error: %v", err)
+		log.Printf("SSE scan error in CollectUpstreamChunks: %v", err)
+		// 如果有部分数据但扫描出错，标记为截断响应
+		result.StatusCode = 502
+		result.ErrorText = fmt.Sprintf("upstream stream error: %v", err)
 	}
 
 	return result, nil
@@ -425,7 +430,12 @@ func getIntFromMap(m map[string]interface{}, key string) int {
 func randomHex(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+		// 回退到时间戳+计数器，避免整个服务器 panic
+		log.Printf("Warning: crypto/rand.Read failed: %v", err)
+		for i := range b {
+			b[i] = byte(time.Now().UnixNano() + int64(i))
+		}
+		return hex.EncodeToString(b)
 	}
 	return hex.EncodeToString(b)
 }
