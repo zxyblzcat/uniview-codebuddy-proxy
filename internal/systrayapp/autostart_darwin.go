@@ -7,17 +7,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
-const serviceID = "com.codebuddy.proxy.helper"
-
-// IsAutoStartEnabled returns true if SMLoginItem is registered.
+// IsAutoStartEnabled returns true if the .app is in the login items list.
 func IsAutoStartEnabled() bool {
-	out, err := exec.Command("launchctl", "list", serviceID).CombinedOutput()
+	out, err := exec.Command("osascript", "-e",
+		`tell application "System Events" to get the path of every login item`).Output()
 	if err != nil {
 		return false
 	}
-	return len(out) > 0
+	exePath, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	exePath, _ = filepath.EvalSymlinks(exePath)
+	appPath := findAppBundle(exePath)
+	if appPath == "" {
+		return false
+	}
+	return strings.Contains(string(out), appPath)
 }
 
 // SetAutoStart enables or disables the SMLoginItem login item.
@@ -34,12 +43,18 @@ func SetAutoStart(enabled bool) error {
 		return fmt.Errorf("not running from a .app bundle; cannot set login item")
 	}
 
-	script := fmt.Sprintf(`tell application "System Events" to %s login item %q`, func() string {
-		if enabled {
-			return "add"
-		}
-		return "delete"
-	}(), filepath.Base(appPath))
+	var script string
+	if enabled {
+		script = fmt.Sprintf(
+			`tell application "System Events" to make new login item with properties {path:%q, hidden:false}`,
+			appPath,
+		)
+	} else {
+		script = fmt.Sprintf(
+			`tell application "System Events" to delete (every login item whose path is %q)`,
+			appPath,
+		)
+	}
 
 	cmd := exec.Command("osascript", "-e", script)
 	if out, err := cmd.CombinedOutput(); err != nil {
