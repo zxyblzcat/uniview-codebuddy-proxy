@@ -28,6 +28,7 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 	toolCallArgs := map[int]string{}
 	inputTokens := 0
 	outputTokens := 0
+	cachedTokens := 0
 	var textContent strings.Builder
 
 	resp, err := doUpstreamRequest(ctx, payload, model, bearer)
@@ -123,7 +124,7 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 			"response": map[string]interface{}{
 				"id": respID, "object": "response", "created_at": time.Now().Unix(),
 				"model": model, "status": "completed", "output": []interface{}{},
-				"usage": map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens, "total_tokens": inputTokens + outputTokens},
+				"usage": map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens, "total_tokens": inputTokens + outputTokens, "cached_tokens": cachedTokens},
 			},
 		}))
 	}
@@ -171,6 +172,11 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 			}
 			if ct, ok := u["completion_tokens"].(float64); ok && int(ct) > 0 {
 				outputTokens = int(ct)
+			}
+			if details, ok := u["prompt_tokens_details"].(map[string]interface{}); ok {
+				if ct, ok := details["cached_tokens"].(float64); ok && int(ct) > 0 {
+					cachedTokens = int(ct)
+				}
 			}
 		}
 

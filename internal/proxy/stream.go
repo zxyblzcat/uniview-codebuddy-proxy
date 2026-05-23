@@ -339,6 +339,11 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 			if ct, ok := u["completion_tokens"].(float64); ok {
 				result.CompletionTokens = int(ct)
 			}
+			if details, ok := u["prompt_tokens_details"].(map[string]interface{}); ok {
+				if ct, ok := details["cached_tokens"].(float64); ok && int(ct) > 0 {
+					result.CachedTokens = int(ct)
+				}
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -356,6 +361,7 @@ type CollectedResult struct {
 	FinishReason     string
 	PromptTokens     int
 	CompletionTokens int
+	CachedTokens     int
 }
 
 type ToolCall struct {
