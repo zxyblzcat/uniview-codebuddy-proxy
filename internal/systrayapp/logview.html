@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeBuddy Proxy — Logs</title>
+<style>
+body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; margin: 0; padding: 1rem; font-size: 13px; }
+h1 { font-size: 1rem; color: #569cd6; margin: 0 0 0.5rem; }
+pre { white-space: pre-wrap; word-break: break-all; margin: 0; }
+.refresh-bar { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.8rem; color: #808080; }
+.refresh-bar a { color: #569cd6; text-decoration: none; }
+.refresh-bar a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="refresh-bar">
+<span>Auto-refresh every 3s</span>
+<a href="/_logs">Refresh now</a>
+</div>
+<h1>CodeBuddy Proxy Logs</h1>
+<hr>
+<pre>{{.Logs}}</pre>
+<script>setTimeout(function(){location.reload();}, 3000);</script>
+</body>
+</html>

@@ -1,9 +1,10 @@
 version: 2
 
 builds:
-  - main: ./cmd/proxy
+  - id: codebuddy-proxy
+    main: ./cmd/proxy
     env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     goos:
       - linux
       - darwin
@@ -13,10 +14,15 @@ builds:
       - arm64
     ldflags:
       - -s -w -X codebuddy-proxy/internal/version.Version={{.Version}} -X codebuddy-proxy/internal/version.Commit={{.Commit}} -X codebuddy-proxy/internal/version.Date={{.Date}}
+    overrides:
+      - goos: windows
+        ldflags:
+          - -s -w -H=windowsgui -X codebuddy-proxy/internal/version.Version={{.Version}} -X codebuddy-proxy/internal/version.Commit={{.Commit}} -X codebuddy-proxy/internal/version.Date={{.Date}}
     binary: codebuddy-proxy
 
 archives:
-  - format: tar.gz
+  - id: default
+    format: tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_

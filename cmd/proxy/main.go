@@ -1,132 +1,107 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"log"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 
-	"codebuddy-proxy/internal/auth"
-	"codebuddy-proxy/internal/config"
-	"codebuddy-proxy/internal/proxy"
+	"codebuddy-proxy/internal/logbuf"
+	"codebuddy-proxy/internal/systrayapp"
 	"codebuddy-proxy/internal/version"
-
-	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.New()
-	r.Use(requestLogger(), gin.Recovery(), maxBodySize(10<<20))
+	// Handle --login-item helper mode (macOS SMLoginItem)
+	if len(os.Args) > 1 && os.Args[1] == "--login-item" {
+		launchMainApp()
+		return
+	}
 
-	// 注册路由
-	auth.RegisterRoutes(r)
-	proxy.RegisterRoutes(r)
+	// Setup log output: ring buffer + file
+	logFilePath := logFilePath()
+	mw := logbuf.NewMultiWriter(1000, logFilePath)
+	log.SetOutput(mw)
 
-	// 启动信息
-	addr := config.ListenAddr()
-	fmt.Println()
-	fmt.Println("==================================================")
-	fmt.Printf("  CodeBuddy CN -> OpenAI API Proxy %s\n", version.Version)
-	fmt.Printf("  Commit: %s | Built: %s\n", version.Commit, version.Date)
-	fmt.Printf("  URL: http://localhost:%d\n", config.Port)
-	fmt.Printf("  Auth: http://localhost:%d/auth/start\n", config.Port)
-	fmt.Println("==================================================")
-	fmt.Println()
+	// Print startup info (goes to ring buffer + file)
+	log.Println("==================================================")
+	log.Printf("  CodeBuddy CN -> OpenAI API Proxy %s", version.Version)
+	log.Printf("  Commit: %s | Built: %s", version.Commit, version.Date)
+	log.Println("==================================================")
 
-	if auth.LoadToken() != nil {
-		log.Println("Token loaded from cache")
+	app := systrayapp.New(mw)
+	app.Run()
+	// onExit in app.go handles logWriter.Close()
+}
+
+// launchMainApp is called in --login-item mode to start the main application.
+// It finds the main .app bundle and launches it, then exits.
+func launchMainApp() {
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("cannot determine executable path: %v", err)
+	}
+	exePath, _ = filepath.EvalSymlinks(exePath)
+
+	// Find the main .app bundle (the helper is inside Contents/Library/LoginItems/)
+	appPath := findMainAppBundle(exePath)
+	if appPath == "" {
+		// Fallback: just run without --login-item
+		log.Println("--login-item: could not find main .app bundle, launching self without flag")
+		cmd := exec.Command(exePath)
+		cmd.Start()
+		return
+	}
+
+	// Open the main .app bundle
+	var cmd *exec.Cmd
+	if runtime.GOOS == "darwin" {
+		cmd = exec.Command("open", appPath)
 	} else {
-		log.Println("No token. Fetching CodeBuddy login URL...")
-		authURL, authState, err := auth.FetchAuthURL()
-		if err != nil {
-			log.Printf("Failed to get auth URL: %v", err)
-			log.Printf("Please visit http://localhost:%d/auth/start manually", config.Port)
-		} else {
-			log.Printf("Auth state: %s", authState)
-			auth.OpenBrowser(authURL)
-		}
+		cmd = exec.Command(appPath)
+	}
 
-		// 启动后台轮询，等待用户完成登录
-		if authState != "" {
-			go func() {
-				for i := 0; i < 60; i++ {
-					result := auth.PollToken(authState)
-					if result.Status == "success" {
-						log.Printf("Login success! User: %s", result.UserID)
-						return
-					}
-					if result.Status == "error" {
-						log.Printf("Auth poll error: %s", result.Message)
-						return
-					}
-					time.Sleep(3 * time.Second)
+	if err := cmd.Start(); err != nil {
+		log.Fatalf("failed to launch main app: %v", err)
+	}
+}
+
+// findMainAppBundle walks up from the helper binary to find the parent .app bundle.
+func findMainAppBundle(exePath string) string {
+	dir := filepath.Dir(exePath)
+	for i := 0; i < 10; i++ {
+		if filepath.Ext(dir) == ".app" {
+			// This is the helper .app inside LoginItems — keep going up
+			parent := filepath.Dir(dir)
+			// Walk up further to find the main .app
+			for j := 0; j < 5; j++ {
+				if filepath.Ext(parent) == ".app" && !strings.Contains(parent, "Helper") {
+					return parent
 				}
-				log.Println("Auth poll timed out after 3 minutes")
-			}()
+				parent = filepath.Dir(parent)
+				if parent == dir {
+					break
+				}
+				dir = parent
+			}
+			return ""
 		}
-	}
-
-	// 启动 HTTP 服务
-	srv := &http.Server{
-		Addr:         addr,
-		Handler:      r,
-		ReadTimeout:  30 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
 		}
-	}()
-
-	// 等待信号退出
-	fmt.Println("按 Ctrl+C 关闭代理...")
-	waitExit()
-
-	// 优雅关闭 HTTP 服务
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer shutdownCancel()
-	_ = srv.Shutdown(shutdownCtx)
-	log.Println("代理已停止")
-	os.Exit(0)
+		dir = parent
+	}
+	return ""
 }
 
-// waitExit 监听系统信号，触发时关闭程序
-func waitExit() {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	sig := <-sigCh
-	fmt.Printf("\n收到信号 %v，正在关闭代理...\n", sig)
-}
-
-// requestLogger 按状态码分级输出请求日志：4xx/5xx 始终打印，2xx 仅打印慢请求
-func requestLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		c.Next()
-		elapsed := time.Since(start).Truncate(time.Millisecond)
-		status := c.Writer.Status()
-		path := c.Request.URL.Path
-		if q := c.Request.URL.RawQuery; q != "" {
-			path += "?" + q
-		}
-		if status >= 400 || elapsed >= 20*time.Second {
-			log.Printf("[GIN] %v | %d | %13v | %15s | %6d | %-7s %s",
-				start.Format("2006/01/02 - 15:04:05"), status, elapsed, c.ClientIP(), c.Writer.Size(), c.Request.Method, path)
-		}
+// logFilePath returns the path for the log file.
+func logFilePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
 	}
-}
-
-// maxBodySize 限制请求体大小（防止 OOM 攻击）
-func maxBodySize(maxBytes int) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, int64(maxBytes))
-		c.Next()
-	}
+	return filepath.Join(home, ".codebuddy-proxy", "proxy.log")
 }
