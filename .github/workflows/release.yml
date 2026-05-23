@@ -107,9 +107,14 @@ jobs:
 
       - name: Package artifacts
         run: |
-          # macOS .app → zip
+          # macOS: reassemble .app bundle (upload-artifact strips the top-level directory name)
           cd artifacts/UniviewCodeBuddyProxy-macos-arm64
-          zip -r ../../UniviewCodeBuddyProxy-macos-arm64.zip 'UniviewCodeBuddyProxy.app'
+          if [ ! -d "UniviewCodeBuddyProxy.app" ]; then
+            mkdir UniviewCodeBuddyProxy.app
+            shopt -s dotglob
+            mv * UniviewCodeBuddyProxy.app/ 2>/dev/null || true
+          fi
+          zip -r ../../UniviewCodeBuddyProxy-macos-arm64.zip UniviewCodeBuddyProxy.app
           cd ../..
 
           # Windows .exe → zip
