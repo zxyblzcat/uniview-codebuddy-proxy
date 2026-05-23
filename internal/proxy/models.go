@@ -41,7 +41,8 @@ var (
 	modelsMu      sync.RWMutex
 )
 
-const modelsCacheTTL = 300 // 5 分钟缓存
+const modelsCacheTTL = 300     // 5 分钟缓存
+const modelsCacheTTLShort = 30 // 上游不可用时 30 秒缓存
 
 // inferOwnedBy 根据模型名前缀推断 owned_by
 func inferOwnedBy(name string) string {
@@ -101,7 +102,7 @@ func FetchModels() []Model {
 	if err != nil {
 		log.Printf("create config request error: %v", err)
 		modelsCache = result
-		modelsExpires = time.Now().Unix() + modelsCacheTTL
+		modelsExpires = time.Now().Unix() + modelsCacheTTLShort
 		return result
 	}
 	for k, v := range headers {
@@ -117,7 +118,7 @@ func FetchModels() []Model {
 	if err != nil {
 		log.Printf("fetch /v2/config error: %v", err)
 		modelsCache = result
-		modelsExpires = time.Now().Unix() + modelsCacheTTL
+		modelsExpires = time.Now().Unix() + modelsCacheTTLShort
 		return result
 	}
 	defer resp.Body.Close()
@@ -125,7 +126,7 @@ func FetchModels() []Model {
 	if resp.StatusCode != 200 {
 		log.Printf("/v2/config returned status %d", resp.StatusCode)
 		modelsCache = result
-		modelsExpires = time.Now().Unix() + modelsCacheTTL
+		modelsExpires = time.Now().Unix() + modelsCacheTTLShort
 		return result
 	}
 
@@ -133,7 +134,7 @@ func FetchModels() []Model {
 	if err := json.NewDecoder(resp.Body).Decode(&configResp); err != nil {
 		log.Printf("decode /v2/config error: %v", err)
 		modelsCache = result
-		modelsExpires = time.Now().Unix() + modelsCacheTTL
+		modelsExpires = time.Now().Unix() + modelsCacheTTLShort
 		return result
 	}
 

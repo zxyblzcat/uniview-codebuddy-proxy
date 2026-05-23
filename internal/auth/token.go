@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -31,7 +32,7 @@ var (
 	reloginMu         sync.Mutex
 	reloginInProgress bool
 	reloginDone       chan struct{} // relogin 完成时关闭此 channel
-	fileLoadOnce      sync.Once    // 确保文件只加载一次
+	fileLoaded        bool          // 是否已尝试从文件加载（重置后可再次加载）
 )
 
 // tokenFilePath 返回 token 文件路径，优先使用 TOKEN_FILE_PATH 环境变量
@@ -47,28 +48,26 @@ func tokenFilePath() string {
 }
 
 // saveTokenToFile 将 TokenData 序列化写入文件，权限 0600
-func saveTokenToFile(td *TokenData) {
+func saveTokenToFile(td *TokenData) error {
 	p := tokenFilePath()
 	if p == "" {
-		log.Println("Warning: cannot determine token file path, skipping persist")
-		return
+		return fmt.Errorf("cannot determine token file path")
 	}
 
 	dir := filepath.Dir(p)
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		log.Printf("Warning: failed to create token dir %s: %v", dir, err)
-		return
+		return fmt.Errorf("failed to create token dir %s: %w", dir, err)
 	}
 
 	data, err := json.MarshalIndent(td, "", "  ")
 	if err != nil {
-		log.Printf("Warning: failed to marshal token: %v", err)
-		return
+		return fmt.Errorf("failed to marshal token: %w", err)
 	}
 
 	if err := os.WriteFile(p, data, 0600); err != nil {
-		log.Printf("Warning: failed to write token file %s: %v", p, err)
+		return fmt.Errorf("failed to write token file %s: %w", p, err)
 	}
+	return nil
 }
 
 // loadTokenFromFile 从文件加载 TokenData，文件不存在或已过期返回 nil
@@ -93,8 +92,8 @@ func loadTokenFromFile() *TokenData {
 		return nil
 	}
 
-	// 文件中的 token 已过期则删除文件
-	if td.ExpiresAt > 0 && time.Now().Unix() > td.ExpiresAt {
+	// 文件中的 token 已过期（加 5 秒容错时钟漂移）则删除文件
+	if td.ExpiresAt > 0 && time.Now().Unix() > td.ExpiresAt+5 {
 		log.Printf("Token file expired, removing %s", p)
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			log.Printf("Warning: failed to remove expired token file %s: %v", p, err)
@@ -115,11 +114,11 @@ func LoadToken() *TokenData {
 			bearer = cachedToken.AccessToken
 		}
 		if bearer != "" {
-			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt {
+			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt+5 {
 				log.Println("Token expired, clearing cache and triggering auto-login")
 				filePath := tokenFilePath()
 				cachedToken = nil
-				// 在锁内删除文件，防止其他 goroutine 在锁外窗口加载到已过期的 token
+				fileLoaded = false
 				if filePath != "" {
 					if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
 						log.Printf("Warning: failed to remove expired token file %s: %v", filePath, err)
@@ -134,23 +133,28 @@ func LoadToken() *TokenData {
 			return result
 		}
 	}
-	tokenMu.Unlock()
 
-	// 内存缓存为空，用 sync.Once 确保文件只加载一次
-	fileLoadOnce.Do(func() {
-		td := loadTokenFromFile()
-		if td == nil {
-			return
-		}
-		tokenMu.Lock()
-		if cachedToken == nil {
-			cachedToken = td
-		}
+	// 内存缓存为空，尝试从文件加载（允许重试）
+	if !fileLoaded {
+		fileLoaded = true
 		tokenMu.Unlock()
-	})
+		td := loadTokenFromFile()
+		if td != nil {
+			tokenMu.Lock()
+			if cachedToken == nil {
+				cachedToken = td
+			}
+			result := cachedToken
+			tokenMu.Unlock()
+			return result
+		}
+		// SaveToken 可能在文件加载期间被调用，重新检查缓存
+		tokenMu.Lock()
+		result := cachedToken
+		tokenMu.Unlock()
+		return result
+	}
 
-	// SaveToken 可能在 Once 执行期间被调用，重新检查缓存
-	tokenMu.Lock()
 	result := cachedToken
 	tokenMu.Unlock()
 	return result
@@ -205,6 +209,7 @@ func triggerAutoRelogin() {
 func ClearToken() {
 	tokenMu.Lock()
 	cachedToken = nil
+	fileLoaded = false
 	p := tokenFilePath()
 	tokenMu.Unlock()
 	if p != "" {
@@ -219,52 +224,57 @@ func ClearToken() {
 func SaveToken(td *TokenData) error {
 	tokenMu.Lock()
 	cachedToken = td
+	fileLoaded = true
 	tokenMu.Unlock()
-	saveTokenToFile(td)
-	return nil
+	return saveTokenToFile(td)
 }
 
 // GetBearerToken 返回当前 bearer token，如果正在重登录则等待最多 3 分钟
 func GetBearerToken() string {
-	td := LoadToken()
-	if td != nil {
-		if td.BearerToken != "" {
-			return td.BearerToken
+	// 先在 tokenMu 内原子地检查缓存和 relogin 状态
+	tokenMu.Lock()
+	if cachedToken != nil {
+		bearer := cachedToken.BearerToken
+		if bearer == "" {
+			bearer = cachedToken.AccessToken
 		}
-		return td.AccessToken
+		if bearer != "" && (cachedToken.ExpiresAt <= 0 || time.Now().Unix() <= cachedToken.ExpiresAt+5) {
+			tokenMu.Unlock()
+			return bearer
+		}
 	}
 
-	// Token 为空，检查是否有重登录正在进行
+	// 缓存为空或已过期，检查 relogin 状态
 	reloginMu.Lock()
 	inProgress := reloginInProgress
 	ch := reloginDone
 	reloginMu.Unlock()
+	tokenMu.Unlock()
 
 	if !inProgress {
-		td = LoadToken()
+		// 没有 relogin 进行中，尝试触发一个
+		go triggerAutoRelogin()
+		// 重新获取 reloginDone channel
+		reloginMu.Lock()
+		ch = reloginDone
+		reloginMu.Unlock()
+		if ch == nil {
+			return ""
+		}
+	}
+
+	// 等待重登录完成，最多 3 分钟
+	select {
+	case <-ch:
+		td := LoadToken()
 		if td != nil {
 			if td.BearerToken != "" {
 				return td.BearerToken
 			}
 			return td.AccessToken
 		}
-		return ""
-	}
-
-	// 等待重登录完成，最多 3 分钟
-	if ch != nil {
-		select {
-		case <-ch:
-			td = LoadToken()
-			if td != nil {
-				if td.BearerToken != "" {
-					return td.BearerToken
-				}
-				return td.AccessToken
-			}
-		case <-time.After(3 * time.Minute):
-			log.Println("Timed out waiting for token reload")
-		}
+	case <-time.After(3 * time.Minute):
+		log.Println("Timed out waiting for token reload")
 	}
 
 	return ""

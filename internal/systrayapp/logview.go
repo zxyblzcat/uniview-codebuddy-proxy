@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/logbuf"
 
 	"github.com/gin-gonic/gin"
@@ -21,9 +22,11 @@ type LogViewData struct {
 	Logs string
 }
 
-// RegisterLogViewRoute adds GET /_logs to the gin engine.
+// RegisterLogViewRoute adds GET /_logs to the gin engine (protected by API_PASSWORD when set).
 func RegisterLogViewRoute(r *gin.Engine, mw *logbuf.MultiWriter) {
-	r.GET("/_logs", func(c *gin.Context) {
+	logsGroup := r.Group("/")
+	logsGroup.Use(auth.APIPasswordMiddleware())
+	logsGroup.GET("/_logs", func(c *gin.Context) {
 		lines := mw.Lines()
 		data := LogViewData{
 			Logs: strings.Join(lines, "\n"),

@@ -26,7 +26,14 @@ func IsAutoStartEnabled() bool {
 	if appPath == "" {
 		return false
 	}
-	return strings.Contains(string(out), appPath)
+	// Check each login item path individually to avoid substring false positives
+	for _, line := range strings.Split(string(out), ", ") {
+		cleaned := strings.TrimSpace(line)
+		if cleaned == appPath {
+			return true
+		}
+	}
+	return false
 }
 
 // SetAutoStart enables or disables the SMLoginItem login item.
