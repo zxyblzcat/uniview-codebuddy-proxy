@@ -46,21 +46,32 @@ func APIPasswordMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		// 优先检查 Authorization: Bearer 头
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.Header("WWW-Authenticate", "Bearer realm=\"uniview-codebuddy-proxy\"")
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},
-			})
-			c.Abort()
-			return
-		}
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIPassword)) == 1 {
 				c.Next()
 				return
 			}
+		}
+
+		// 其次检查 x-api-key 头
+		apiKey := c.GetHeader("x-api-key")
+		if apiKey != "" {
+			if subtle.ConstantTimeCompare([]byte(apiKey), []byte(config.APIPassword)) == 1 {
+				c.Next()
+				return
+			}
+		}
+
+		if authHeader == "" && apiKey == "" {
+			c.Header("WWW-Authenticate", "Bearer realm=\"uniview-codebuddy-proxy\"")
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},
+			})
+			c.Abort()
+			return
 		}
 
 		c.JSON(http.StatusUnauthorized, gin.H{

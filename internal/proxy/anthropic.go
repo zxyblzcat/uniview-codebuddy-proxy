@@ -289,6 +289,15 @@ func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, c *
 	msgID := "msg_" + randomHex(24)
 	var contentBlocks []interface{}
 
+	reasoning := strings.Join(result.ReasoningParts, "")
+	if reasoning != "" {
+		contentBlocks = append(contentBlocks, map[string]interface{}{
+			"type":      "thinking",
+			"thinking":  reasoning,
+			"signature": "",
+		})
+	}
+
 	text := strings.Join(result.ContentParts, "")
 	if text != "" {
 		contentBlocks = append(contentBlocks, map[string]interface{}{

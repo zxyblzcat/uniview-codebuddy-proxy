@@ -16,6 +16,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 
 	// 状态机变量
 	nextBlockIdx := 0
+	thinkingBlockIdx := -1
 	textBlockIdx := -1
 	toolBlockIdxMap := map[int]int{}
 	toolBlocksStarted := map[int]bool{}
@@ -59,6 +60,12 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 
 	// closeOpenBlocks 关闭所有已开启的 content block
 	closeOpenBlocks := func() {
+		if thinkingBlockIdx >= 0 {
+			safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
+				"type": "content_block_stop", "index": thinkingBlockIdx,
+			}))
+			thinkingBlockIdx = -1
+		}
 		if textBlockIdx >= 0 {
 			safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
 				"type": "content_block_stop", "index": textBlockIdx,
@@ -166,8 +173,40 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 				}))
 			}
 
+			// 处理 reasoning_content（thinking blocks）
+			if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
+				if thinkingBlockIdx < 0 {
+					thinkingBlockIdx = nextBlockIdx
+					nextBlockIdx++
+					safeWrite(anthropicSSE("content_block_start", map[string]interface{}{
+						"type":  "content_block_start",
+						"index": thinkingBlockIdx,
+						"content_block": map[string]interface{}{
+							"type":      "thinking",
+							"thinking":  "",
+							"signature": "",
+						},
+					}))
+				}
+				safeWrite(anthropicSSE("content_block_delta", map[string]interface{}{
+					"type":  "content_block_delta",
+					"index": thinkingBlockIdx,
+					"delta": map[string]interface{}{
+						"type":     "thinking_delta",
+						"thinking": reasoningContent,
+					},
+				}))
+			}
+
 			// 处理文本内容
 			if content, ok := delta["content"].(string); ok && content != "" {
+				// thinking→text 切换：关闭 thinking block
+				if thinkingBlockIdx >= 0 {
+					safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
+						"type": "content_block_stop", "index": thinkingBlockIdx,
+					}))
+					thinkingBlockIdx = -1
+				}
 				if textBlockIdx < 0 {
 					textBlockIdx = nextBlockIdx
 					nextBlockIdx++
@@ -211,6 +250,13 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 					if !toolBlocksStarted[tcIdx] {
 						if id, ok := tcMap["id"].(string); ok && id != "" {
 							toolBlocksStarted[tcIdx] = true
+							// 关闭前面的 thinking block
+							if thinkingBlockIdx >= 0 {
+								safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
+									"type": "content_block_stop", "index": thinkingBlockIdx,
+								}))
+								thinkingBlockIdx = -1
+							}
 							// 关闭前面的文本 block
 							if textBlockIdx >= 0 {
 								safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{

@@ -106,7 +106,7 @@ func handleChatCompletions(c *gin.Context) {
 		"stream":   true,
 	}
 	// 可选参数
-	for _, k := range []string{"temperature", "max_tokens", "tools", "tool_choice"} {
+	for _, k := range []string{"temperature", "max_tokens", "tools", "tool_choice", "stop", "stream_options"} {
 		if v, ok := body[k]; ok {
 			payload[k] = v
 		}
@@ -366,6 +366,11 @@ func estimateMapChars(m map[string]interface{}) int {
 
 // handleAnthropicMessages POST /v1/messages — Anthropic Messages API 兼容端点
 func handleAnthropicMessages(c *gin.Context) {
+	// 回传 anthropic-version 请求头
+	if v := c.GetHeader("anthropic-version"); v != "" {
+		c.Header("anthropic-version", v)
+	}
+
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
 		anthropicErrorResponse(c, http.StatusUnauthorized, "authentication_error", "No token. Visit /auth/start to login.")
@@ -411,6 +416,9 @@ func handleAnthropicMessages(c *gin.Context) {
 	}
 	if v, ok := body["tool_choice"]; ok {
 		payload["tool_choice"] = convertToolChoiceAnthropicToOpenai(v)
+	}
+	if ss, ok := body["stop_sequences"].([]interface{}); ok {
+		payload["stop"] = ss
 	}
 
 	// 确保至少 2 条消息

@@ -4,11 +4,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"uniview-codebuddy-proxy/internal/config"
 )
 
 // TokenData 表示缓存的 token 数据
@@ -160,6 +164,96 @@ func LoadToken() *TokenData {
 	return result
 }
 
+// RefreshToken 尝试使用 refresh_token 刷新 access_token
+func RefreshToken(td *TokenData) (*TokenData, error) {
+	if td == nil || td.RefreshToken == "" {
+		return nil, fmt.Errorf("no refresh token available")
+	}
+
+	req, err := http.NewRequest("POST", config.TokenRefreshURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create refresh request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+td.AccessToken)
+	req.Header.Set("X-Refresh-Token", td.RefreshToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("refresh returned %d: %s", resp.StatusCode, string(body[:min(len(body), 300)]))
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, fmt.Errorf("invalid refresh response: %w", err)
+	}
+
+	code, _ := data["code"].(float64)
+	if code != 0 {
+		return nil, fmt.Errorf("refresh failed with code %v", code)
+	}
+
+	d, _ := data["data"].(map[string]interface{})
+	if d == nil {
+		return nil, fmt.Errorf("refresh response missing data field")
+	}
+
+	accessToken, _ := d["accessToken"].(string)
+	if accessToken == "" {
+		return nil, fmt.Errorf("refresh response missing accessToken")
+	}
+
+	now := time.Now().Unix()
+	expiresIn := getIntFromRefresh(d, "expiresIn")
+	if expiresIn == 0 {
+		expiresIn = 3600
+	}
+	userID := ExtractUserIDFromJWT(accessToken)
+	if userID == "" {
+		userID, _ = d["domain"].(string)
+	}
+
+	newTD := &TokenData{
+		BearerToken:  accessToken,
+		AccessToken:  accessToken,
+		RefreshToken: getStringFromRefresh(d, "refreshToken"),
+		TokenType:    getStringFromRefresh(d, "tokenType"),
+		ExpiresIn:    expiresIn,
+		Domain:       getStringFromRefresh(d, "domain"),
+		SessionState: getStringFromRefresh(d, "sessionState"),
+		CreatedAt:    now,
+		ExpiresAt:    now + int64(expiresIn),
+		UserID:       userID,
+	}
+
+	if newTD.RefreshToken == "" {
+		newTD.RefreshToken = td.RefreshToken
+	}
+
+	if err := SaveToken(newTD); err != nil {
+		log.Printf("save refreshed token error: %v", err)
+	}
+
+	return newTD, nil
+}
+
+func getIntFromRefresh(m map[string]interface{}, key string) int {
+	v, _ := m[key].(float64)
+	return int(v)
+}
+
+func getStringFromRefresh(m map[string]interface{}, key string) string {
+	v, _ := m[key].(string)
+	return v
+}
+
 // triggerAutoRelogin 触发后台自动重新登录
 func triggerAutoRelogin() {
 	reloginMu.Lock()
@@ -179,7 +273,21 @@ func triggerAutoRelogin() {
 		close(ch)
 	}()
 
-	// 尝试自动重新登录
+	// 先尝试用 refresh_token 刷新
+	tokenMu.Lock()
+	oldToken := cachedToken
+	tokenMu.Unlock()
+	if oldToken != nil && oldToken.RefreshToken != "" {
+		newTD, err := RefreshToken(oldToken)
+		if err != nil {
+			log.Printf("Token refresh failed, falling back to device flow: %v", err)
+		} else {
+			log.Printf("Token refresh success! User: %s", newTD.UserID)
+			return
+		}
+	}
+
+	// 刷新失败，走 Device Flow
 	authURL, authState, err := FetchAuthURL()
 	if err != nil {
 		log.Printf("Auto-relogin failed (FetchAuthURL): %v", err)
