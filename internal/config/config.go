@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 
@@ -24,7 +25,13 @@ func init() {
 	// 加载 .env 文件（忽略不存在的错误，允许纯环境变量运行）
 	_ = godotenv.Load()
 
-	Port, _ = strconv.Atoi(getEnv("PORT", "1026"))
+	portStr := getEnv("PORT", "1026")
+	var err error
+	Port, err = strconv.Atoi(portStr)
+	if err != nil {
+		log.Printf("Warning: invalid PORT value %q, using default 1026", portStr)
+		Port = 1026
+	}
 	APIPassword = getEnv("API_PASSWORD", "")
 	CKApiKey = getEnv("CODEBUDDY_API_KEY", "")
 

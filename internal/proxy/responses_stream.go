@@ -31,6 +31,9 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 	cachedTokens := 0
 	var textContent strings.Builder
 
+	// 收集 output 项用于 response.completed
+	var completedOutputs []interface{}
+
 	resp, err := doUpstreamRequest(ctx, payload, model, bearer)
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
@@ -70,10 +73,6 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 		}
 		textStarted = false
 		fullText := textContent.String()
-		safeWrite(responsesSSE("response.output_text.delta", map[string]interface{}{
-			"type": "response.output_text.delta", "item_id": itemID,
-			"output_index": textOutputIndex, "content_index": 0, "delta": "",
-		}))
 		safeWrite(responsesSSE("response.output_text.done", map[string]interface{}{
 			"type": "response.output_text.done", "item_id": itemID,
 			"output_index": textOutputIndex, "content_index": 0, "text": fullText,
@@ -83,11 +82,12 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 			"output_index": textOutputIndex, "content_index": 0,
 			"part": map[string]interface{}{"type": "output_text", "text": fullText, "annotations": []interface{}{}},
 		}))
+		outputItem := map[string]interface{}{"id": itemID, "type": "message", "role": "assistant",
+			"content": []interface{}{map[string]interface{}{"type": "output_text", "text": fullText, "annotations": []interface{}{}}}}
 		safeWrite(responsesSSE("response.output_item.done", map[string]interface{}{
-			"type": "response.output_item.done", "output_index": textOutputIndex,
-			"item": map[string]interface{}{"id": itemID, "type": "message", "role": "assistant",
-				"content": []interface{}{map[string]interface{}{"type": "output_text", "text": fullText, "annotations": []interface{}{}}}},
+			"type": "response.output_item.done", "output_index": textOutputIndex, "item": outputItem,
 		}))
+		completedOutputs = append(completedOutputs, outputItem)
 	}
 
 	// closeToolCallBlocks 关闭所有已开启的 tool call blocks
@@ -109,10 +109,11 @@ func StreamResponsesSSE(ctx context.Context, payload map[string]interface{}, mod
 					"type": "response.function_call_arguments.done", "item_id": tcItemID,
 					"output_index": tcOutputIdx, "call_id": tcItemID, "arguments": toolCallArgs[tcIdx],
 				}))
+				outputItem := map[string]interface{}{"id": tcItemID, "type": "function_call", "call_id": tcItemID, "name": toolCallNames[tcIdx], "arguments": toolCallArgs[tcIdx]}
 				safeWrite(responsesSSE("response.output_item.done", map[string]interface{}{
-					"type": "response.output_item.done", "output_index": tcOutputIdx,
-					"item": map[string]interface{}{"id": tcItemID, "type": "function_call", "call_id": tcItemID, "name": toolCallNames[tcIdx], "arguments": toolCallArgs[tcIdx]},
+					"type": "response.output_item.done", "output_index": tcOutputIdx, "item": outputItem,
 				}))
+				completedOutputs = append(completedOutputs, outputItem)
 			}
 		}
 	}
@@ -313,5 +314,11 @@ func writeResponsesSSEError(w http.ResponseWriter, msg string) {
 		"error": map[string]interface{}{"message": msg},
 	})
 	fmt.Fprintf(w, "event: response.error\ndata: %s\n\n", string(errData))
-	fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n")
+	completedData, _ := json.Marshal(map[string]interface{}{
+		"type": "response.completed",
+		"response": map[string]interface{}{
+			"status": "failed", "output": []interface{}{},
+		},
+	})
+	fmt.Fprintf(w, "event: response.completed\ndata: %s\n\n", string(completedData))
 }

@@ -39,14 +39,22 @@ func RegisterRoutes(r *gin.Engine) {
 	}
 }
 
-// authPasswordMiddleware 验证 /auth/* 路由的 API_PASSWORD
-func authPasswordMiddleware() gin.HandlerFunc {
+// APIPasswordMiddleware 验证 API_PASSWORD 的 Bearer token 中间件
+func APIPasswordMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if config.APIPassword == "" {
 			c.Next()
 			return
 		}
 		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.Header("WWW-Authenticate", "Bearer realm=\"uniview-codebuddy-proxy\"")
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},
+			})
+			c.Abort()
+			return
+		}
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIPassword)) == 1 {
@@ -54,9 +62,17 @@ func authPasswordMiddleware() gin.HandlerFunc {
 				return
 			}
 		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": gin.H{"message": "Invalid API password", "type": "authentication_error"},
+		})
 		c.Abort()
 	}
+}
+
+// authPasswordMiddleware 验证 /auth/* 路由的 API_PASSWORD
+func authPasswordMiddleware() gin.HandlerFunc {
+	return APIPasswordMiddleware()
 }
 
 // handleAuthStart 发起 OAuth2 Device Flow

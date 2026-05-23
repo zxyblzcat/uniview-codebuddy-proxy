@@ -45,6 +45,33 @@ func convertResponsesToChat(body map[string]interface{}) []interface{} {
 			continue
 		}
 
+		// 处理 function_call：转换为 OpenAI assistant tool_calls 消息
+		if itemType == "function_call" {
+			callID, _ := m["call_id"].(string)
+			fnName, _ := m["name"].(string)
+			args, _ := m["arguments"].(string)
+			if args == "" {
+				args = "{}"
+			}
+			var parsedArgs interface{}
+			json.Unmarshal([]byte(args), &parsedArgs)
+			messages = append(messages, map[string]interface{}{
+				"role":    "assistant",
+				"content": nil,
+				"tool_calls": []interface{}{
+					map[string]interface{}{
+						"id":   callID,
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      fnName,
+							"arguments": args,
+						},
+					},
+				},
+			})
+			continue
+		}
+
 		role, _ := m["role"].(string)
 		content := m["content"]
 

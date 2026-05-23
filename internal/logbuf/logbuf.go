@@ -1,7 +1,9 @@
 package logbuf
 
 import (
+	"bytes"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -31,13 +33,17 @@ func (rb *RingBuffer) Write(p []byte) (int, error) {
 	defer rb.mu.Unlock()
 
 	n := len(p)
-	for _, b := range p {
-		if b == '\n' {
-			rb.push(string(rb.partial))
-			rb.partial = rb.partial[:0]
-		} else {
-			rb.partial = append(rb.partial, b)
+	off := 0
+	for {
+		idx := bytes.IndexByte(p[off:], '\n')
+		if idx < 0 {
+			rb.partial = append(rb.partial, p[off:]...)
+			break
 		}
+		rb.partial = append(rb.partial, p[off:off+idx]...)
+		rb.push(string(rb.partial))
+		rb.partial = rb.partial[:0]
+		off = off + idx + 1
 	}
 	return n, nil
 }
@@ -106,7 +112,9 @@ func (mw *MultiWriter) Write(p []byte) (int, error) {
 
 	n, _ := mw.ring.Write(p)
 	if mw.file != nil {
-		mw.file.Write(p)
+		if _, err := mw.file.Write(p); err != nil {
+			log.Printf("Warning: log file write error: %v", err)
+		}
 	}
 	return n, nil
 }

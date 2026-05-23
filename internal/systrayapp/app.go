@@ -207,24 +207,34 @@ func (a *App) handleAuth() {
 	if td != nil {
 		return
 	}
+	a.mu.Lock()
 	if a.authPending {
+		a.mu.Unlock()
 		log.Println("Auth already in progress")
 		return
 	}
+	a.authPending = true
+	a.mu.Unlock()
 
 	authURL, authState, err := auth.FetchAuthURL()
 	if err != nil {
+		a.mu.Lock()
+		a.authPending = false
+		a.mu.Unlock()
 		log.Printf("Auth failed: %v", err)
 		return
 	}
 
-	a.authPending = true
 	log.Println("Opening browser for authentication...")
 	auth.OpenBrowser(authURL)
 
 	if authState != "" {
 		go func() {
-			defer func() { a.authPending = false }()
+			defer func() {
+				a.mu.Lock()
+				a.authPending = false
+				a.mu.Unlock()
+			}()
 			for i := 0; i < 60; i++ {
 				result := auth.PollToken(authState)
 				if result.Status == "success" {
@@ -250,11 +260,12 @@ func (a *App) scheduleStatusUpdate() {
 }
 
 // dispatchUI schedules a function to run on the main goroutine.
-// Safe to call from any goroutine.
+// Safe to call from any goroutine. Logs a warning if the channel is full.
 func (a *App) dispatchUI(fn func()) {
 	select {
 	case a.uiCh <- fn:
 	default:
+		log.Println("Warning: UI update channel full, dropping update")
 	}
 }
 
@@ -335,10 +346,10 @@ func (a *App) startServerE() error {
 	}
 
 	srv := &http.Server{
-		Addr:         config.ListenAddr(),
-		Handler:      r,
-		ReadTimeout:  30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:        config.ListenAddr(),
+		Handler:     r,
+		ReadTimeout: 30 * time.Second,
+		IdleTimeout: 120 * time.Second,
 	}
 
 	if err := a.listenWithRetry(srv); err != nil {
@@ -352,6 +363,7 @@ func (a *App) startServerE() error {
 }
 
 // listenWithRetry starts the HTTP server and retries once if the port is in use.
+// On retry, creates a new http.Server since ListenAndServe cannot be called twice on the same instance.
 func (a *App) listenWithRetry(srv *http.Server) error {
 	listenErr := make(chan error, 1)
 	go func() {
@@ -372,10 +384,16 @@ func (a *App) listenWithRetry(srv *http.Server) error {
 			}
 			log.Printf("Port %d freed, retrying...", config.Port)
 
-			// Retry listening
+			// Create a new server for retry (ListenAndServe cannot be called twice on same instance)
+			srv2 := &http.Server{
+				Addr:        srv.Addr,
+				Handler:     srv.Handler,
+				ReadTimeout: srv.ReadTimeout,
+				IdleTimeout: srv.IdleTimeout,
+			}
 			listenErr2 := make(chan error, 1)
 			go func() {
-				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				if err := srv2.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					listenErr2 <- err
 					return
 				}
@@ -386,6 +404,8 @@ func (a *App) listenWithRetry(srv *http.Server) error {
 			case err2 := <-listenErr2:
 				return fmt.Errorf("listen after kill: %w", err2)
 			case <-time.After(500 * time.Millisecond):
+				// Update server reference to the new instance
+				a.server = srv2
 				return nil
 			}
 		}
@@ -431,24 +451,32 @@ func killProcessOnPort(port int) error {
 		}
 	}
 
-	// Wait for the process to release the port
-	time.Sleep(300 * time.Millisecond)
+	// Wait for the process to release the port (poll up to 2s)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		check := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-ti", fmt.Sprintf(":%d", port))
+		if out, _ := check.Output(); len(strings.TrimSpace(string(out))) == 0 {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	return nil
 }
 
 func (a *App) stopServer() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if !a.running || a.server == nil {
+		a.mu.Unlock()
 		return
 	}
+	srv := a.server
+	a.server = nil
+	a.running = false
+	a.mu.Unlock()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer shutdownCancel()
-	_ = a.server.Shutdown(shutdownCtx)
-	a.server = nil
-	a.running = false
+	_ = srv.Shutdown(shutdownCtx)
 	log.Println("HTTP server stopped")
 }
 
