@@ -328,18 +328,36 @@ func ClearToken() {
 	log.Println("Token cleared (logout)")
 }
 
-// SaveToken 将 token 缓存到内存并持久化到文件
+// SaveToken 将 token 缓存到内存、持久化到文件，并添加到 pool
 func SaveToken(td *TokenData) error {
 	tokenMu.Lock()
 	cachedToken = td
 	fileLoaded = true
 	tokenMu.Unlock()
+
+	// 添加到 pool
+	_ = GetPool().AddToken(td)
+
+	// 同时保存到旧的 token.json 保持兼容
 	return saveTokenToFile(td)
 }
 
-// GetBearerToken 返回当前 bearer token，如果正在重登录则等待最多 3 分钟
+// GetBearerToken 返回当前 bearer token，优先从 pool 获取，回退到单 token 逻辑
 func GetBearerToken() string {
-	// 先在 tokenMu 内原子地检查缓存和 relogin 状态
+	// 优先从 pool 获取（多凭证轮换）
+	pool := GetPool()
+	td := pool.NextToken()
+	if td != nil {
+		bearer := td.BearerToken
+		if bearer == "" {
+			bearer = td.AccessToken
+		}
+		if bearer != "" {
+			return bearer
+		}
+	}
+
+	// 回退到单 token 逻辑（向后兼容）
 	tokenMu.Lock()
 	if cachedToken != nil {
 		bearer := cachedToken.BearerToken
@@ -360,9 +378,7 @@ func GetBearerToken() string {
 	tokenMu.Unlock()
 
 	if !inProgress {
-		// 没有 relogin 进行中，尝试触发一个
 		go triggerAutoRelogin()
-		// 重新获取 reloginDone channel
 		reloginMu.Lock()
 		ch = reloginDone
 		reloginMu.Unlock()
@@ -371,7 +387,6 @@ func GetBearerToken() string {
 		}
 	}
 
-	// 等待重登录完成，最多 3 分钟
 	select {
 	case <-ch:
 		td := LoadToken()

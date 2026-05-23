@@ -132,6 +132,14 @@ func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, mode
 			errText = errText[:300]
 		}
 		log.Printf("upstream error %d: %s", resp.StatusCode, errText)
+		// 标记 token 健康状态
+		userID := auth.GetUserID()
+		switch resp.StatusCode {
+		case 429:
+			auth.GetPool().MarkCooldown(userID)
+		case 401:
+			auth.GetPool().MarkUnavailable(userID)
+		}
 		return nil, &upstreamError{StatusCode: resp.StatusCode, Message: errText}
 	}
 

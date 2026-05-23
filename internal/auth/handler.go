@@ -36,6 +36,9 @@ func RegisterRoutes(r *gin.Engine) {
 		auth.GET("/poll", handleAuthPoll)
 		auth.POST("/manual", handleAuthManual)
 		auth.GET("/status", handleAuthStatus)
+		auth.GET("/tokens", handleListTokens)
+		auth.DELETE("/tokens/:user_id", handleDeleteToken)
+		auth.POST("/tokens/:user_id/refresh", handleRefreshToken)
 	}
 }
 
@@ -275,6 +278,55 @@ func handleAuthStatus(c *gin.Context) {
 		"user_id":    td.UserID,
 		"expires_at": td.ExpiresAt,
 		"created_at": td.CreatedAt,
+	})
+}
+
+// handleListTokens 列出所有 token 的状态
+func handleListTokens(c *gin.Context) {
+	tokens := GetPool().GetAllTokens()
+	c.JSON(http.StatusOK, gin.H{
+		"count":  len(tokens),
+		"tokens": tokens,
+	})
+}
+
+// handleDeleteToken 删除指定 token
+func handleDeleteToken(c *gin.Context) {
+	userID := c.Param("user_id")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
+	if err := GetPool().RemoveToken(userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "deleted", "user_id": userID})
+}
+
+// handleRefreshToken 手动刷新指定 token
+func handleRefreshToken(c *gin.Context) {
+	userID := c.Param("user_id")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
+
+	cached := LoadToken()
+	if cached == nil || cached.UserID != userID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "token not found for user_id: " + userID})
+		return
+	}
+
+	newTD, err := RefreshToken(cached)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "refresh failed: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":     "refreshed",
+		"user_id":    newTD.UserID,
+		"expires_at": newTD.ExpiresAt,
 	})
 }
 
