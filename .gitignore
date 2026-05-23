@@ -4,4 +4,6 @@ docs/
 codebuddy-proxy
 codebuddy-proxy-*
 *.exe
+*.app
+*.syso
 .idea/

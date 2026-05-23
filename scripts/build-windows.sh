@@ -16,6 +16,12 @@ esac
 
 echo "Building ${BINARY_NAME}.exe for windows/${GOARCH}..."
 
+# Generate Windows resource (.syso) with icon if go-winres is available
+if command -v go-winres &>/dev/null; then
+    echo "Generating Windows resource with icon..."
+    (cd cmd/proxy && go-winres make --arch "$GOARCH" --product-version git-tag --file-version git-tag)
+fi
+
 CGO_ENABLED=1 GOOS=windows GOARCH=$GOARCH \
     go build -ldflags "$LDFLAGS" -o "${BINARY_NAME}.exe" ./cmd/proxy
 
