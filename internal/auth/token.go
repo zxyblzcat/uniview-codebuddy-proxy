@@ -201,6 +201,20 @@ func triggerAutoRelogin() {
 	log.Println("Auto-relogin timed out after 3 minutes")
 }
 
+// ClearToken clears the in-memory token cache and deletes the token file (logout).
+func ClearToken() {
+	tokenMu.Lock()
+	cachedToken = nil
+	p := tokenFilePath()
+	tokenMu.Unlock()
+	if p != "" {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to remove token file %s: %v", p, err)
+		}
+	}
+	log.Println("Token cleared (logout)")
+}
+
 // SaveToken 将 token 缓存到内存并持久化到文件
 func SaveToken(td *TokenData) error {
 	tokenMu.Lock()

@@ -29,16 +29,17 @@ type App struct {
 	authItem      *systray.MenuItem
 	autostartItem *systray.MenuItem
 	statusItem    *systray.MenuItem
+	restartItem   *systray.MenuItem
 	running       bool
 	authPending   bool
-	statusCh      chan string // dispatches status updates to main goroutine
+	uiCh          chan func() // dispatches UI updates to main goroutine
 }
 
 // New creates a new App instance.
 func New(logWriter *logbuf.MultiWriter) *App {
 	return &App{
 		logWriter: logWriter,
-		statusCh:  make(chan string, 32),
+		uiCh:      make(chan func(), 32),
 	}
 }
 
@@ -71,33 +72,55 @@ func (a *App) RunHeadless() {
 func (a *App) onReady() {
 	setIconNormal()
 
-	a.statusItem = systray.AddMenuItem("CodeBuddy Proxy", "Service status")
+	a.statusItem = systray.AddMenuItem("UniviewCodeBuddyProxy", "服务状态")
 	a.statusItem.Disable()
 
 	systray.AddSeparator()
 
-	a.authItem = systray.AddMenuItem("登录", "Start OAuth2 Device Flow")
+	a.authItem = systray.AddMenuItem("登录", "启动 OAuth2 设备授权流程")
 
-	logItem := systray.AddMenuItem("查看日志", "Open log viewer in browser")
+	logItem := systray.AddMenuItem("查看日志", "在浏览器中查看日志")
 	go func() {
 		for range logItem.ClickedCh {
 			auth.OpenBrowser(fmt.Sprintf("http://localhost:%d/_logs", config.Port))
 		}
 	}()
 
-	restartItem := systray.AddMenuItem("重启代理", "Restart HTTP server")
+	a.restartItem = systray.AddMenuItem("重启代理", "重启 HTTP 服务器")
 	go func() {
-		for range restartItem.ClickedCh {
+		for range a.restartItem.ClickedCh {
 			log.Println("Restarting HTTP server via tray menu...")
+			a.dispatchUI(func() {
+				a.restartItem.Disable()
+				setIconGray()
+				setTrayTitle("重启中...")
+				a.statusItem.SetTitle("重启中...")
+			})
+
 			a.stopServer()
-			a.startServer()
-			log.Println("HTTP server restarted")
+			err := a.startServerE()
+
+			if err != nil {
+				a.dispatchUI(func() {
+					setIconError()
+					setTrayTitle("重启失败")
+					a.statusItem.SetTitle("重启失败")
+					a.restartItem.Enable()
+				})
+				log.Printf("HTTP server restart failed: %v", err)
+			} else {
+				a.scheduleStatusUpdate()
+				a.dispatchUI(func() {
+					a.restartItem.Enable()
+				})
+				log.Println("HTTP server restarted")
+			}
 		}
 	}()
 
 	systray.AddSeparator()
 
-	a.autostartItem = systray.AddMenuItem("开机自启", "Toggle autostart")
+	a.autostartItem = systray.AddMenuItem("开机自启", "切换开机自启动")
 	if IsAutoStartEnabled() {
 		a.autostartItem.Check()
 	}
@@ -106,24 +129,32 @@ func (a *App) onReady() {
 			if a.autostartItem.Checked() {
 				if err := SetAutoStart(false); err != nil {
 					log.Printf("Failed to disable autostart: %v", err)
+					a.dispatchUI(func() { setTrayTitle("自启设置失败") })
+					a.scheduleClearTrayTitle()
 					continue
 				}
 				a.autostartItem.Uncheck()
 				log.Println("Autostart disabled")
+				a.dispatchUI(func() { setTrayTitle("已关闭自启") })
+				a.scheduleClearTrayTitle()
 			} else {
 				if err := SetAutoStart(true); err != nil {
 					log.Printf("Failed to enable autostart: %v", err)
+					a.dispatchUI(func() { setTrayTitle("自启设置失败") })
+					a.scheduleClearTrayTitle()
 					continue
 				}
 				a.autostartItem.Check()
 				log.Println("Autostart enabled")
+				a.dispatchUI(func() { setTrayTitle("已开启自启") })
+				a.scheduleClearTrayTitle()
 			}
 		}
 	}()
 
 	systray.AddSeparator()
 
-	quitItem := systray.AddMenuItem("退出", "Quit CodeBuddy Proxy")
+	quitItem := systray.AddMenuItem("退出", "退出 UniviewCodeBuddyProxy")
 	go func() {
 		for range quitItem.ClickedCh {
 			log.Println("Quitting via tray menu...")
@@ -134,16 +165,22 @@ func (a *App) onReady() {
 
 	go func() {
 		for range a.authItem.ClickedCh {
-			a.handleAuth()
+			td := auth.LoadToken()
+			if td != nil {
+				auth.ClearToken()
+				a.scheduleStatusUpdate()
+			} else {
+				a.handleAuth()
+			}
 		}
 	}()
 
 	a.startServer()
 
-	// Dispatch status updates on main goroutine to avoid Cocoa threading issues
+	// Dispatch UI updates on main goroutine to avoid Cocoa threading issues
 	go func() {
-		for range a.statusCh {
-			a.applyStatus()
+		for fn := range a.uiCh {
+			fn()
 		}
 	}()
 	a.scheduleStatusUpdate()
@@ -206,10 +243,23 @@ func (a *App) handleAuth() {
 // scheduleStatusUpdate sends a status update request to the main goroutine.
 // Safe to call from any goroutine.
 func (a *App) scheduleStatusUpdate() {
+	a.dispatchUI(a.applyStatus)
+}
+
+// dispatchUI schedules a function to run on the main goroutine.
+// Safe to call from any goroutine.
+func (a *App) dispatchUI(fn func()) {
 	select {
-	case a.statusCh <- "update":
+	case a.uiCh <- fn:
 	default:
 	}
+}
+
+// scheduleClearTrayTitle clears the tray bar title after a short delay.
+func (a *App) scheduleClearTrayTitle() {
+	time.AfterFunc(3*time.Second, func() {
+		a.dispatchUI(func() { setTrayTitle("") })
+	})
 }
 
 // applyStatus updates tray icon and menu items. Must be called from the main goroutine.
@@ -218,30 +268,45 @@ func (a *App) applyStatus() {
 	if td != nil {
 		setIconNormal()
 		if a.authItem != nil {
-			a.authItem.SetTitle("已认证: " + td.UserID)
-			a.authItem.SetTooltip("Authenticated as " + td.UserID)
+			a.authItem.SetTitle("退出登录 (" + td.UserID + ")")
+			a.authItem.SetTooltip("退出登录")
 		}
 		if a.statusItem != nil {
-			a.statusItem.SetTitle("CodeBuddy Proxy — Running")
+			a.statusItem.SetTitle("运行中")
 		}
 	} else {
-		setIconError()
+		setIconGray()
 		if a.authItem != nil {
 			a.authItem.SetTitle("登录")
-			a.authItem.SetTooltip("Start OAuth2 Device Flow")
+			a.authItem.SetTooltip("启动 OAuth2 设备授权流程")
 		}
 		if a.statusItem != nil {
-			a.statusItem.SetTitle("CodeBuddy Proxy — Not Authenticated")
+			a.statusItem.SetTitle("未认证")
 		}
 	}
 }
 
 func (a *App) startServer() {
+	err := a.startServerE()
+	if err != nil {
+		log.Printf("Failed to start server: %v", err)
+		a.dispatchUI(func() {
+			setIconError()
+			setTrayTitle("启动失败")
+			if a.statusItem != nil {
+				a.statusItem.SetTitle("启动失败: " + err.Error())
+			}
+		})
+		time.AfterFunc(5*time.Second, systray.Quit)
+	}
+}
+
+func (a *App) startServerE() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if a.running {
-		return
+		return nil
 	}
 
 	gin.SetMode(gin.ReleaseMode)
@@ -253,7 +318,7 @@ func (a *App) startServer() {
 	RegisterLogViewRoute(r, a.logWriter)
 
 	log.Println("==================================================")
-	log.Printf("  CodeBuddy CN -> OpenAI API Proxy %s", version.Version)
+	log.Printf("  UniviewCodeBuddy Proxy %s", version.Version)
 	log.Printf("  Commit: %s | Built: %s", version.Commit, version.Date)
 	log.Printf("  URL: http://localhost:%d", config.Port)
 	log.Printf("  Auth: http://localhost:%d/auth/start", config.Port)
@@ -273,15 +338,14 @@ func (a *App) startServer() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Failed to start server: %v", err)
-			systray.Quit()
-		}
-	}()
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("listen: %w", err)
+	}
 
+	log.Printf("HTTP server listening on :%d", config.Port)
 	a.server = srv
 	a.running = true
+	return nil
 }
 
 func (a *App) stopServer() {
