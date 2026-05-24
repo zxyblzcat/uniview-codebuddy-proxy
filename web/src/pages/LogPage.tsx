@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export default function LogPage() {
+  const { t } = useTranslation()
   const [logs, setLogs] = useState<string[]>([])
   const [connected, setConnected] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -30,15 +32,15 @@ export default function LogPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Live Logs</h2>
+        <h2 className="text-xl font-bold text-white">{t('logs.title')}</h2>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-sm text-slate-400">
             <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
-            Auto-scroll
+            {t('logs.autoScroll')}
           </label>
-          <button onClick={() => setLogs([])} className="btn btn-secondary text-xs">Clear</button>
+          <button onClick={() => setLogs([])} className="btn btn-secondary text-xs">{t('logs.clear')}</button>
           <span className={`text-xs ${connected ? 'text-green-400' : 'text-red-400'}`}>
-            {connected ? 'Connected' : 'Disconnected'}
+            {connected ? t('logs.connected') : t('logs.disconnected')}
           </span>
         </div>
       </div>
@@ -47,7 +49,7 @@ export default function LogPage() {
         className="bg-slate-950 rounded-xl border border-slate-700 p-4 h-[70vh] overflow-y-auto font-mono text-xs text-slate-300 space-y-0.5"
       >
         {logs.length === 0 ? (
-          <div className="text-slate-500">Waiting for logs...</div>
+          <div className="text-slate-500">{t('logs.waiting')}</div>
         ) : (
           logs.map((log, i) => (
             <div key={i} className="whitespace-pre-wrap break-all hover:bg-slate-800/50 rounded px-1">
