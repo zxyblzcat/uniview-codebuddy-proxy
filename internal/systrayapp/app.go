@@ -18,6 +18,7 @@ import (
 	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/logbuf"
 	"uniview-codebuddy-proxy/internal/proxy"
+	"uniview-codebuddy-proxy/internal/web"
 	"uniview-codebuddy-proxy/internal/version"
 
 	"fyne.io/systray"
@@ -330,6 +331,8 @@ func (a *App) startServerE() error {
 	auth.RegisterRoutes(r)
 	proxy.RegisterRoutes(r)
 	RegisterLogViewRoute(r, a.logWriter)
+	web.RegisterAPIRoutes(r)
+	web.SetupAdminUI(r)
 
 	log.Println("==================================================")
 	log.Printf("  UniviewCodeBuddy Proxy %s", version.Version)
