@@ -91,6 +91,13 @@ func (a *App) onReady() {
 		}
 	}()
 
+	adminItem := systray.AddMenuItem("管理面板", "打开 Web 管理界面")
+	go func() {
+		for range adminItem.ClickedCh {
+			auth.OpenBrowser(fmt.Sprintf("http://localhost:%d/admin", config.Port))
+		}
+	}()
+
 	a.restartItem = systray.AddMenuItem("重启代理", "重启 HTTP 服务器")
 	go func() {
 		for range a.restartItem.ClickedCh {
@@ -348,6 +355,7 @@ func (a *App) startServerE() error {
 	log.Printf("  URL: http://localhost:%d", config.Port)
 	log.Printf("  Auth: http://localhost:%d/auth/start", config.Port)
 	log.Printf("  Logs: http://localhost:%d/_logs", config.Port)
+	log.Printf("  Admin: http://localhost:%d/admin", config.Port)
 	log.Println("==================================================")
 
 	if auth.LoadToken() != nil {
