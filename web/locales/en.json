@@ -5,7 +5,10 @@
     "refresh": "Refresh",
     "add": "Add",
     "save": "Save Changes",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "saved": "Saved",
+    "saveFailed": "Failed to save",
+    "loadError": "Failed to load data"
   },
   "nav": {
     "tokens": "Tokens",
@@ -25,7 +28,10 @@
     "unavailable": "Unavailable",
     "expired": "Expired",
     "cooldown": "Cooldown",
-    "active": "Active"
+    "active": "Active",
+    "added": "Token added",
+    "authStartFailed": "Failed to start authentication",
+    "refreshed": "Token refreshed"
   },
   "logs": {
     "title": "Live Logs",
@@ -58,5 +64,11 @@
     "requests": "{{count}} requests",
     "noRequests": "No requests yet",
     "hoursMinutes": "{{h}}h {{m}}m"
+  },
+  "login": {
+    "password": "API Password",
+    "submit": "Login",
+    "loggingIn": "Logging in...",
+    "invalidPassword": "Invalid password"
   }
 }

@@ -23,4 +23,8 @@ i18n
     },
   })
 
+i18n.on('languageChanged', (lng: string) => {
+  document.documentElement.lang = lng.startsWith('zh') ? 'zh-CN' : 'en'
+})
+
 export default i18n

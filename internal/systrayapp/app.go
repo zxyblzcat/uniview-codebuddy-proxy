@@ -369,10 +369,10 @@ func (a *App) startServerE() error {
 	}
 
 	// 初始化缓存
-	if config.CacheEnabled {
+	if config.CacheEnabledAtomic() {
 		cache.GlobalCache.SetEnabled(true)
-		cache.GlobalCache.SetTTL(time.Duration(config.CacheTTL) * time.Second)
-		log.Printf("Cache enabled (TTL: %ds)", config.CacheTTL)
+		cache.GlobalCache.SetTTL(time.Duration(config.CacheTTLAtomic()) * time.Second)
+		log.Printf("Cache enabled (TTL: %ds)", config.CacheTTLAtomic())
 	}
 
 	gin.SetMode(gin.ReleaseMode)

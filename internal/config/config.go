@@ -5,23 +5,27 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/joho/godotenv"
 )
 
 var (
-	Port             int
-	APIPassword      string
-	CKApiKey         string
-	BaseURL          string
-	Domain           string
-	AuthStateURL     string
-	AuthTokenURL     string
-	TokenRefreshURL  string
-	ChatURL          string
-	ConfigURL        string
-	CacheEnabled     bool
-	CacheTTL         int
+	Port            int
+	APIPassword     string
+	CKApiKey        string
+	BaseURL         string
+	Domain          string
+	AuthStateURL    string
+	AuthTokenURL    string
+	TokenRefreshURL string
+	ChatURL         string
+	ConfigURL       string
+)
+
+var (
+	cacheEnabled atomic.Bool
+	cacheTTL     atomic.Int32
 )
 
 func init() {
@@ -45,18 +49,36 @@ func init() {
 	TokenRefreshURL = BaseURL + "/v2/plugin/auth/token/refresh"
 	ChatURL = BaseURL + "/v2/chat/completions"
 	ConfigURL = BaseURL + "/v2/config"
-	CacheEnabled = getEnv("CACHE_ENABLED", "") == "true"
+
+	cacheEnabled.Store(getEnv("CACHE_ENABLED", "") == "true")
 	ttl := getEnv("CACHE_TTL", "300")
 	cacheTTL, err := strconv.Atoi(ttl)
 	if err != nil || cacheTTL <= 0 {
 		cacheTTL = 300
 	}
-	CacheTTL = cacheTTL
+	SetCacheTTL(cacheTTL)
 }
 
 // ListenAddr 返回服务监听地址
 func ListenAddr() string {
 	return fmt.Sprintf("0.0.0.0:%d", Port)
+}
+
+// CacheEnabledAtomic returns the cache enabled flag (thread-safe).
+func CacheEnabledAtomic() bool { return cacheEnabled.Load() }
+
+// SetCacheEnabled sets the cache enabled flag (thread-safe).
+func SetCacheEnabled(v bool) { cacheEnabled.Store(v) }
+
+// CacheTTLAtomic returns the cache TTL (thread-safe).
+func CacheTTLAtomic() int { return int(cacheTTL.Load()) }
+
+// SetCacheTTL sets the cache TTL (thread-safe).
+func SetCacheTTL(v int) {
+	if v <= 0 {
+		v = 300
+	}
+	cacheTTL.Store(int32(v))
 }
 
 func getEnv(key, fallback string) string {

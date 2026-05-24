@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAuth } from '../auth'
 
 interface TokenInfo {
   user_id: string
@@ -13,15 +14,24 @@ interface TokenInfo {
 
 export default function TokenPage() {
   const { t } = useTranslation()
+  const { authFetch } = useAuth()
   const [tokens, setTokens] = useState<TokenInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [manualToken, setManualToken] = useState('')
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const showMsg = (ok: boolean, text: string) => {
+    setMsg({ ok, text })
+    setTimeout(() => setMsg(null), 3000)
+  }
 
   const fetchTokens = async () => {
     try {
-      const res = await fetch('/auth/tokens')
-      const data = await res.json()
-      setTokens(data.tokens || [])
+      const res = await authFetch('/auth/tokens')
+      if (res.ok) {
+        const data = await res.json()
+        setTokens(data.tokens || [])
+      }
     } catch {
       setTokens([])
     } finally {
@@ -34,7 +44,7 @@ export default function TokenPage() {
   const addManualToken = async () => {
     if (!manualToken.trim()) return
     try {
-      const res = await fetch('/auth/manual', {
+      const res = await authFetch('/auth/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bearer_token: manualToken.trim() }),
@@ -42,33 +52,58 @@ export default function TokenPage() {
       if (res.ok) {
         setManualToken('')
         fetchTokens()
+        showMsg(true, t('tokens.added'))
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showMsg(false, data.error || t('common.saveFailed'))
       }
-    } catch { /* ignore */ }
+    } catch {
+      showMsg(false, t('common.saveFailed'))
+    }
   }
 
   const startAuth = async () => {
     try {
-      const res = await fetch('/auth/start')
+      const res = await authFetch('/auth/start')
+      if (!res.ok) {
+        showMsg(false, t('tokens.authStartFailed'))
+        return
+      }
       const data = await res.json()
       if (data.auth_url) {
         window.open(data.auth_url, '_blank')
       }
-    } catch { /* ignore */ }
+    } catch {
+      showMsg(false, t('common.saveFailed'))
+    }
   }
 
   const deleteToken = async (userId: string) => {
     if (!confirm(t('tokens.deleteConfirm', { userId }))) return
     try {
-      await fetch(`/auth/tokens/${encodeURIComponent(userId)}`, { method: 'DELETE' })
-      fetchTokens()
-    } catch { /* ignore */ }
+      const res = await authFetch(`/auth/tokens/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+      if (res.ok) {
+        fetchTokens()
+      } else {
+        showMsg(false, t('common.saveFailed'))
+      }
+    } catch {
+      showMsg(false, t('common.saveFailed'))
+    }
   }
 
   const refreshToken = async (userId: string) => {
     try {
-      await fetch(`/auth/tokens/${encodeURIComponent(userId)}/refresh`, { method: 'POST' })
-      fetchTokens()
-    } catch { /* ignore */ }
+      const res = await authFetch(`/auth/tokens/${encodeURIComponent(userId)}/refresh`, { method: 'POST' })
+      if (res.ok) {
+        fetchTokens()
+        showMsg(true, t('tokens.refreshed'))
+      } else {
+        showMsg(false, t('common.saveFailed'))
+      }
+    } catch {
+      showMsg(false, t('common.saveFailed'))
+    }
   }
 
   const formatTime = (ts: number) => {
@@ -89,14 +124,22 @@ export default function TokenPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">{t('tokens.title')}</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <button onClick={startAuth} className="btn btn-primary">{t('tokens.oauthLogin')}</button>
+          {msg && (
+            <span className={`text-xs ${msg.ok ? 'text-green-400' : 'text-red-400'}`}>
+              {msg.text}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
         <h3 className="text-sm font-medium text-slate-300 mb-2">{t('tokens.addManually')}</h3>
-        <div className="flex gap-2">
+        <form
+          onSubmit={(e) => { e.preventDefault(); addManualToken() }}
+          className="flex gap-2"
+        >
           <input
             type="text"
             value={manualToken}
@@ -104,8 +147,8 @@ export default function TokenPage() {
             placeholder={t('tokens.placeholder')}
             className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
           />
-          <button onClick={addManualToken} className="btn btn-primary">{t('common.add')}</button>
-        </div>
+          <button type="submit" className="btn btn-primary">{t('common.add')}</button>
+        </form>
       </div>
 
       {tokens.length === 0 ? (

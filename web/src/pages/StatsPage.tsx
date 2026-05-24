@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAuth } from '../auth'
 
 interface Stats {
   total_requests: number
@@ -9,17 +10,32 @@ interface Stats {
   uptime_seconds: number
 }
 
+const POLL_INTERVAL = 10_000
+
 export default function StatsPage() {
   const { t } = useTranslation()
+  const { authFetch } = useAuth()
   const [stats, setStats] = useState<Stats | null>(null)
+  const [error, setError] = useState(false)
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined)
 
-  useEffect(() => {
-    fetch('/api/stats')
+  const fetchStats = useCallback(() => {
+    authFetch('/api/stats')
       .then((r) => r.json())
-      .then(setStats)
-      .catch(() => {})
+      .then((data) => {
+        setStats(data)
+        setError(false)
+      })
+      .catch(() => setError(true))
   }, [])
 
+  useEffect(() => {
+    fetchStats()
+    intervalRef.current = setInterval(fetchStats, POLL_INTERVAL)
+    return () => clearInterval(intervalRef.current)
+  }, [fetchStats])
+
+  if (error && !stats) return <div className="text-red-400">{t('common.loadError')}</div>
   if (!stats) return <div className="text-slate-400">{t('common.loading')}</div>
 
   const formatUptime = (s: number) => {

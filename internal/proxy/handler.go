@@ -460,7 +460,7 @@ func handleAnthropicMessages(c *gin.Context) {
 		StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer)
 	} else {
 		// 非流式：检查缓存
-		if config.CacheEnabled && cache.GlobalCache.IsEnabled() {
+		if config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled() {
 			ck := cache.Key(model, payload["messages"], payload["tools"], 0)
 			if cached := cache.GlobalCache.Get(ck); cached != nil {
 				c.Data(http.StatusOK, "application/json", cached)
@@ -477,7 +477,7 @@ func handleAnthropicMessages(c *gin.Context) {
 			return
 		}
 		// 缓存响应
-		if config.CacheEnabled && cache.GlobalCache.IsEnabled() {
+		if config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled() {
 			buf := &bytes.Buffer{}
 			cw := &cacheWriter{ResponseWriter: c.Writer, body: buf}
 			c.Writer = cw

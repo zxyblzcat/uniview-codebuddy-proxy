@@ -69,7 +69,16 @@ func APIPasswordMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		if authHeader == "" && apiKey == "" {
+		// 最后检查 api_key 查询参数（用于 EventSource 等无法设置 header 的场景）
+		qKey := c.Query("api_key")
+		if qKey != "" {
+			if subtle.ConstantTimeCompare([]byte(qKey), []byte(config.APIPassword)) == 1 {
+				c.Next()
+				return
+			}
+		}
+
+		if authHeader == "" && apiKey == "" && qKey == "" {
 			c.Header("WWW-Authenticate", "Bearer realm=\"uniview-codebuddy-proxy\"")
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},

@@ -75,6 +75,7 @@ func RegisterAPIRoutes(r *gin.Engine, lw *logbuf.MultiWriter) {
 	api.PUT("/config", handlePutConfig)
 	api.GET("/stats", handleGetStats)
 	api.GET("/logs/stream", handleLogStream)
+	api.DELETE("/logs", handleClearLogs)
 	api.GET("/locale", handleGetLocale)
 	api.PUT("/locale", handlePutLocale)
 }
@@ -83,8 +84,8 @@ func handleGetConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"port":             config.Port,
 		"api_password_set": config.APIPassword != "",
-		"cache_enabled":    config.CacheEnabled && cache.GlobalCache.IsEnabled(),
-		"cache_ttl":        config.CacheTTL,
+		"cache_enabled":    config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled(),
+		"cache_ttl":        config.CacheTTLAtomic(),
 		"base_url":         config.BaseURL,
 		"locale":           i18n.GetLocale().String(),
 	})
@@ -98,16 +99,13 @@ func handlePutConfig(c *gin.Context) {
 	}
 	// 更新缓存设置（热重载）
 	if v, ok := body["cache_enabled"].(bool); ok {
-		config.CacheEnabled = v
+		config.SetCacheEnabled(v)
 		cache.GlobalCache.SetEnabled(v)
 	}
 	if v, ok := body["cache_ttl"].(float64); ok {
 		ttl := int(v)
-		if ttl <= 0 {
-			ttl = 300
-		}
-		config.CacheTTL = ttl
-		cache.GlobalCache.SetTTL(time.Duration(ttl) * time.Second)
+		config.SetCacheTTL(ttl)
+		cache.GlobalCache.SetTTL(time.Duration(config.CacheTTLAtomic()) * time.Second)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
@@ -120,6 +118,15 @@ func handleGetStats(c *gin.Context) {
 		"models_used":    modelsUsed.Get(),
 		"uptime_seconds": int64(time.Since(startTime).Seconds()),
 	})
+}
+
+func handleClearLogs(c *gin.Context) {
+	if logWriter == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "log writer not available"})
+		return
+	}
+	logWriter.Clear()
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func handleLogStream(c *gin.Context) {
@@ -208,7 +215,12 @@ func handlePutLocale(c *gin.Context) {
 func SetupAdminUI(r *gin.Engine) {
 	distFS := DistFS
 
-	r.GET("/admin", func(c *gin.Context) {
+	// 注意：/admin 路由不添加 APIPasswordMiddleware，因为浏览器导航请求无法携带
+	// Authorization header。SPA 静态文件本身不包含敏感数据；所有数据访问通过
+	// /api/* 路由，这些路由已有自己的认证中间件。
+	admin := r.Group("/admin")
+
+	admin.GET("", func(c *gin.Context) {
 		data, err := distFS.ReadFile("dist/index.html")
 		if err != nil {
 			c.String(http.StatusNotFound, "admin UI not found")
@@ -217,7 +229,7 @@ func SetupAdminUI(r *gin.Engine) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 	})
 
-	r.GET("/admin/*filepath", func(c *gin.Context) {
+	admin.GET("/*filepath", func(c *gin.Context) {
 		fp := c.Param("filepath")
 		if fp == "/" || fp == "" {
 			fp = "/index.html"
