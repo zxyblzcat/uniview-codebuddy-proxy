@@ -175,6 +175,25 @@ func (mw *MultiWriter) Lines() []string {
 	return mw.ring.Lines()
 }
 
+// Clear truncates both the in-memory ring buffer and the log file.
+func (mw *MultiWriter) Clear() {
+	mw.mu.Lock()
+	defer mw.mu.Unlock()
+
+	// Reset ring buffer
+	mw.ring.mu.Lock()
+	mw.ring.head = 0
+	mw.ring.count = 0
+	mw.ring.partial = mw.ring.partial[:0]
+	mw.ring.mu.Unlock()
+
+	// Truncate log file
+	if mw.file != nil {
+		mw.file.Truncate(0)
+		mw.file.Seek(0, io.SeekStart)
+	}
+}
+
 // Close closes the log file if open.
 func (mw *MultiWriter) Close() {
 	mw.mu.Lock()

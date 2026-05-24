@@ -25,7 +25,6 @@ API Base URL: http://localhost:1026/v1
 
 - **OpenAI Chat Completions** — `/v1/chat/completions`，流式 + 非流式，支持 tool_calls
 - **Anthropic Messages** — `/v1/messages`，流式 + 非流式，支持 tool_use / tool_result
-- **OpenAI Responses** — `/v1/responses`，流式 + 非流式，支持 function_call
 - **动态模型列表** — `/v1/models`，从上游 `/v2/config` 获取并缓存
 - **OAuth2 Device Flow** — 浏览器扫码登录，Token 持久化到文件，过期自动重登录
 - **API Key 认证** — 可选，设置 `API_PASSWORD` 后所有 `/v1/*` 端点需 `Authorization: Bearer <password>`
@@ -96,11 +95,6 @@ curl http://localhost:1026/v1/chat/completions \
 curl http://localhost:1026/v1/messages \
   -H "Content-Type: application/json" \
   -d '{"model":"auto-chat","max_tokens":100,"messages":[{"role":"user","content":"hello"}]}'
-
-# Responses 格式
-curl http://localhost:1026/v1/responses \
-  -H "Content-Type: application/json" \
-  -d '{"model":"auto-chat","input":[{"role":"user","content":"hello"}]}'
 ```
 
 ## API 端点
@@ -110,7 +104,6 @@ curl http://localhost:1026/v1/responses \
 | `/v1/chat/completions` | POST | OpenAI Chat | 聊天补全（流式 + 非流式） |
 | `/v1/messages` | POST | Anthropic Messages | Anthropic 格式聊天（流式 + 非流式） |
 | `/v1/messages/count_tokens` | POST | Anthropic | 估算 Token 数量 |
-| `/v1/responses` | POST | OpenAI Responses | Responses API 格式（流式 + 非流式） |
 | `/v1/models` | GET | OpenAI Models | 动态模型列表 |
 | `/auth/start` | GET | — | OAuth2 发起认证 |
 | `/auth/poll` | GET | — | OAuth2 轮询 Token |
@@ -189,8 +182,7 @@ make build-windows-gui-arm64
 
 ```
 OpenAI Chat  (/v1/chat/completions)  ─┐
-Anthropic    (/v1/messages)           ─┼─→ Proxy ─→ CodeBuddy /v2/chat/completions
-Responses    (/v1/responses)          ─┘
+Anthropic    (/v1/messages)           ─┘─→ Proxy ─→ CodeBuddy /v2/chat/completions
 ```
 
 所有入站请求转换为上游统一格式（`stream: true`），再由状态机 SSE 翻译器将上游响应转回客户端所需的格式。
@@ -237,9 +229,7 @@ go vet ./...            # 静态分析
 │   │   ├── stream.go               # OpenAI Chat SSE 流式转发 + HTTP Client + 空闲超时
 │   │   ├── models.go               # 动态模型列表 + 缓存
 │   │   ├── anthropic.go            # Anthropic 格式转换
-│   │   ├── anthropic_stream.go     # Anthropic 流式转换状态机
-│   │   ├── responses.go            # Responses API 格式转换
-│   │   └── responses_stream.go     # Responses 流式转换状态机
+│   │   └── anthropic_stream.go     # Anthropic 流式转换状态机
 │   └── systrayapp/
 │       ├── app.go                  # 系统托盘应用主逻辑 + 端口冲突处理
 │       ├── autostart_darwin.go     # macOS 开机自启（AppleScript）

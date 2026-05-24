@@ -75,6 +75,7 @@ func RegisterAPIRoutes(r *gin.Engine, lw *logbuf.MultiWriter) {
 	api.PUT("/config", handlePutConfig)
 	api.GET("/stats", handleGetStats)
 	api.GET("/logs/stream", handleLogStream)
+		api.DELETE("/logs", handleClearLogs)
 	api.GET("/locale", handleGetLocale)
 	api.PUT("/locale", handlePutLocale)
 }
@@ -120,6 +121,15 @@ func handleGetStats(c *gin.Context) {
 		"models_used":    modelsUsed.Get(),
 		"uptime_seconds": int64(time.Since(startTime).Seconds()),
 	})
+}
+
+func handleClearLogs(c *gin.Context) {
+	if logWriter == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "log writer not available"})
+		return
+	}
+	logWriter.Clear()
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func handleLogStream(c *gin.Context) {

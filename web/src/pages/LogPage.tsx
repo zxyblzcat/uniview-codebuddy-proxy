@@ -38,7 +38,7 @@ export default function LogPage() {
             <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
             {t('logs.autoScroll')}
           </label>
-          <button onClick={() => setLogs([])} className="btn btn-secondary text-xs">{t('logs.clear')}</button>
+          <button onClick={() => { setLogs([]); fetch('/api/logs', { method: 'DELETE' }).catch(() => {}) }} className="btn btn-secondary text-xs">{t('logs.clear')}</button>
           <span className={`text-xs ${connected ? 'text-green-400' : 'text-red-400'}`}>
             {connected ? t('logs.connected') : t('logs.disconnected')}
           </span>
