@@ -14,6 +14,8 @@ var (
 	iconGrayPNG []byte
 	//go:embed icon_error.png
 	iconErrorPNG []byte
+	//go:embed icon_template.png
+	iconTemplatePNG []byte
 )
 
 var (
@@ -47,19 +49,32 @@ func iconError() []byte {
 }
 
 func setIconNormal() {
-	systray.SetIcon(iconNormal())
+	if runtime.GOOS == "darwin" {
+		systray.SetTemplateIcon(iconTemplatePNG, iconNormalPNG)
+	} else {
+		systray.SetIcon(iconNormal())
+	}
 	systray.SetTitle("")
 	systray.SetTooltip("UniviewCodeBuddyProxy")
 }
 
 func setIconGray() {
-	systray.SetIcon(iconGray())
+	if runtime.GOOS == "darwin" {
+		systray.SetTemplateIcon(iconTemplatePNG, iconGrayPNG)
+	} else {
+		systray.SetIcon(iconGray())
+	}
 	systray.SetTitle("")
 	systray.SetTooltip("UniviewCodeBuddyProxy")
 }
 
 func setIconError() {
-	systray.SetIcon(iconError())
+	if runtime.GOOS == "darwin" {
+		// Error state: still use template icon for consistent appearance
+		systray.SetTemplateIcon(iconTemplatePNG, iconErrorPNG)
+	} else {
+		systray.SetIcon(iconError())
+	}
 	systray.SetTitle("")
 	systray.SetTooltip("UniviewCodeBuddyProxy")
 }
