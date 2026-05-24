@@ -94,8 +94,6 @@ export default function LogPage() {
             {t('logs.autoScroll')}
           </label>
           <button onClick={clearLogs} className="btn btn-secondary text-xs">{t('logs.clear')}</button>
-          <button onClick={() => { setLogs([]); fetch('/api/logs', { method: 'DELETE' }).catch(() => {}) }} className="btn btn-secondary text-xs">{t('logs.clear')}</button>
-          <button onClick={clearLogs} className="btn btn-secondary text-xs">{t('logs.clear')}</button>
           <span className={`text-xs ${connected ? 'text-green-400' : 'text-red-400'}`}>
             {connected ? t('logs.connected') : t('logs.disconnected')}
           </span>
