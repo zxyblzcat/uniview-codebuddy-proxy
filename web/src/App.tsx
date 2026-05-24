@@ -1,22 +1,30 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { AuthProvider, useAuth } from './auth'
 import TokenPage from './pages/TokenPage'
 import LogPage from './pages/LogPage'
 import ConfigPage from './pages/ConfigPage'
 import StatsPage from './pages/StatsPage'
+import LoginPage from './pages/LoginPage'
 
-function App() {
+function AppInner() {
   const { t, i18n } = useTranslation()
+  const { authenticated, needsPassword, authFetch } = useAuth()
+  const isZh = i18n.language.startsWith('zh')
 
-  const switchLang = () => {
-    const next = i18n.language === 'zh-CN' ? 'en' : 'zh-CN'
-    i18n.changeLanguage(next)
-    fetch('/api/locale', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locale: next }),
-    }).catch(() => {})
+  const switchLang = async () => {
+    const next = isZh ? 'en' : 'zh-CN'
+    try {
+      const res = await authFetch('/api/locale', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locale: next }),
+      })
+      if (res.ok) i18n.changeLanguage(next)
+    } catch { /* ignore */ }
   }
+
+  if (!authenticated) return needsPassword ? <LoginPage /> : <div className="text-slate-400 flex items-center justify-center min-h-screen">{t('common.loading')}</div>
 
   return (
     <BrowserRouter basename="/admin">
@@ -48,7 +56,7 @@ function App() {
                 onClick={switchLang}
                 className="ml-2 px-2 py-1 rounded-md text-xs font-medium text-slate-300 hover:bg-slate-700 border border-slate-600 transition-colors"
               >
-                {i18n.language === 'zh-CN' ? 'EN' : '中'}
+                {isZh ? 'EN' : '中'}
               </button>
             </div>
           </div>
@@ -66,4 +74,10 @@ function App() {
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
+  )
+}

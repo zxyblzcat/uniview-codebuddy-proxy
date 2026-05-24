@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAuth } from '../auth'
 
 interface Config {
   port: number
@@ -12,13 +13,15 @@ interface Config {
 
 export default function ConfigPage() {
   const { t, i18n } = useTranslation()
+  const { authFetch } = useAuth()
   const [config, setConfig] = useState<Config | null>(null)
   const [cacheEnabled, setCacheEnabled] = useState(false)
   const [cacheTTL, setCacheTTL] = useState(300)
   const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
-    fetch('/api/config')
+    authFetch('/api/config')
       .then((r) => r.json())
       .then((data) => {
         setConfig(data)
@@ -30,26 +33,36 @@ export default function ConfigPage() {
 
   const saveConfig = async () => {
     setSaving(true)
+    setSaveMsg(null)
     try {
-      await fetch('/api/config', {
+      const res = await authFetch('/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cache_enabled: cacheEnabled, cache_ttl: cacheTTL }),
       })
-    } catch { /* ignore */ }
+      if (res.ok) {
+        setSaveMsg({ ok: true, text: t('common.saved') })
+      } else {
+        setSaveMsg({ ok: false, text: t('common.saveFailed') })
+      }
+    } catch {
+      setSaveMsg({ ok: false, text: t('common.saveFailed') })
+    }
     setSaving(false)
   }
 
   const changeLocale = async (locale: string) => {
-    i18n.changeLanguage(locale)
     try {
-      await fetch('/api/locale', {
+      const res = await authFetch('/api/locale', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ locale }),
       })
-    } catch { /* ignore */ }
+      if (res.ok) i18n.changeLanguage(locale)
+    } catch { /* best-effort */ }
   }
+
+  const isZh = i18n.language.startsWith('zh')
 
   if (!config) return <div className="text-slate-400">{t('common.loading')}</div>
 
@@ -75,7 +88,7 @@ export default function ConfigPage() {
           <button
             onClick={() => changeLocale('zh-CN')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              i18n.language === 'zh-CN' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              isZh ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
           >
             中文
@@ -83,7 +96,7 @@ export default function ConfigPage() {
           <button
             onClick={() => changeLocale('en')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              i18n.language === 'en' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              !isZh ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
           >
             English
@@ -113,9 +126,16 @@ export default function ConfigPage() {
             />
           </div>
         </div>
-        <button onClick={saveConfig} disabled={saving} className="btn btn-primary">
-          {saving ? t('common.saving') : t('common.save')}
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={saveConfig} disabled={saving} className="btn btn-primary">
+            {saving ? t('common.saving') : t('common.save')}
+          </button>
+          {saveMsg && (
+            <span className={`text-xs ${saveMsg.ok ? 'text-green-400' : 'text-red-400'}`}>
+              {saveMsg.text}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )

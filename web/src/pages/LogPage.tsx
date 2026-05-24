@@ -1,33 +1,88 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { NO_PASSWORD, useAuth } from '../auth'
+
+const MAX_LOGS = 500
+const BASE_RETRY_MS = 2000
+const MAX_RETRY_MS = 30000
+
+interface LogEntry {
+  id: number
+  text: string
+}
 
 export default function LogPage() {
   const { t } = useTranslation()
-  const [logs, setLogs] = useState<string[]>([])
+  const { authFetch } = useAuth()
+  const [logs, setLogs] = useState<LogEntry[]>([])
   const [connected, setConnected] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const containerRef = useRef<HTMLDivElement>(null)
-  const wsRef = useRef<EventSource | null>(null)
+  const retryRef = useRef(BASE_RETRY_MS)
+  const logIdRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const esRef = useRef<EventSource | null>(null)
+  const mountedRef = useRef(true)
 
-  useEffect(() => {
-    const es = new EventSource('/api/logs/stream')
-    wsRef.current = es
-    es.onopen = () => setConnected(true)
+  const buildSSEUrl = useCallback(() => {
+    const stored = sessionStorage.getItem('api_password')
+    if (stored && stored !== NO_PASSWORD) {
+      return `/api/logs/stream?api_key=${encodeURIComponent(stored)}`
+    }
+    return '/api/logs/stream'
+  }, [])
+
+  const connect = useCallback(() => {
+    const es = new EventSource(buildSSEUrl())
+    esRef.current = es
+    es.onopen = () => {
+      if (!mountedRef.current) return
+      setConnected(true)
+      setLogs([] as LogEntry[])
+      retryRef.current = BASE_RETRY_MS
+    }
     es.onmessage = (e) => {
+      if (!mountedRef.current) return
+      logIdRef.current++
+      const id = logIdRef.current
       setLogs((prev) => {
-        const next = [...prev, e.data]
-        return next.length > 500 ? next.slice(-500) : next
+        const next = [...prev, { id, text: e.data }]
+        return next.length > MAX_LOGS ? next.slice(-MAX_LOGS) : next
       })
     }
-    es.onerror = () => setConnected(false)
-    return () => es.close()
-  }, [])
+    es.onerror = () => {
+      if (!mountedRef.current) return
+      setConnected(false)
+      es.close()
+      esRef.current = null
+      const delay = retryRef.current
+      retryRef.current = Math.min(delay * 2, MAX_RETRY_MS)
+      retryTimerRef.current = setTimeout(connect, delay)
+    }
+    return es
+  }, [buildSSEUrl])
+
+  useEffect(() => {
+    mountedRef.current = true
+    const es = connect()
+    return () => {
+      mountedRef.current = false
+      es.close()
+      if (esRef.current) esRef.current.close()
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    }
+  }, [connect])
 
   useEffect(() => {
     if (autoScroll && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight
     }
   }, [logs, autoScroll])
+
+  const clearLogs = () => {
+    setLogs([] as LogEntry[])
+    authFetch('/api/logs', { method: 'DELETE' }).catch(() => {})
+  }
 
   return (
     <div className="space-y-4">
@@ -51,9 +106,9 @@ export default function LogPage() {
         {logs.length === 0 ? (
           <div className="text-slate-500">{t('logs.waiting')}</div>
         ) : (
-          logs.map((log, i) => (
-            <div key={i} className="whitespace-pre-wrap break-all hover:bg-slate-800/50 rounded px-1">
-              {log}
+          logs.map((log) => (
+            <div key={log.id} className="whitespace-pre-wrap break-all hover:bg-slate-800/50 rounded px-1">
+              {log.text}
             </div>
           ))
         )}
@@ -61,3 +116,4 @@ export default function LogPage() {
     </div>
   )
 }
+
