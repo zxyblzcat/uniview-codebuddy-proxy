@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/i18n"
 )
 
 // TokenData 表示缓存的 token 数据
@@ -119,7 +120,7 @@ func LoadToken() *TokenData {
 		}
 		if bearer != "" {
 			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt+5 {
-				log.Println("Token expired, clearing cache and triggering auto-login")
+				log.Println(i18n.T("log.token_expired"))
 				filePath := tokenFilePath()
 				cachedToken = nil
 				fileLoaded = false
@@ -294,7 +295,7 @@ func triggerAutoRelogin() {
 		return
 	}
 
-	log.Println("Auto-relogin: please complete login in browser...")
+	log.Println(i18n.T("log.auto_relogin_browser"))
 	OpenBrowser(authURL)
 
 	// 后台轮询等待登录完成
@@ -310,7 +311,7 @@ func triggerAutoRelogin() {
 		}
 		time.Sleep(3 * time.Second)
 	}
-	log.Println("Auto-relogin timed out after 3 minutes")
+	log.Println(i18n.T("log.auto_relogin_timeout"))
 }
 
 // ClearToken clears the in-memory token cache and deletes the token file (logout).
@@ -325,7 +326,7 @@ func ClearToken() {
 			log.Printf("Warning: failed to remove token file %s: %v", p, err)
 		}
 	}
-	log.Println("Token cleared (logout)")
+	log.Println(i18n.T("log.token_cleared"))
 }
 
 // SaveToken 将 token 缓存到内存、持久化到文件，并添加到 pool
@@ -397,7 +398,7 @@ func GetBearerToken() string {
 			return td.AccessToken
 		}
 	case <-time.After(3 * time.Minute):
-		log.Println("Timed out waiting for token reload")
+		log.Println(i18n.T("log.token_reload_timeout"))
 	}
 
 	return ""

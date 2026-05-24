@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/i18n"
 
 	"github.com/gin-gonic/gin"
 )
@@ -499,7 +500,7 @@ func isGUIAvailable() bool {
 func printAuthURL(url string) {
 	fmt.Println()
 	fmt.Println("============================================")
-	fmt.Println("  请在浏览器中打开以下链接完成登录：")
+	fmt.Println(i18n.T("auth.open_browser"))
 	fmt.Println()
 	fmt.Printf("  %s\n", url)
 	fmt.Println("============================================")
