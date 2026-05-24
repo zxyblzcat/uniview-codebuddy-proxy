@@ -1,0 +1,62 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "delete": "删除",
+    "refresh": "刷新",
+    "add": "添加",
+    "save": "保存更改",
+    "saving": "保存中..."
+  },
+  "nav": {
+    "tokens": "令牌",
+    "logs": "日志",
+    "config": "配置",
+    "stats": "统计"
+  },
+  "tokens": {
+    "title": "令牌管理",
+    "oauthLogin": "+ OAuth 登录",
+    "addManually": "手动添加令牌",
+    "placeholder": "粘贴 Bearer Token...",
+    "empty": "暂无令牌。请手动添加或使用 OAuth 登录。",
+    "created": "创建时间：",
+    "expires": "过期时间：",
+    "deleteConfirm": "确定删除用户 {{userId}} 的令牌吗？",
+    "unavailable": "不可用",
+    "expired": "已过期",
+    "cooldown": "冷却中",
+    "active": "活跃"
+  },
+  "logs": {
+    "title": "实时日志",
+    "autoScroll": "自动滚动",
+    "clear": "清空",
+    "connected": "已连接",
+    "disconnected": "已断开",
+    "waiting": "等待日志..."
+  },
+  "config": {
+    "title": "配置",
+    "server": "服务器",
+    "port": "端口",
+    "upstreamUrl": "上游地址",
+    "apiPassword": "API 密码",
+    "set": "已设置",
+    "notSet": "未设置",
+    "cacheSettings": "缓存设置",
+    "enableCache": "启用响应缓存",
+    "cacheTtl": "缓存 TTL（秒）：",
+    "language": "语言"
+  },
+  "stats": {
+    "title": "使用统计",
+    "totalRequests": "总请求数",
+    "successful": "成功",
+    "errors": "错误",
+    "uptime": "运行时间",
+    "modelsUsed": "已使用模型",
+    "requests": "{{count}} 次请求",
+    "noRequests": "暂无请求",
+    "hoursMinutes": "{{h}}小时 {{m}}分钟"
+  }
+}
