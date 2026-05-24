@@ -22,7 +22,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-900">
       <form onSubmit={handleSubmit} className="bg-slate-800 rounded-xl p-8 border border-slate-700 w-80 space-y-4">
-        <h1 className="text-lg font-bold text-blue-400 text-center">CodeBuddy Proxy</h1>
+        <h1 className="text-lg font-bold text-blue-400 text-center">UniviewCodeBuddyProxy</h1>
         <div>
           <label className="block text-sm text-slate-300 mb-1">{t('login.password')}</label>
           <input
