@@ -370,13 +370,13 @@ func GetBearerToken() string {
 			return bearer
 		}
 	}
+	tokenMu.Unlock()
 
-	// 缓存为空或已过期，检查 relogin 状态
+	// 缓存为空或已过期，检查 relogin 状态（不持有 tokenMu，避免锁顺序反转）
 	reloginMu.Lock()
 	inProgress := reloginInProgress
 	ch := reloginDone
 	reloginMu.Unlock()
-	tokenMu.Unlock()
 
 	if !inProgress {
 		go triggerAutoRelogin()

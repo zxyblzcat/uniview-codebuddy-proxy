@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -314,7 +315,9 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		log.Printf("SSE scan error: %v", err)
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			log.Printf("SSE scan error: %v", err)
+		}
 	}
 }
 

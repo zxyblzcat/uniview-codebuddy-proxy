@@ -2,13 +2,16 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	mrand "math/rand/v2"
 	"net/http"
 	"regexp"
 	"strings"
@@ -92,6 +95,9 @@ var httpClient = &http.Client{
 	Timeout: 0,
 	Transport: &http.Transport{
 		ResponseHeaderTimeout: 30 * time.Minute,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
 	},
 }
 
@@ -105,7 +111,7 @@ func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, mode
 		return nil, fmt.Errorf("marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", config.ChatURL, strings.NewReader(string(payloadJSON)))
+	req, err := http.NewRequest("POST", config.ChatURL, bytes.NewReader(payloadJSON))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -254,7 +260,9 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		log.Printf("SSE scan error: %v", err)
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			log.Printf("SSE scan error: %v", err)
+		}
 	}
 }
 
@@ -360,6 +368,10 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// 客户端断开或请求超时，非上游错误，不标记 502
+			return result, nil
+		}
 		log.Printf("SSE scan error in CollectUpstreamChunks: %v", err)
 		// 如果有部分数据但扫描出错，标记为截断响应
 		result.StatusCode = 502
@@ -448,12 +460,10 @@ func getIntFromMap(m map[string]interface{}, key string) int {
 func randomHex(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		// 回退到时间戳+计数器，避免整个服务器 panic
 		log.Printf("Warning: crypto/rand.Read failed: %v", err)
 		for i := range b {
-			b[i] = byte(time.Now().UnixNano() + int64(i))
+			b[i] = byte(mrand.IntN(256))
 		}
-		return hex.EncodeToString(b)
 	}
 	return hex.EncodeToString(b)
 }

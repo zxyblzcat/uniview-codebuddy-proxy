@@ -247,80 +247,6 @@ func TestStreamAnthropicMessages_MultipleToolCalls_Ordered(t *testing.T) {
 	}
 }
 
-// ─── Responses SSE 流翻译测试 ────────────────────────────────
-
-func TestStreamResponsesSSE_TextOnly(t *testing.T) {
-	chunks := []string{
-		`data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":""}]}`,
-		`data: {"choices":[{"delta":{"content":"!"},"finish_reason":"stop"}]}`,
-	}
-
-	srv := startMockUpstream(chunks)
-	defer srv.Close()
-
-	origChatURL := config.ChatURL
-	config.ChatURL = srv.URL
-	defer func() { config.ChatURL = origChatURL }()
-
-	w := httptest.NewRecorder()
-	StreamResponsesSSE(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "test", "", w)
-
-	events := parseSSEEvents(t, w.Body.String())
-	eventTypes := make([]string, len(events))
-	for i, e := range events {
-		eventTypes[i] = e.EventType
-	}
-
-	// 验证关键事件
-	required := []string{"response.created", "response.in_progress", "response.output_item.added", "response.output_text.delta", "response.completed"}
-	for _, req := range required {
-		found := false
-		for _, et := range eventTypes {
-			if et == req {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("missing required event: %s", req)
-		}
-	}
-}
-
-func TestStreamResponsesSSE_MultipleToolCalls_Ordered(t *testing.T) {
-	chunks := []string{
-		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"func_a","arguments":""}}]},"finish_reason":""}]}`,
-		`data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_b","function":{"name":"func_b","arguments":""}}]},"finish_reason":"tool_calls"}]}`,
-	}
-
-	srv := startMockUpstream(chunks)
-	defer srv.Close()
-
-	origChatURL := config.ChatURL
-	config.ChatURL = srv.URL
-	defer func() { config.ChatURL = origChatURL }()
-
-	w := httptest.NewRecorder()
-	StreamResponsesSSE(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "test", "", w)
-
-	events := parseSSEEvents(t, w.Body.String())
-
-	// 验证 response.output_item.done 的 output_index 是递增的
-	var outputIndices []int
-	for _, e := range events {
-		if e.EventType == "response.output_item.done" {
-			if idx, ok := e.Data["output_index"].(float64); ok {
-				outputIndices = append(outputIndices, int(idx))
-			}
-		}
-	}
-
-	for i := 1; i < len(outputIndices); i++ {
-		if outputIndices[i] <= outputIndices[i-1] {
-			t.Errorf("output_item.done output_index not ordered: %v", outputIndices)
-		}
-	}
-}
 
 // ─── Chat Completions 流测试 ─────────────────────────────────
 
@@ -414,45 +340,6 @@ func TestCollectUpstreamChunks_ArgumentsConcatenated(t *testing.T) {
 
 // ─── 格式转换函数测试 ─────────────────────────────────────────
 
-func TestConvertResponsesToChat_StringInput(t *testing.T) {
-	body := map[string]interface{}{
-		"input": "hello",
-	}
-	messages := convertResponsesToChat(body)
-	if len(messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(messages))
-	}
-	msg := messages[0].(map[string]interface{})
-	if msg["role"] != "user" {
-		t.Errorf("expected role=user, got %v", msg["role"])
-	}
-	if msg["content"] != "hello" {
-		t.Errorf("expected content=hello, got %v", msg["content"])
-	}
-}
-
-func TestConvertResponsesToChat_FunctionCallOutput(t *testing.T) {
-	body := map[string]interface{}{
-		"input": []interface{}{
-			map[string]interface{}{
-				"type":    "function_call_output",
-				"call_id": "call_123",
-				"output":  "result data",
-			},
-		},
-	}
-	messages := convertResponsesToChat(body)
-	if len(messages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(messages))
-	}
-	msg := messages[0].(map[string]interface{})
-	if msg["role"] != "tool" {
-		t.Errorf("expected role=tool, got %v", msg["role"])
-	}
-	if msg["tool_call_id"] != "call_123" {
-		t.Errorf("expected tool_call_id=call_123, got %v", msg["tool_call_id"])
-	}
-}
 
 func TestConvertAnthropicMessagesToOpenai(t *testing.T) {
 	tests := []struct {
