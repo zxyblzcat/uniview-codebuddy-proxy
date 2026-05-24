@@ -381,7 +381,7 @@ func (a *App) startServerE() error {
 
 	auth.RegisterRoutes(r)
 	proxy.RegisterRoutes(r)
-	web.RegisterAPIRoutes(r)
+	web.RegisterAPIRoutes(r, a.logWriter)
 	web.SetupAdminUI(r)
 
 	log.Println("==================================================")
