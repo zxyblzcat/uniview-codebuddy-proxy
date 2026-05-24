@@ -54,17 +54,6 @@
     "cacheTtl": "Cache TTL (seconds):",
     "language": "Language"
   },
-  "stats": {
-    "title": "Usage Statistics",
-    "totalRequests": "Total Requests",
-    "successful": "Successful",
-    "errors": "Errors",
-    "uptime": "Uptime",
-    "modelsUsed": "Models Used",
-    "requests": "{{count}} requests",
-    "noRequests": "No requests yet",
-    "hoursMinutes": "{{h}}h {{m}}m"
-  },
   "login": {
     "password": "API Password",
     "submit": "Login",

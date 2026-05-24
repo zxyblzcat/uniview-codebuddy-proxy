@@ -4,9 +4,14 @@ COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X uniview-codebuddy-proxy/internal/version.Version=$(VERSION) -X uniview-codebuddy-proxy/internal/version.Commit=$(COMMIT) -X uniview-codebuddy-proxy/internal/version.Date=$(DATE)
 
-.PHONY: build build-all clean run build-mac-app build-mac-app-intel build-windows-gui build-windows-gui-arm64
+.PHONY: build build-all clean run build-frontend build-mac-app build-mac-app-intel build-windows-gui build-windows-gui-arm64
 
-build:
+build-frontend:
+	cd web && npm install --silent && npx tsc -b && npx vite build
+	rm -rf internal/web/dist/*
+	cp -r web/dist/* internal/web/dist/
+
+build: build-frontend
 	go build -ldflags "$(LDFLAGS)" -o $(APP_NAME) ./cmd/proxy
 
 build-all: build-darwin-arm64 build-darwin-amd64 build-linux-amd64 build-linux-arm64 build-windows-amd64 build-windows-arm64

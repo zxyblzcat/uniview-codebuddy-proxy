@@ -194,6 +194,30 @@ func (mw *MultiWriter) Clear() {
 	}
 }
 
+// TruncateIfOver checks if the log file exceeds maxBytes and truncates it if so.
+// Returns true if truncation was performed.
+func (mw *MultiWriter) TruncateIfOver(maxBytes int64) bool {
+	mw.mu.Lock()
+	defer mw.mu.Unlock()
+
+	if mw.file == nil {
+		return false
+	}
+
+	fi, err := mw.file.Stat()
+	if err != nil {
+		return false
+	}
+
+	if fi.Size() > maxBytes {
+		mw.file.Truncate(0)
+		mw.file.Seek(0, io.SeekStart)
+		return true
+	}
+
+	return false
+}
+
 // Close closes the log file if open.
 func (mw *MultiWriter) Close() {
 	mw.mu.Lock()

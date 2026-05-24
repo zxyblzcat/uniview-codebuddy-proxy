@@ -55,6 +55,8 @@ Anthropic    (/v1/messages)           ─┘─→ Proxy ─→ CodeBuddy /v2/ch
 | `API_PASSWORD` | empty | When non-empty, requires auth on `/v1/*` endpoints |
 | `CODEBUDDY_API_KEY` | — | Loaded but currently unused |
 | `TOKEN_FILE_PATH` | `~/.codebuddy-proxy/token.json` | Token 文件存储路径 |
+| `LOG_MAX_SIZE_MB` | `50` | 日志文件大小上限（MB），超过则截断清空 |
+| `LOG_CLEANUP_INTERVAL` | `1800` | 后台清理检查间隔（秒），默认 30 分钟 |
 
 The upstream base URL (`https://unvcoding.copilot.qq.com`) is hardcoded, not configurable.
 

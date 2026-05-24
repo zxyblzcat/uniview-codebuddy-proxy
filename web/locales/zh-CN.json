@@ -54,17 +54,6 @@
     "cacheTtl": "缓存 TTL（秒）：",
     "language": "语言"
   },
-  "stats": {
-    "title": "使用统计",
-    "totalRequests": "总请求数",
-    "successful": "成功",
-    "errors": "错误",
-    "uptime": "运行时间",
-    "modelsUsed": "已使用模型",
-    "requests": "{{count}} 次请求",
-    "noRequests": "暂无请求",
-    "hoursMinutes": "{{h}}小时 {{m}}分钟"
-  },
   "login": {
     "password": "API 密码",
     "submit": "登录",

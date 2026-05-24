@@ -328,3 +328,56 @@ func removeTokenEntryFromDisk(userID string) error {
 	}
 	return nil
 }
+
+// CleanupExpiredTokenFiles 扫描 tokens/ 目录，删除所有过期 token 文件。
+// 返回删除的文件数和错误。
+func CleanupExpiredTokenFiles() (int, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0, fmt.Errorf("cannot determine home dir: %w", err)
+	}
+	tokensDir := filepath.Join(home, ".codebuddy-proxy", "tokens")
+	entries, err := os.ReadDir(tokensDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("cannot read tokens dir: %w", err)
+	}
+
+	removed := 0
+	now := time.Now().Unix()
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(tokensDir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var td TokenData
+		if err := json.Unmarshal(data, &td); err != nil {
+			continue
+		}
+		if td.ExpiresAt > 0 && now > td.ExpiresAt+5 {
+			if err := os.Remove(path); err != nil {
+				log.Printf("Warning: failed to remove expired token file %s: %v", path, err)
+			} else {
+				removed++
+			}
+		}
+	}
+
+	// 同时清理旧版 token.json（如果过期）
+	legacyPath := filepath.Join(home, ".codebuddy-proxy", "token.json")
+	if data, err := os.ReadFile(legacyPath); err == nil {
+		var td TokenData
+		if json.Unmarshal(data, &td) == nil && td.ExpiresAt > 0 && now > td.ExpiresAt+5 {
+			os.Remove(legacyPath)
+			removed++
+		}
+	}
+
+	return removed, nil
+}
