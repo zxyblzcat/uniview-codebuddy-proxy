@@ -2,7 +2,6 @@ package web
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -11,8 +10,10 @@ import (
 	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/cache"
 	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/i18n"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/text/language"
 )
 
 var (
@@ -70,6 +71,8 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	api.PUT("/config", handlePutConfig)
 	api.GET("/stats", handleGetStats)
 	api.GET("/logs/stream", handleLogStream)
+	api.GET("/locale", handleGetLocale)
+	api.PUT("/locale", handlePutLocale)
 }
 
 func handleGetConfig(c *gin.Context) {
@@ -79,6 +82,7 @@ func handleGetConfig(c *gin.Context) {
 		"cache_enabled":    config.CacheEnabled && cache.GlobalCache.IsEnabled(),
 		"cache_ttl":        config.CacheTTL,
 		"base_url":         config.BaseURL,
+		"locale":           i18n.GetLocale().String(),
 	})
 }
 
@@ -144,6 +148,29 @@ func handleLogStream(c *gin.Context) {
 	}
 }
 
+func handleGetLocale(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"locale": i18n.GetLocale().String(),
+	})
+}
+
+func handlePutLocale(c *gin.Context) {
+	var body struct {
+		Locale string `json:"locale"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Locale == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	tag, err := language.Parse(body.Locale)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid locale"})
+		return
+	}
+	i18n.SetLocale(tag)
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "locale": tag.String()})
+}
+
 // embedFS 已在 embed.go 中通过 go:embed 定义
 
 // SetupAdminUI 设置 /admin/ 路由提供前端 SPA
@@ -192,7 +219,6 @@ func SetupAdminUI(r *gin.Engine) {
 			contentType = "image/x-icon"
 		}
 
-		log.Printf("Serving admin file: dist%s (%s)", fp, contentType)
 		c.Data(http.StatusOK, contentType, data)
 	})
 }
