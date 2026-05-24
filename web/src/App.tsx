@@ -31,7 +31,7 @@ function AppInner() {
       <div className="min-h-screen bg-slate-900">
         <nav className="bg-slate-800 border-b border-slate-700">
           <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-            <h1 className="text-lg font-bold text-blue-400">CodeBuddy Proxy</h1>
+            <h1 className="text-lg font-bold text-blue-400">UniviewCodeBuddyProxy</h1>
             <div className="flex gap-1 items-center">
               {[
                 { to: '/', label: t('nav.tokens'), end: true },

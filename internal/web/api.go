@@ -265,3 +265,4 @@ func SetupAdminUI(r *gin.Engine) {
 		c.Data(http.StatusOK, contentType, data)
 	})
 }
+

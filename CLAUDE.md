@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-codebuddy-proxy is a Go API gateway that translates Tencent Cloud's CodeBuddy proprietary chat API into three standard formats: OpenAI Chat Completions, Anthropic Messages, and OpenAI Responses API. This lets any compatible client (ChatGPT-Next-Web, LobeChat, Cherry Studio, Cursor, Claude Desktop) talk to CodeBuddy without knowing its protocol.
+codebuddy-proxy is a Go API gateway that translates Tencent Cloud's CodeBuddy proprietary chat API into two standard formats: OpenAI Chat Completions and Anthropic Messages. This lets any compatible client (ChatGPT-Next-Web, LobeChat, Cherry Studio, Cursor, Claude Desktop) talk to CodeBuddy without knowing its protocol.
 
 ## Build & Run Commands
 
@@ -22,12 +22,11 @@ No test suite exists. Go 1.25.6, dependencies: `gin v1.12.0`, `godotenv v1.5.1`.
 
 ### Hub-and-Spoke Translation
 
-All inbound requests (3 API formats) are converted to a single upstream format: CodeBuddy's OpenAI-shaped `/v2/chat/completions` with `stream: true`. The proxy then translates the upstream SSE response back into the client's requested format.
+All inbound requests (2 API formats) are converted to a single upstream format: CodeBuddy's OpenAI-shaped `/v2/chat/completions` with `stream: true`. The proxy then translates the upstream SSE response back into the client's requested format.
 
 ```
 OpenAI Chat  (/v1/chat/completions)  ─┐
-Anthropic    (/v1/messages)           ─┼─→ Proxy ─→ CodeBuddy /v2/chat/completions
-Responses    (/v1/responses)          ─┘
+Anthropic    (/v1/messages)           ─┘─→ Proxy ─→ CodeBuddy /v2/chat/completions
 ```
 
 ### Package Layout
@@ -41,7 +40,7 @@ Responses    (/v1/responses)          ─┘
 
 - **Forced upstream streaming**: The proxy always sends `stream: true` to upstream, even for non-streaming client requests. Non-streaming responses are assembled by collecting all SSE chunks first (`CollectUpstreamChunks`).
 - **Single HTTP client**: `httpClient` (no total timeout, 30min response header timeout) for all upstream requests. Supports long-thinking models that may take minutes before first token. `FetchModels` uses `context.WithTimeout(15s)` for its short-lived config request.
-- **State-machine SSE translators**: `anthropic_stream.go` and `responses_stream.go` each implement a state machine tracking text/tool-call block indices to emit format-correct events. These are the most complex functions in the codebase (200-340 lines each). Key state: `textBlockIdx`/`textStarted` for open text blocks; `toolBlockIdxMap`/`toolCallsStarted` mapping OpenAI tool-call indices to target-format block indices. A new content block is opened on first appearance of text or a tool call ID; blocks are closed when switching from text→tool, tool→tool, or on stream end.
+- **State-machine SSE translator**: `anthropic_stream.go` implements a state machine tracking text/tool-call block indices to emit format-correct events. This is the most complex function in the codebase (200-340 lines). Key state: `textBlockIdx`/`textStarted` for open text blocks; `toolBlockIdxMap`/`toolCallsStarted` mapping OpenAI tool-call indices to target-format block indices. A new content block is opened on first appearance of text or a tool call ID; blocks are closed when switching from text→tool, tool→tool, or on stream end.
 - **Upstream header construction**: `BuildUpstreamHeaders()` and `authPollHeaders()` assemble 12-20 fixed headers (including `X-Machine-Id`, `X-User-Id`, B3 tracing headers). These are critical for upstream acceptance — changing them will break auth or chat requests.
 - **Route duplication**: All `/v1/` routes are also registered under `/v1/v1/` to handle clients that double-prepend the path prefix.
 - **Liveness probe detection**: When `max_tokens == 1 && stream == true`, a canned response is returned immediately without contacting upstream (for Cursor compatibility).
@@ -76,4 +75,4 @@ The upstream base URL (`https://unvcoding.copilot.qq.com`) is hardcoded, not con
 ### Model Defaults
 
 - `handleChatCompletions` defaults model to `auto-chat`
-- `handleAnthropicMessages` and `handleResponses` default to `deepseek-v3`
+- `handleAnthropicMessages` defaults to `deepseek-v3`
