@@ -78,18 +78,25 @@ func (rb *RingBuffer) Lines() []string {
 	return result
 }
 
+// subscriber receives new log lines as they are written.
+type subscriber struct {
+	ch chan string
+}
+
 // MultiWriter writes to both a RingBuffer and a log file.
 type MultiWriter struct {
-	ring *RingBuffer
-	file *os.File
-	mu   sync.Mutex
+	ring        *RingBuffer
+	file        *os.File
+	mu          sync.Mutex
+	subscribers map[*subscriber]struct{}
 }
 
 // NewMultiWriter creates a MultiWriter that writes to an in-memory ring buffer
 // of ringSize lines and appends to the file at filePath.
 func NewMultiWriter(ringSize int, filePath string) *MultiWriter {
 	mw := &MultiWriter{
-		ring: NewRingBuffer(ringSize),
+		ring:        NewRingBuffer(ringSize),
+		subscribers: make(map[*subscriber]struct{}),
 	}
 
 	if filePath != "" {
@@ -116,7 +123,51 @@ func (mw *MultiWriter) Write(p []byte) (int, error) {
 			log.Printf("Warning: log file write error: %v", err)
 		}
 	}
+
+	// Notify subscribers with new complete lines.
+	mw.notifySubscribers(p)
+
 	return n, nil
+}
+
+// notifySubscribers sends new complete log lines to all subscribers.
+// Must be called with mw.mu held.
+func (mw *MultiWriter) notifySubscribers(p []byte) {
+	off := 0
+	for {
+		idx := bytes.IndexByte(p[off:], '\n')
+		if idx < 0 {
+			break
+		}
+		line := string(p[off : off+idx])
+		off = off + idx + 1
+		for sub := range mw.subscribers {
+			select {
+			case sub.ch <- line:
+			default:
+			}
+		}
+	}
+}
+
+// Subscribe returns a channel that receives new log lines as they are written,
+// and an unsubscribe function. The channel is buffered (256); slow consumers
+// have lines dropped.
+func (mw *MultiWriter) Subscribe() (<-chan string, func()) {
+	mw.mu.Lock()
+	defer mw.mu.Unlock()
+
+	ch := make(chan string, 256)
+	sub := &subscriber{ch: ch}
+	mw.subscribers[sub] = struct{}{}
+
+	unsubscribe := func() {
+		mw.mu.Lock()
+		defer mw.mu.Unlock()
+		delete(mw.subscribers, sub)
+	}
+
+	return ch, unsubscribe
 }
 
 // Lines returns the ring buffer contents.

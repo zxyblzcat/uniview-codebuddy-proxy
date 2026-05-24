@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"uniview-codebuddy-proxy/internal/cache"
 	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/i18n"
+	"uniview-codebuddy-proxy/internal/logbuf"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/text/language"
@@ -22,6 +24,7 @@ var (
 	errorCount    atomic.Int64
 	modelsUsed    syncMap
 	startTime     = time.Now()
+	logWriter     *logbuf.MultiWriter
 )
 
 type syncMap struct {
@@ -62,7 +65,8 @@ func RecordRequest(model string, success bool) {
 }
 
 // RegisterAPIRoutes 注册 /api/* 后端 API 路由
-func RegisterAPIRoutes(r *gin.Engine) {
+func RegisterAPIRoutes(r *gin.Engine, lw *logbuf.MultiWriter) {
+	logWriter = lw
 	api := r.Group("/api")
 	if config.APIPassword != "" {
 		api.Use(auth.APIPasswordMiddleware())
@@ -119,6 +123,11 @@ func handleGetStats(c *gin.Context) {
 }
 
 func handleLogStream(c *gin.Context) {
+	if logWriter == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "log writer not available"})
+		return
+	}
+
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -129,15 +138,29 @@ func handleLogStream(c *gin.Context) {
 		return
 	}
 
-	// 保持连接 5 分钟
+	// Send existing log lines as initial backlog.
+	for _, line := range logWriter.Lines() {
+		fmt.Fprintf(c.Writer, "data: %s\n\n", sseEscape(line))
+	}
+	flusher.Flush()
+
+	// Subscribe to new log lines.
+	ch, unsubscribe := logWriter.Subscribe()
+	defer unsubscribe()
+
 	timeout := time.After(5 * time.Minute)
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
-			// 发送心跳
+		case line, ok := <-ch:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(c.Writer, "data: %s\n\n", sseEscape(line))
+			flusher.Flush()
+		case <-heartbeat.C:
 			fmt.Fprintf(c.Writer, "event: ping\ndata: {}\n\n")
 			flusher.Flush()
 		case <-c.Request.Context().Done():
@@ -146,6 +169,14 @@ func handleLogStream(c *gin.Context) {
 			return
 		}
 	}
+}
+
+// sseEscape escapes a string for use in an SSE data field.
+// Per the SSE spec, only literal \n needs escaping (as two separate data: lines
+// would be interpreted as two events). We replace newlines with   to keep
+// each log entry as a single SSE data field.
+func sseEscape(s string) string {
+	return strings.ReplaceAll(s, "\n", " ")
 }
 
 func handleGetLocale(c *gin.Context) {
