@@ -98,8 +98,8 @@ func handleAuthStart(c *gin.Context) {
 		return
 	}
 
-	// 自动打开浏览器让用户登录
-	OpenBrowser(authURL)
+	// 前端负责打开浏览器（window.open），后端不重复调用 OpenBrowser
+	// OpenBrowser 仅在系统托盘 handleAuth 场景下使用
 	c.JSON(http.StatusOK, gin.H{
 		"success":    true,
 		"auth_state": authState,

@@ -4,7 +4,6 @@ package i18n
 
 import (
 	"syscall"
-	"unsafe"
 
 	"golang.org/x/text/language"
 )
