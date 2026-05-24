@@ -114,6 +114,9 @@ jobs:
             shopt -s dotglob
             mv * UniviewCodeBuddyProxy.app/ 2>/dev/null || true
           fi
+          # CI 管道可能丢失可执行权限，确保恢复（codesign 也需要可执行位）
+          chmod +x "UniviewCodeBuddyProxy.app/Contents/MacOS/uniview-codebuddy-proxy"
+          chmod +x "UniviewCodeBuddyProxy.app/Contents/Library/LoginItems/UniviewCodeBuddyProxy Helper.app/Contents/MacOS/uniview-codebuddy-proxy"
           zip -r ../../UniviewCodeBuddyProxy-macos-arm64.zip UniviewCodeBuddyProxy.app
           cd ../..
 

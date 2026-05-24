@@ -37,11 +37,13 @@ mkdir -p "$MACOS"
 mkdir -p "$RESOURCES"
 mkdir -p "$HELPER_MACOS"
 
-# Copy main binary
+# Copy main binary (go build already sets 755)
 cp "${BINARY_NAME}" "${MACOS}/${BINARY_NAME}"
+chmod +x "${MACOS}/${BINARY_NAME}"
 
 # Copy helper binary (same binary, --login-item flag distinguishes role)
 cp "${BINARY_NAME}" "${HELPER_MACOS}/${BINARY_NAME}"
+chmod +x "${HELPER_MACOS}/${BINARY_NAME}"
 
 # Create Info.plist for main app
 cat > "${CONTENTS}/Info.plist" << PLIST
