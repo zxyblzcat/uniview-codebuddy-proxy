@@ -16,18 +16,20 @@ type CacheEntry struct {
 
 // Cache 简单的 TTL 内存缓存
 type Cache struct {
-	mu    sync.RWMutex
-	store map[string]*CacheEntry
-	ttl   time.Duration
-	enabled bool
+	mu           sync.RWMutex
+	store        map[string]*CacheEntry
+	ttl          time.Duration
+	enabled      bool
+	cleanupDone  chan struct{} // 防止并发 cleanup goroutine
 }
 
 // New 创建新的缓存实例
 func New(ttl time.Duration) *Cache {
 	return &Cache{
-		store:   make(map[string]*CacheEntry),
-		ttl:     ttl,
-		enabled: false,
+		store:       make(map[string]*CacheEntry),
+		ttl:         ttl,
+		enabled:     false,
+		cleanupDone: make(chan struct{}, 1),
 	}
 }
 
@@ -110,9 +112,13 @@ func (c *Cache) Set(key string, data json.RawMessage) {
 		CreatedAt: time.Now(),
 	}
 
-	// 惰性清理过期条目
+	// 惰性清理过期条目（防止并发 cleanup goroutine）
 	if len(c.store) > 10000 {
-		go c.cleanup()
+		select {
+		case c.cleanupDone <- struct{}{}:
+			go c.cleanup()
+		default:
+		}
 	}
 }
 
@@ -136,6 +142,7 @@ func (c *Cache) Clear() {
 
 // cleanup 删除过期条目
 func (c *Cache) cleanup() {
+	defer func() { <-c.cleanupDone }() // 允许下次 cleanup 启动
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()

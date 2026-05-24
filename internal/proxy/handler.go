@@ -51,7 +51,6 @@ func registerAPIRoutes(g *gin.RouterGroup) {
 	g.GET("/models", handleModels)
 	g.POST("/messages", handleAnthropicMessages)
 	g.POST("/messages/count_tokens", handleCountTokens)
-	g.POST("/responses", handleResponses)
 }
 
 // optionalAuthMiddleware 当 API_PASSWORD 已设置时要求认证，否则放行
@@ -232,10 +231,9 @@ func handleRoot(c *gin.Context) {
 		"service": "CodeBuddy CN -> OpenAI API Proxy",
 		"version": version.Version,
 		"endpoints": gin.H{
-			"chat":      "POST /v1/chat/completions",
-			"messages":  "POST /v1/messages (Anthropic)",
-			"responses": "POST /v1/responses",
-			"models":    "GET /v1/models",
+			"chat":     "POST /v1/chat/completions",
+			"messages": "POST /v1/messages (Anthropic)",
+			"models":   "GET /v1/models",
 		},
 	}
 
@@ -488,81 +486,5 @@ func handleAnthropicMessages(c *gin.Context) {
 			return
 		}
 		convertOpenAIToAnthropicResponse(result, model, c)
-	}
-}
-
-// handleResponses POST /v1/responses — OpenAI Responses API 兼容端点
-func handleResponses(c *gin.Context) {
-	bearer := auth.GetBearerToken()
-	if bearer == "" {
-		web.RecordRequest("", false)
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": gin.H{"message": "No token. Visit /auth/start to login.", "type": "auth_required"},
-		})
-		return
-	}
-
-	var body map[string]interface{}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{"message": "Invalid request body", "type": "invalid_request"},
-		})
-		return
-	}
-
-	model := "deepseek-v3"
-	if v, ok := body["model"].(string); ok {
-		model = v
-	}
-	web.RecordRequest(model, true)
-	isStream := false
-	if v, ok := body["stream"].(bool); ok {
-		isStream = v
-	}
-
-	// 转换 input → messages
-	messages := convertResponsesToChat(body)
-
-	// 构建上游 payload
-	payload := map[string]interface{}{
-		"model":    model,
-		"messages": messages,
-		"stream":   true,
-	}
-	if v, ok := body["max_output_tokens"]; ok {
-		payload["max_tokens"] = v
-	}
-	if v, ok := body["temperature"]; ok {
-		payload["temperature"] = v
-	}
-	if v, ok := body["tools"]; ok {
-		payload["tools"] = v
-	}
-	if v, ok := body["tool_choice"]; ok {
-		payload["tool_choice"] = v
-	}
-
-	// 确保至少 2 条消息
-	ensureMinMessages(payload)
-
-	requestID := "resp_" + randomHex(24)
-
-	if isStream {
-		StreamResponsesSSE(c.Request.Context(), payload, model, bearer, c.Writer)
-	} else {
-		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": gin.H{"message": err.Error(), "type": "proxy_error"},
-			})
-			return
-		}
-		if result.StatusCode != 200 {
-			c.JSON(result.StatusCode, gin.H{
-				"error": gin.H{"message": result.ErrorText, "type": "upstream_error"},
-			})
-			return
-		}
-		convertChatToResponsesResult(result, model, requestID, c)
 	}
 }

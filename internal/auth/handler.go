@@ -270,7 +270,7 @@ func handleAuthStatus(c *gin.Context) {
 	if td == nil {
 		c.JSON(http.StatusOK, gin.H{
 			"has_token": false,
-			"message":   "No token. Visit /auth/start",
+			"message":   "No token. Visit /auth/start to login.",
 		})
 		return
 	}
@@ -411,7 +411,10 @@ func generateNonce() (string, error) {
 func generateRequestID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+		log.Printf("Warning: crypto/rand.Read failed: %v", err)
+		for i := range b {
+			b[i] = byte(time.Now().UnixNano() + int64(i))
+		}
 	}
 	return hex.EncodeToString(b)
 }
@@ -419,7 +422,10 @@ func generateRequestID() string {
 func generateSpanID() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand.Read failed: %v", err))
+		log.Printf("Warning: crypto/rand.Read failed: %v", err)
+		for i := range b {
+			b[i] = byte(time.Now().UnixNano() + int64(i))
+		}
 	}
 	return hex.EncodeToString(b)
 }
