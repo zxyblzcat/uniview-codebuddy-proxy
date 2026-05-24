@@ -40,6 +40,7 @@ type App struct {
 	adminItem     *systray.MenuItem
 	quitItem      *systray.MenuItem
 	running       bool
+	stopCleanupCh chan struct{}
 	authPending   bool
 	uiCh          chan func() // dispatches UI updates to main goroutine
 }
@@ -47,8 +48,9 @@ type App struct {
 // New creates a new App instance.
 func New(logWriter *logbuf.MultiWriter) *App {
 	return &App{
-		logWriter: logWriter,
-		uiCh:      make(chan func(), 32),
+		logWriter:     logWriter,
+		uiCh:          make(chan func(), 32),
+		stopCleanupCh: make(chan struct{}),
 	}
 }
 
@@ -412,6 +414,13 @@ func (a *App) startServerE() error {
 
 	log.Printf("HTTP server listening on :%d", config.Port)
 	a.server = srv
+
+	// 启动时执行一次清理
+	a.doCleanup()
+
+	// 启动后台定时清理 goroutine
+	go a.cleanupLoop(a.stopCleanupCh)
+
 	a.running = true
 	return nil
 }
@@ -517,6 +526,39 @@ func killProcessOnPort(port int) error {
 	return nil
 }
 
+// cleanupLoop runs periodic cleanup for logs and expired token files.
+// It runs until stopCh is closed.
+func (a *App) cleanupLoop(stopCh <-chan struct{}) {
+	interval := time.Duration(config.LogCleanupIntervalAtomic()) * time.Second
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			a.doCleanup()
+		}
+	}
+}
+
+// doCleanup performs one round of log truncation and expired token file cleanup.
+func (a *App) doCleanup() {
+	// 日志大小检查与截断
+	maxBytes := int64(config.LogMaxSizeMBAtomic()) * 1024 * 1024
+	if a.logWriter.TruncateIfOver(maxBytes) {
+		log.Printf("Log file exceeded %dMB, truncated", config.LogMaxSizeMBAtomic())
+	}
+
+	// 过期 Token 文件清理
+	if removed, err := auth.CleanupExpiredTokenFiles(); err != nil {
+		log.Printf("Token cleanup error: %v", err)
+	} else if removed > 0 {
+		log.Printf("Cleaned up %d expired token file(s)", removed)
+	}
+}
+
 func (a *App) stopServer() {
 	a.mu.Lock()
 	if !a.running || a.server == nil {
@@ -526,6 +568,8 @@ func (a *App) stopServer() {
 	srv := a.server
 	a.server = nil
 	a.running = false
+	close(a.stopCleanupCh)
+	a.stopCleanupCh = make(chan struct{})
 	a.mu.Unlock()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
