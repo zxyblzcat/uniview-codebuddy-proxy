@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/i18n"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,6 +37,9 @@ func RegisterRoutes(r *gin.Engine) {
 		auth.GET("/poll", handleAuthPoll)
 		auth.POST("/manual", handleAuthManual)
 		auth.GET("/status", handleAuthStatus)
+		auth.GET("/tokens", handleListTokens)
+		auth.DELETE("/tokens/:user_id", handleDeleteToken)
+		auth.POST("/tokens/:user_id/refresh", handleRefreshToken)
 	}
 }
 
@@ -46,21 +50,32 @@ func APIPasswordMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		// 优先检查 Authorization: Bearer 头
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.Header("WWW-Authenticate", "Bearer realm=\"uniview-codebuddy-proxy\"")
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},
-			})
-			c.Abort()
-			return
-		}
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIPassword)) == 1 {
 				c.Next()
 				return
 			}
+		}
+
+		// 其次检查 x-api-key 头
+		apiKey := c.GetHeader("x-api-key")
+		if apiKey != "" {
+			if subtle.ConstantTimeCompare([]byte(apiKey), []byte(config.APIPassword)) == 1 {
+				c.Next()
+				return
+			}
+		}
+
+		if authHeader == "" && apiKey == "" {
+			c.Header("WWW-Authenticate", "Bearer realm=\"uniview-codebuddy-proxy\"")
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": gin.H{"message": "Missing Authorization header", "type": "authentication_error"},
+			})
+			c.Abort()
+			return
 		}
 
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -83,8 +98,8 @@ func handleAuthStart(c *gin.Context) {
 		return
 	}
 
-	// 自动打开浏览器让用户登录
-	OpenBrowser(authURL)
+	// 前端负责打开浏览器（window.open），后端不重复调用 OpenBrowser
+	// OpenBrowser 仅在系统托盘 handleAuth 场景下使用
 	c.JSON(http.StatusOK, gin.H{
 		"success":    true,
 		"auth_state": authState,
@@ -267,6 +282,55 @@ func handleAuthStatus(c *gin.Context) {
 	})
 }
 
+// handleListTokens 列出所有 token 的状态
+func handleListTokens(c *gin.Context) {
+	tokens := GetPool().GetAllTokens()
+	c.JSON(http.StatusOK, gin.H{
+		"count":  len(tokens),
+		"tokens": tokens,
+	})
+}
+
+// handleDeleteToken 删除指定 token
+func handleDeleteToken(c *gin.Context) {
+	userID := c.Param("user_id")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
+	if err := GetPool().RemoveToken(userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "deleted", "user_id": userID})
+}
+
+// handleRefreshToken 手动刷新指定 token
+func handleRefreshToken(c *gin.Context) {
+	userID := c.Param("user_id")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
+
+	cached := LoadToken()
+	if cached == nil || cached.UserID != userID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "token not found for user_id: " + userID})
+		return
+	}
+
+	newTD, err := RefreshToken(cached)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "refresh failed: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":     "refreshed",
+		"user_id":    newTD.UserID,
+		"expires_at": newTD.ExpiresAt,
+	})
+}
+
 // ─── 请求头构建 ─────────────────────────────────────
 
 func authStartHeaders() map[string]string {
@@ -436,7 +500,7 @@ func isGUIAvailable() bool {
 func printAuthURL(url string) {
 	fmt.Println()
 	fmt.Println("============================================")
-	fmt.Println("  请在浏览器中打开以下链接完成登录：")
+	fmt.Println(i18n.T("auth.open_browser"))
 	fmt.Println()
 	fmt.Printf("  %s\n", url)
 	fmt.Println("============================================")

@@ -1,0 +1,62 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "delete": "Delete",
+    "refresh": "Refresh",
+    "add": "Add",
+    "save": "Save Changes",
+    "saving": "Saving..."
+  },
+  "nav": {
+    "tokens": "Tokens",
+    "logs": "Logs",
+    "config": "Config",
+    "stats": "Stats"
+  },
+  "tokens": {
+    "title": "Token Management",
+    "oauthLogin": "+ OAuth Login",
+    "addManually": "Add Token Manually",
+    "placeholder": "Paste bearer token...",
+    "empty": "No tokens found. Add one manually or start OAuth login.",
+    "created": "Created: ",
+    "expires": "Expires: ",
+    "deleteConfirm": "Delete token for {{userId}}?",
+    "unavailable": "Unavailable",
+    "expired": "Expired",
+    "cooldown": "Cooldown",
+    "active": "Active"
+  },
+  "logs": {
+    "title": "Live Logs",
+    "autoScroll": "Auto-scroll",
+    "clear": "Clear",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "waiting": "Waiting for logs..."
+  },
+  "config": {
+    "title": "Configuration",
+    "server": "Server",
+    "port": "Port",
+    "upstreamUrl": "Upstream URL",
+    "apiPassword": "API Password",
+    "set": "Set",
+    "notSet": "Not set",
+    "cacheSettings": "Cache Settings",
+    "enableCache": "Enable response cache",
+    "cacheTtl": "Cache TTL (seconds):",
+    "language": "Language"
+  },
+  "stats": {
+    "title": "Usage Statistics",
+    "totalRequests": "Total Requests",
+    "successful": "Successful",
+    "errors": "Errors",
+    "uptime": "Uptime",
+    "modelsUsed": "Models Used",
+    "requests": "{{count}} requests",
+    "noRequests": "No requests yet",
+    "hoursMinutes": "{{h}}h {{m}}m"
+  }
+}

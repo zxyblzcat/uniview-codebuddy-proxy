@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"fmt"
 	"net/http"
@@ -9,11 +10,24 @@ import (
 	"unicode/utf8"
 
 	"uniview-codebuddy-proxy/internal/auth"
+	"uniview-codebuddy-proxy/internal/cache"
 	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/version"
+	"uniview-codebuddy-proxy/internal/web"
 
 	"github.com/gin-gonic/gin"
 )
+
+// cacheWriter 用于捕获 gin 响应体以便缓存
+type cacheWriter struct {
+	gin.ResponseWriter
+	body *bytes.Buffer
+}
+
+func (w *cacheWriter) Write(data []byte) (int, error) {
+	w.body.Write(data)
+	return w.ResponseWriter.Write(data)
+}
 
 // RegisterRoutes 注册所有 /v1/* 路由和健康检查路由
 func RegisterRoutes(r *gin.Engine) {
@@ -76,6 +90,7 @@ func ensureMinMessages(payload map[string]interface{}) {
 func handleChatCompletions(c *gin.Context) {
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
+		web.RecordRequest("", false)
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": gin.H{"message": "No token. Visit /auth/start to login.", "type": "auth_required"},
 		})
@@ -98,6 +113,7 @@ func handleChatCompletions(c *gin.Context) {
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
+	web.RecordRequest(model, true)
 
 	// 构建上游 payload（强制 stream: true）
 	payload := map[string]interface{}{
@@ -106,7 +122,7 @@ func handleChatCompletions(c *gin.Context) {
 		"stream":   true,
 	}
 	// 可选参数
-	for _, k := range []string{"temperature", "max_tokens", "tools", "tool_choice"} {
+	for _, k := range []string{"temperature", "max_tokens", "tools", "tool_choice", "stop", "stream_options"} {
 		if v, ok := body[k]; ok {
 			payload[k] = v
 		}
@@ -366,8 +382,14 @@ func estimateMapChars(m map[string]interface{}) int {
 
 // handleAnthropicMessages POST /v1/messages — Anthropic Messages API 兼容端点
 func handleAnthropicMessages(c *gin.Context) {
+	// 回传 anthropic-version 请求头
+	if v := c.GetHeader("anthropic-version"); v != "" {
+		c.Header("anthropic-version", v)
+	}
+
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
+		web.RecordRequest("", false)
 		anthropicErrorResponse(c, http.StatusUnauthorized, "authentication_error", "No token. Visit /auth/start to login.")
 		return
 	}
@@ -382,6 +404,7 @@ func handleAnthropicMessages(c *gin.Context) {
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
+	web.RecordRequest(model, true)
 	isStream := false
 	if v, ok := body["stream"].(bool); ok {
 		isStream = v
@@ -412,6 +435,9 @@ func handleAnthropicMessages(c *gin.Context) {
 	if v, ok := body["tool_choice"]; ok {
 		payload["tool_choice"] = convertToolChoiceAnthropicToOpenai(v)
 	}
+	if ss, ok := body["stop_sequences"].([]interface{}); ok {
+		payload["stop"] = ss
+	}
 
 	// 确保至少 2 条消息
 	ensureMinMessages(payload)
@@ -435,6 +461,14 @@ func handleAnthropicMessages(c *gin.Context) {
 	if isStream {
 		StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer)
 	} else {
+		// 非流式：检查缓存
+		if config.CacheEnabled && cache.GlobalCache.IsEnabled() {
+			ck := cache.Key(model, payload["messages"], payload["tools"], 0)
+			if cached := cache.GlobalCache.Get(ck); cached != nil {
+				c.Data(http.StatusOK, "application/json", cached)
+				return
+			}
+		}
 		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer)
 		if err != nil {
 			anthropicErrorResponse(c, http.StatusInternalServerError, "api_error", err.Error())
@@ -442,6 +476,15 @@ func handleAnthropicMessages(c *gin.Context) {
 		}
 		if result.StatusCode != 200 {
 			anthropicErrorResponse(c, result.StatusCode, "api_error", result.ErrorText)
+			return
+		}
+		// 缓存响应
+		if config.CacheEnabled && cache.GlobalCache.IsEnabled() {
+			buf := &bytes.Buffer{}
+			cw := &cacheWriter{ResponseWriter: c.Writer, body: buf}
+			c.Writer = cw
+			convertOpenAIToAnthropicResponse(result, model, c)
+			cache.GlobalCache.Set(cache.Key(model, payload["messages"], payload["tools"], 0), buf.Bytes())
 			return
 		}
 		convertOpenAIToAnthropicResponse(result, model, c)
@@ -452,6 +495,7 @@ func handleAnthropicMessages(c *gin.Context) {
 func handleResponses(c *gin.Context) {
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
+		web.RecordRequest("", false)
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": gin.H{"message": "No token. Visit /auth/start to login.", "type": "auth_required"},
 		})
@@ -470,6 +514,7 @@ func handleResponses(c *gin.Context) {
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
+	web.RecordRequest(model, true)
 	isStream := false
 	if v, ok := body["stream"].(bool); ok {
 		isStream = v

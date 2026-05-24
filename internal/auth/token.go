@@ -4,11 +4,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/i18n"
 )
 
 // TokenData 表示缓存的 token 数据
@@ -115,7 +120,7 @@ func LoadToken() *TokenData {
 		}
 		if bearer != "" {
 			if cachedToken.ExpiresAt > 0 && time.Now().Unix() > cachedToken.ExpiresAt+5 {
-				log.Println("Token expired, clearing cache and triggering auto-login")
+				log.Println(i18n.T("log.token_expired"))
 				filePath := tokenFilePath()
 				cachedToken = nil
 				fileLoaded = false
@@ -160,6 +165,96 @@ func LoadToken() *TokenData {
 	return result
 }
 
+// RefreshToken 尝试使用 refresh_token 刷新 access_token
+func RefreshToken(td *TokenData) (*TokenData, error) {
+	if td == nil || td.RefreshToken == "" {
+		return nil, fmt.Errorf("no refresh token available")
+	}
+
+	req, err := http.NewRequest("POST", config.TokenRefreshURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create refresh request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+td.AccessToken)
+	req.Header.Set("X-Refresh-Token", td.RefreshToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("refresh returned %d: %s", resp.StatusCode, string(body[:min(len(body), 300)]))
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, fmt.Errorf("invalid refresh response: %w", err)
+	}
+
+	code, _ := data["code"].(float64)
+	if code != 0 {
+		return nil, fmt.Errorf("refresh failed with code %v", code)
+	}
+
+	d, _ := data["data"].(map[string]interface{})
+	if d == nil {
+		return nil, fmt.Errorf("refresh response missing data field")
+	}
+
+	accessToken, _ := d["accessToken"].(string)
+	if accessToken == "" {
+		return nil, fmt.Errorf("refresh response missing accessToken")
+	}
+
+	now := time.Now().Unix()
+	expiresIn := getIntFromRefresh(d, "expiresIn")
+	if expiresIn == 0 {
+		expiresIn = 3600
+	}
+	userID := ExtractUserIDFromJWT(accessToken)
+	if userID == "" {
+		userID, _ = d["domain"].(string)
+	}
+
+	newTD := &TokenData{
+		BearerToken:  accessToken,
+		AccessToken:  accessToken,
+		RefreshToken: getStringFromRefresh(d, "refreshToken"),
+		TokenType:    getStringFromRefresh(d, "tokenType"),
+		ExpiresIn:    expiresIn,
+		Domain:       getStringFromRefresh(d, "domain"),
+		SessionState: getStringFromRefresh(d, "sessionState"),
+		CreatedAt:    now,
+		ExpiresAt:    now + int64(expiresIn),
+		UserID:       userID,
+	}
+
+	if newTD.RefreshToken == "" {
+		newTD.RefreshToken = td.RefreshToken
+	}
+
+	if err := SaveToken(newTD); err != nil {
+		log.Printf("save refreshed token error: %v", err)
+	}
+
+	return newTD, nil
+}
+
+func getIntFromRefresh(m map[string]interface{}, key string) int {
+	v, _ := m[key].(float64)
+	return int(v)
+}
+
+func getStringFromRefresh(m map[string]interface{}, key string) string {
+	v, _ := m[key].(string)
+	return v
+}
+
 // triggerAutoRelogin 触发后台自动重新登录
 func triggerAutoRelogin() {
 	reloginMu.Lock()
@@ -179,14 +274,28 @@ func triggerAutoRelogin() {
 		close(ch)
 	}()
 
-	// 尝试自动重新登录
+	// 先尝试用 refresh_token 刷新
+	tokenMu.Lock()
+	oldToken := cachedToken
+	tokenMu.Unlock()
+	if oldToken != nil && oldToken.RefreshToken != "" {
+		newTD, err := RefreshToken(oldToken)
+		if err != nil {
+			log.Printf("Token refresh failed, falling back to device flow: %v", err)
+		} else {
+			log.Printf("Token refresh success! User: %s", newTD.UserID)
+			return
+		}
+	}
+
+	// 刷新失败，走 Device Flow
 	authURL, authState, err := FetchAuthURL()
 	if err != nil {
 		log.Printf("Auto-relogin failed (FetchAuthURL): %v", err)
 		return
 	}
 
-	log.Println("Auto-relogin: please complete login in browser...")
+	log.Println(i18n.T("log.auto_relogin_browser"))
 	OpenBrowser(authURL)
 
 	// 后台轮询等待登录完成
@@ -202,7 +311,7 @@ func triggerAutoRelogin() {
 		}
 		time.Sleep(3 * time.Second)
 	}
-	log.Println("Auto-relogin timed out after 3 minutes")
+	log.Println(i18n.T("log.auto_relogin_timeout"))
 }
 
 // ClearToken clears the in-memory token cache and deletes the token file (logout).
@@ -217,21 +326,39 @@ func ClearToken() {
 			log.Printf("Warning: failed to remove token file %s: %v", p, err)
 		}
 	}
-	log.Println("Token cleared (logout)")
+	log.Println(i18n.T("log.token_cleared"))
 }
 
-// SaveToken 将 token 缓存到内存并持久化到文件
+// SaveToken 将 token 缓存到内存、持久化到文件，并添加到 pool
 func SaveToken(td *TokenData) error {
 	tokenMu.Lock()
 	cachedToken = td
 	fileLoaded = true
 	tokenMu.Unlock()
+
+	// 添加到 pool
+	_ = GetPool().AddToken(td)
+
+	// 同时保存到旧的 token.json 保持兼容
 	return saveTokenToFile(td)
 }
 
-// GetBearerToken 返回当前 bearer token，如果正在重登录则等待最多 3 分钟
+// GetBearerToken 返回当前 bearer token，优先从 pool 获取，回退到单 token 逻辑
 func GetBearerToken() string {
-	// 先在 tokenMu 内原子地检查缓存和 relogin 状态
+	// 优先从 pool 获取（多凭证轮换）
+	pool := GetPool()
+	td := pool.NextToken()
+	if td != nil {
+		bearer := td.BearerToken
+		if bearer == "" {
+			bearer = td.AccessToken
+		}
+		if bearer != "" {
+			return bearer
+		}
+	}
+
+	// 回退到单 token 逻辑（向后兼容）
 	tokenMu.Lock()
 	if cachedToken != nil {
 		bearer := cachedToken.BearerToken
@@ -252,9 +379,7 @@ func GetBearerToken() string {
 	tokenMu.Unlock()
 
 	if !inProgress {
-		// 没有 relogin 进行中，尝试触发一个
 		go triggerAutoRelogin()
-		// 重新获取 reloginDone channel
 		reloginMu.Lock()
 		ch = reloginDone
 		reloginMu.Unlock()
@@ -263,7 +388,6 @@ func GetBearerToken() string {
 		}
 	}
 
-	// 等待重登录完成，最多 3 分钟
 	select {
 	case <-ch:
 		td := LoadToken()
@@ -274,7 +398,7 @@ func GetBearerToken() string {
 			return td.AccessToken
 		}
 	case <-time.After(3 * time.Minute):
-		log.Println("Timed out waiting for token reload")
+		log.Println(i18n.T("log.token_reload_timeout"))
 	}
 
 	return ""

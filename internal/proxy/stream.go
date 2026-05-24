@@ -132,6 +132,14 @@ func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, mode
 			errText = errText[:300]
 		}
 		log.Printf("upstream error %d: %s", resp.StatusCode, errText)
+		// 标记 token 健康状态
+		userID := auth.GetUserID()
+		switch resp.StatusCode {
+		case 429:
+			auth.GetPool().MarkCooldown(userID)
+		case 401:
+			auth.GetPool().MarkUnavailable(userID)
+		}
 		return nil, &upstreamError{StatusCode: resp.StatusCode, Message: errText}
 	}
 
@@ -298,6 +306,9 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 				if c, ok := delta["content"].(string); ok && c != "" {
 					result.ContentParts = append(result.ContentParts, c)
 				}
+				if rc, ok := delta["reasoning_content"].(string); ok && rc != "" {
+					result.ReasoningParts = append(result.ReasoningParts, rc)
+				}
 				if tcs, ok := delta["tool_calls"].([]interface{}); ok {
 					for _, tc := range tcs {
 						tcMap, _ := tc.(map[string]interface{})
@@ -362,6 +373,7 @@ type CollectedResult struct {
 	StatusCode       int
 	ErrorText        string
 	ContentParts     []string
+	ReasoningParts   []string
 	ToolCalls        []ToolCall
 	FinishReason     string
 	PromptTokens     int
@@ -392,7 +404,7 @@ func cleanChunkChoices(chunk map[string]interface{}) {
 			continue
 		}
 		for key := range delta {
-			if key != "role" && key != "content" && key != "tool_calls" {
+			if key != "role" && key != "content" && key != "tool_calls" && key != "reasoning_content" {
 				delete(delta, key)
 			}
 		}

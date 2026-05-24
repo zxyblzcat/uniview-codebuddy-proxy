@@ -9,3 +9,4 @@ uniview-codebuddy-proxy-*
 *.app
 *.syso
 .idea/
+PLAN.md
