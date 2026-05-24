@@ -102,4 +102,10 @@ if [ -f "assets/icons/icon.icns" ]; then
     cp assets/icons/icon.icns "${RESOURCES}/AppIcon.icns"
 fi
 
+# Ad-hoc sign the helper app (nested bundle) before signing the main bundle
+codesign --force --sign - "${HELPER_APP}"
+
+# Ad-hoc sign the main app bundle (seals resources, binds Info.plist)
+codesign --force --sign - "${APP_BUNDLE}"
+
 echo "Built ${APP_BUNDLE} successfully"
