@@ -17,6 +17,7 @@ import (
 	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/cache"
 	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/i18n"
 	"uniview-codebuddy-proxy/internal/logbuf"
 	"uniview-codebuddy-proxy/internal/proxy"
 	"uniview-codebuddy-proxy/internal/web"
@@ -35,6 +36,9 @@ type App struct {
 	autostartItem *systray.MenuItem
 	statusItem    *systray.MenuItem
 	restartItem   *systray.MenuItem
+	logItem       *systray.MenuItem
+	adminItem     *systray.MenuItem
+	quitItem      *systray.MenuItem
 	running       bool
 	authPending   bool
 	uiCh          chan func() // dispatches UI updates to main goroutine
@@ -77,36 +81,36 @@ func (a *App) RunHeadless() {
 func (a *App) onReady() {
 	setIconNormal()
 
-	a.statusItem = systray.AddMenuItem("UniviewCodeBuddyProxy", "服务状态")
+	a.statusItem = systray.AddMenuItem("UniviewCodeBuddyProxy", i18n.T("menu.status_tooltip"))
 	a.statusItem.Disable()
 
 	systray.AddSeparator()
 
-	a.authItem = systray.AddMenuItem("登录", "启动 OAuth2 设备授权流程")
+	a.authItem = systray.AddMenuItem(i18n.T("menu.login"), i18n.T("menu.login_tooltip"))
 
-	logItem := systray.AddMenuItem("查看日志", "在浏览器中查看日志")
+	a.logItem = systray.AddMenuItem(i18n.T("menu.view_logs"), i18n.T("menu.view_logs_tooltip"))
 	go func() {
-		for range logItem.ClickedCh {
-			auth.OpenBrowser(fmt.Sprintf("http://localhost:%d/_logs", config.Port))
+		for range a.logItem.ClickedCh {
+			auth.OpenBrowser(fmt.Sprintf("http://localhost:%d/admin/logs", config.Port))
 		}
 	}()
 
-	adminItem := systray.AddMenuItem("管理面板", "打开 Web 管理界面")
+	a.adminItem = systray.AddMenuItem(i18n.T("menu.admin_panel"), i18n.T("menu.admin_panel_tooltip"))
 	go func() {
-		for range adminItem.ClickedCh {
+		for range a.adminItem.ClickedCh {
 			auth.OpenBrowser(fmt.Sprintf("http://localhost:%d/admin", config.Port))
 		}
 	}()
 
-	a.restartItem = systray.AddMenuItem("重启代理", "重启 HTTP 服务器")
+	a.restartItem = systray.AddMenuItem(i18n.T("menu.restart"), i18n.T("menu.restart_tooltip"))
 	go func() {
 		for range a.restartItem.ClickedCh {
 			log.Println("Restarting HTTP server via tray menu...")
 			a.dispatchUI(func() {
 				a.restartItem.Disable()
 				setIconGray()
-				setTrayTitle("重启中...")
-				a.statusItem.SetTitle("重启中...")
+				setTrayTitle(i18n.T("status.restarting"))
+				a.statusItem.SetTitle(i18n.T("status.restarting"))
 			})
 
 			a.stopServer()
@@ -115,8 +119,8 @@ func (a *App) onReady() {
 			if err != nil {
 				a.dispatchUI(func() {
 					setIconError()
-					setTrayTitle("重启失败")
-					a.statusItem.SetTitle("重启失败")
+					setTrayTitle(i18n.T("status.restart_failed"))
+					a.statusItem.SetTitle(i18n.T("status.restart_failed"))
 					a.restartItem.Enable()
 				})
 				log.Printf("HTTP server restart failed: %v", err)
@@ -132,7 +136,7 @@ func (a *App) onReady() {
 
 	systray.AddSeparator()
 
-	a.autostartItem = systray.AddMenuItem("开机自启", "切换开机自启动")
+	a.autostartItem = systray.AddMenuItem(i18n.T("menu.autostart"), i18n.T("menu.autostart_tooltip"))
 	if IsAutoStartEnabled() {
 		a.autostartItem.Check()
 	}
@@ -141,24 +145,24 @@ func (a *App) onReady() {
 			if a.autostartItem.Checked() {
 				if err := SetAutoStart(false); err != nil {
 					log.Printf("Failed to disable autostart: %v", err)
-					a.dispatchUI(func() { setTrayTitle("自启设置失败") })
+					a.dispatchUI(func() { setTrayTitle(i18n.T("status.autostart_failed")) })
 					a.scheduleClearTrayTitle()
 					continue
 				}
 				a.autostartItem.Uncheck()
 				log.Println("Autostart disabled")
-				a.dispatchUI(func() { setTrayTitle("已关闭自启") })
+				a.dispatchUI(func() { setTrayTitle(i18n.T("status.autostart_disabled")) })
 				a.scheduleClearTrayTitle()
 			} else {
 				if err := SetAutoStart(true); err != nil {
 					log.Printf("Failed to enable autostart: %v", err)
-					a.dispatchUI(func() { setTrayTitle("自启设置失败") })
+					a.dispatchUI(func() { setTrayTitle(i18n.T("status.autostart_failed")) })
 					a.scheduleClearTrayTitle()
 					continue
 				}
 				a.autostartItem.Check()
 				log.Println("Autostart enabled")
-				a.dispatchUI(func() { setTrayTitle("已开启自启") })
+				a.dispatchUI(func() { setTrayTitle(i18n.T("status.autostart_enabled")) })
 				a.scheduleClearTrayTitle()
 			}
 		}
@@ -166,9 +170,9 @@ func (a *App) onReady() {
 
 	systray.AddSeparator()
 
-	quitItem := systray.AddMenuItem("退出", "退出 UniviewCodeBuddyProxy")
+	a.quitItem = systray.AddMenuItem(i18n.T("menu.quit"), i18n.T("menu.quit_tooltip"))
 	go func() {
-		for range quitItem.ClickedCh {
+		for range a.quitItem.ClickedCh {
 			log.Println("Quitting via tray menu...")
 			a.stopServer()
 			systray.Quit()
@@ -186,6 +190,9 @@ func (a *App) onReady() {
 			}
 		}
 	}()
+
+	// Register locale change callback to rebuild tray menu
+	i18n.OnChange(a.rebuildMenu)
 
 	a.startServer()
 
@@ -291,22 +298,51 @@ func (a *App) applyStatus() {
 	if td != nil {
 		setIconNormal()
 		if a.authItem != nil {
-			a.authItem.SetTitle("退出登录 (" + td.UserID + ")")
-			a.authItem.SetTooltip("退出登录")
+			a.authItem.SetTitle(i18n.T("menu.logout") + " (" + td.UserID + ")")
+			a.authItem.SetTooltip(i18n.T("menu.logout_tooltip"))
 		}
 		if a.statusItem != nil {
-			a.statusItem.SetTitle("运行中")
+			a.statusItem.SetTitle(i18n.T("status.running"))
 		}
 	} else {
 		setIconGray()
 		if a.authItem != nil {
-			a.authItem.SetTitle("登录")
-			a.authItem.SetTooltip("启动 OAuth2 设备授权流程")
+			a.authItem.SetTitle(i18n.T("menu.login"))
+			a.authItem.SetTooltip(i18n.T("menu.login_tooltip"))
 		}
 		if a.statusItem != nil {
-			a.statusItem.SetTitle("未认证")
+			a.statusItem.SetTitle(i18n.T("status.not_authenticated"))
 		}
 	}
+}
+
+func (a *App) rebuildMenu() {
+	a.statusItem.SetTooltip(i18n.T("menu.status_tooltip"))
+	if a.authItem != nil {
+		a.authItem.SetTitle(i18n.T("menu.login"))
+		a.authItem.SetTooltip(i18n.T("menu.login_tooltip"))
+	}
+	if a.logItem != nil {
+		a.logItem.SetTitle(i18n.T("menu.view_logs"))
+		a.logItem.SetTooltip(i18n.T("menu.view_logs_tooltip"))
+	}
+	if a.adminItem != nil {
+		a.adminItem.SetTitle(i18n.T("menu.admin_panel"))
+		a.adminItem.SetTooltip(i18n.T("menu.admin_panel_tooltip"))
+	}
+	if a.restartItem != nil {
+		a.restartItem.SetTitle(i18n.T("menu.restart"))
+		a.restartItem.SetTooltip(i18n.T("menu.restart_tooltip"))
+	}
+	if a.autostartItem != nil {
+		a.autostartItem.SetTitle(i18n.T("menu.autostart"))
+		a.autostartItem.SetTooltip(i18n.T("menu.autostart_tooltip"))
+	}
+	if a.quitItem != nil {
+		a.quitItem.SetTitle(i18n.T("menu.quit"))
+		a.quitItem.SetTooltip(i18n.T("menu.quit_tooltip"))
+	}
+	a.applyStatus()
 }
 
 func (a *App) startServer() {
@@ -315,9 +351,9 @@ func (a *App) startServer() {
 		log.Printf("Failed to start server: %v", err)
 		a.dispatchUI(func() {
 			setIconError()
-			setTrayTitle("启动失败")
+			setTrayTitle(i18n.T("status.startup_failed"))
 			if a.statusItem != nil {
-				a.statusItem.SetTitle("启动失败: " + err.Error())
+				a.statusItem.SetTitle(i18n.T("status.startup_failed") + ": " + err.Error())
 			}
 		})
 		time.AfterFunc(5*time.Second, systray.Quit)
@@ -345,23 +381,22 @@ func (a *App) startServerE() error {
 
 	auth.RegisterRoutes(r)
 	proxy.RegisterRoutes(r)
-	RegisterLogViewRoute(r, a.logWriter)
 	web.RegisterAPIRoutes(r)
 	web.SetupAdminUI(r)
 
 	log.Println("==================================================")
 	log.Printf("  UniviewCodeBuddy Proxy %s", version.Version)
 	log.Printf("  Commit: %s | Built: %s", version.Commit, version.Date)
-	log.Printf("  URL: http://localhost:%d", config.Port)
-	log.Printf("  Auth: http://localhost:%d/auth/start", config.Port)
-	log.Printf("  Logs: http://localhost:%d/_logs", config.Port)
-	log.Printf("  Admin: http://localhost:%d/admin", config.Port)
+	log.Println(i18n.T("banner.url", map[string]interface{}{"port": config.Port}))
+	log.Println(i18n.T("banner.auth", map[string]interface{}{"port": config.Port}))
+	log.Println(i18n.T("banner.logs", map[string]interface{}{"port": config.Port}))
+	log.Println(i18n.T("banner.admin", map[string]interface{}{"port": config.Port}))
 	log.Println("==================================================")
 
 	if auth.LoadToken() != nil {
-		log.Println("Token loaded from cache")
+		log.Println(i18n.T("banner.token_loaded"))
 	} else {
-		log.Println("No token. Use tray menu to login.")
+		log.Println(i18n.T("banner.no_token"))
 	}
 
 	srv := &http.Server{

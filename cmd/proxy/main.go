@@ -8,12 +8,16 @@ import (
 	"runtime"
 	"strings"
 
+	"uniview-codebuddy-proxy/internal/i18n"
 	"uniview-codebuddy-proxy/internal/logbuf"
 	"uniview-codebuddy-proxy/internal/systrayapp"
 	"uniview-codebuddy-proxy/internal/version"
 )
 
 func main() {
+	// Initialize i18n with saved preference, fallback to system locale
+	i18n.InitLocaleWithPreference(i18n.LoadSavedLocale())
+
 	// Handle --login-item helper mode (macOS SMLoginItem)
 	if len(os.Args) > 1 && os.Args[1] == "--login-item" {
 		launchMainApp()
