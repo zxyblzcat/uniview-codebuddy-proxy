@@ -127,6 +127,7 @@ jobs:
 
           # Linux binary → tar.gz
           cd artifacts/UniviewCodeBuddyProxy-linux-amd64
+          chmod +x uniview-codebuddy-proxy-linux-amd64
           tar czf ../../UniviewCodeBuddyProxy-linux-amd64.tar.gz uniview-codebuddy-proxy-linux-amd64
           cd ../..
 
