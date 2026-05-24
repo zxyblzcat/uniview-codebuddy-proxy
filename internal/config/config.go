@@ -24,8 +24,10 @@ var (
 )
 
 var (
-	cacheEnabled atomic.Bool
-	cacheTTL     atomic.Int32
+	cacheEnabled        atomic.Bool
+	cacheTTL             atomic.Int32
+	logMaxSizeMB         atomic.Int32
+	logCleanupInterval   atomic.Int32
 )
 
 func init() {
@@ -57,6 +59,21 @@ func init() {
 		cacheTTL = 300
 	}
 	SetCacheTTL(cacheTTL)
+
+	// 日志清理配置
+	maxSizeStr := getEnv("LOG_MAX_SIZE_MB", "50")
+	maxSize, err := strconv.Atoi(maxSizeStr)
+	if err != nil || maxSize <= 0 {
+		maxSize = 50
+	}
+	SetLogMaxSizeMB(maxSize)
+
+	intervalStr := getEnv("LOG_CLEANUP_INTERVAL", "1800")
+	interval, err := strconv.Atoi(intervalStr)
+	if err != nil || interval <= 0 {
+		interval = 1800
+	}
+	SetLogCleanupInterval(interval)
 }
 
 // ListenAddr 返回服务监听地址
@@ -79,6 +96,28 @@ func SetCacheTTL(v int) {
 		v = 300
 	}
 	cacheTTL.Store(int32(v))
+}
+
+// LogMaxSizeMBAtomic 返回日志文件大小上限（MB）。
+func LogMaxSizeMBAtomic() int { return int(logMaxSizeMB.Load()) }
+
+// SetLogMaxSizeMB 设置日志文件大小上限（MB）。
+func SetLogMaxSizeMB(v int) {
+	if v <= 0 {
+		v = 50
+	}
+	logMaxSizeMB.Store(int32(v))
+}
+
+// LogCleanupIntervalAtomic 返回后台清理间隔（秒）。
+func LogCleanupIntervalAtomic() int { return int(logCleanupInterval.Load()) }
+
+// SetLogCleanupInterval 设置后台清理间隔（秒）。
+func SetLogCleanupInterval(v int) {
+	if v <= 0 {
+		v = 1800
+	}
+	logCleanupInterval.Store(int32(v))
 }
 
 func getEnv(key, fallback string) string {
