@@ -13,7 +13,6 @@ import (
 	"uniview-codebuddy-proxy/internal/cache"
 	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/version"
-	"uniview-codebuddy-proxy/internal/web"
 
 	"github.com/gin-gonic/gin"
 )
@@ -89,7 +88,6 @@ func ensureMinMessages(payload map[string]interface{}) {
 func handleChatCompletions(c *gin.Context) {
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
-		web.RecordRequest("", false)
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": gin.H{"message": "No token. Visit /auth/start to login.", "type": "auth_required"},
 		})
@@ -112,7 +110,6 @@ func handleChatCompletions(c *gin.Context) {
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
-	web.RecordRequest(model, true)
 
 	// 构建上游 payload（强制 stream: true）
 	payload := map[string]interface{}{
@@ -387,7 +384,6 @@ func handleAnthropicMessages(c *gin.Context) {
 
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
-		web.RecordRequest("", false)
 		anthropicErrorResponse(c, http.StatusUnauthorized, "authentication_error", "No token. Visit /auth/start to login.")
 		return
 	}
@@ -402,7 +398,6 @@ func handleAnthropicMessages(c *gin.Context) {
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
-	web.RecordRequest(model, true)
 	isStream := false
 	if v, ok := body["stream"].(bool); ok {
 		isStream = v

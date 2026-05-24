@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from './auth'
 import TokenPage from './pages/TokenPage'
 import LogPage from './pages/LogPage'
 import ConfigPage from './pages/ConfigPage'
-import StatsPage from './pages/StatsPage'
 import LoginPage from './pages/LoginPage'
 
 function AppInner() {
@@ -37,7 +36,6 @@ function AppInner() {
                 { to: '/', label: t('nav.tokens'), end: true },
                 { to: '/logs', label: t('nav.logs') },
                 { to: '/config', label: t('nav.config') },
-                { to: '/stats', label: t('nav.stats') },
               ].map((l) => (
                 <NavLink
                   key={l.to}
@@ -66,7 +64,6 @@ function AppInner() {
             <Route path="/" element={<TokenPage />} />
             <Route path="/logs" element={<LogPage />} />
             <Route path="/config" element={<ConfigPage />} />
-            <Route path="/stats" element={<StatsPage />} />
           </Routes>
         </main>
       </div>

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"uniview-codebuddy-proxy/internal/auth"
@@ -19,50 +17,8 @@ import (
 )
 
 var (
-	totalRequests atomic.Int64
-	successCount  atomic.Int64
-	errorCount    atomic.Int64
-	modelsUsed    syncMap
-	startTime     = time.Now()
-	logWriter     *logbuf.MultiWriter
+	logWriter *logbuf.MultiWriter
 )
-
-type syncMap struct {
-	mu   sync.Mutex
-	data map[string]int64
-}
-
-func (m *syncMap) Incr(key string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.data == nil {
-		m.data = make(map[string]int64)
-	}
-	m.data[key]++
-}
-
-func (m *syncMap) Get() map[string]int64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	result := make(map[string]int64, len(m.data))
-	for k, v := range m.data {
-		result[k] = v
-	}
-	return result
-}
-
-// RecordRequest 记录请求统计
-func RecordRequest(model string, success bool) {
-	totalRequests.Add(1)
-	if success {
-		successCount.Add(1)
-	} else {
-		errorCount.Add(1)
-	}
-	if model != "" {
-		modelsUsed.Incr(model)
-	}
-}
 
 // RegisterAPIRoutes 注册 /api/* 后端 API 路由
 func RegisterAPIRoutes(r *gin.Engine, lw *logbuf.MultiWriter) {
@@ -73,7 +29,6 @@ func RegisterAPIRoutes(r *gin.Engine, lw *logbuf.MultiWriter) {
 	}
 	api.GET("/config", handleGetConfig)
 	api.PUT("/config", handlePutConfig)
-	api.GET("/stats", handleGetStats)
 	api.GET("/logs/stream", handleLogStream)
 	api.DELETE("/logs", handleClearLogs)
 	api.GET("/locale", handleGetLocale)
@@ -108,16 +63,6 @@ func handlePutConfig(c *gin.Context) {
 		cache.GlobalCache.SetTTL(time.Duration(config.CacheTTLAtomic()) * time.Second)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
-func handleGetStats(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"total_requests": totalRequests.Load(),
-		"success_count":  successCount.Load(),
-		"error_count":    errorCount.Load(),
-		"models_used":    modelsUsed.Get(),
-		"uptime_seconds": int64(time.Since(startTime).Seconds()),
-	})
 }
 
 func handleClearLogs(c *gin.Context) {
