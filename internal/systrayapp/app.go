@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"uniview-codebuddy-proxy/internal/auth"
+	"uniview-codebuddy-proxy/internal/cache"
 	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/logbuf"
 	"uniview-codebuddy-proxy/internal/proxy"
@@ -322,6 +323,13 @@ func (a *App) startServerE() error {
 
 	if a.running {
 		return nil
+	}
+
+	// 初始化缓存
+	if config.CacheEnabled {
+		cache.GlobalCache.SetEnabled(true)
+		cache.GlobalCache.SetTTL(time.Duration(config.CacheTTL) * time.Second)
+		log.Printf("Cache enabled (TTL: %ds)", config.CacheTTL)
 	}
 
 	gin.SetMode(gin.ReleaseMode)

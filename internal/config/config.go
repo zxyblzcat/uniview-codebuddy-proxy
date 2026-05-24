@@ -20,6 +20,8 @@ var (
 	TokenRefreshURL  string
 	ChatURL          string
 	ConfigURL        string
+	CacheEnabled     bool
+	CacheTTL         int
 )
 
 func init() {
@@ -43,6 +45,13 @@ func init() {
 	TokenRefreshURL = BaseURL + "/v2/plugin/auth/token/refresh"
 	ChatURL = BaseURL + "/v2/chat/completions"
 	ConfigURL = BaseURL + "/v2/config"
+	CacheEnabled = getEnv("CACHE_ENABLED", "") == "true"
+	ttl := getEnv("CACHE_TTL", "300")
+	cacheTTL, err := strconv.Atoi(ttl)
+	if err != nil || cacheTTL <= 0 {
+		cacheTTL = 300
+	}
+	CacheTTL = cacheTTL
 }
 
 // ListenAddr 返回服务监听地址

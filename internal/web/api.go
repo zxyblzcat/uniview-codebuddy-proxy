@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"uniview-codebuddy-proxy/internal/auth"
+	"uniview-codebuddy-proxy/internal/cache"
 	"uniview-codebuddy-proxy/internal/config"
 
 	"github.com/gin-gonic/gin"
@@ -75,8 +76,8 @@ func handleGetConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"port":             config.Port,
 		"api_password_set": config.APIPassword != "",
-		"cache_enabled":    false,
-		"cache_ttl":        300,
+		"cache_enabled":    config.CacheEnabled && cache.GlobalCache.IsEnabled(),
+		"cache_ttl":        config.CacheTTL,
 		"base_url":         config.BaseURL,
 	})
 }
@@ -87,7 +88,19 @@ func handlePutConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
-	// TODO: Phase 3 - 更新缓存配置等可热重载项
+	// 更新缓存设置（热重载）
+	if v, ok := body["cache_enabled"].(bool); ok {
+		config.CacheEnabled = v
+		cache.GlobalCache.SetEnabled(v)
+	}
+	if v, ok := body["cache_ttl"].(float64); ok {
+		ttl := int(v)
+		if ttl <= 0 {
+			ttl = 300
+		}
+		config.CacheTTL = ttl
+		cache.GlobalCache.SetTTL(time.Duration(ttl) * time.Second)
+	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
