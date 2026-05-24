@@ -40,3 +40,5 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )
+
+replace fyne.io/systray v1.12.1 => ./third_party/systray
