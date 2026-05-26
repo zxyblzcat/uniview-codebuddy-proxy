@@ -19,6 +19,7 @@ import (
 
 	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/telemetry"
 )
 
 const upstreamIdleTimeout = 2 * time.Minute
@@ -105,7 +106,7 @@ func wrapWithIdleTimeout(body io.ReadCloser) io.ReadCloser {
 	return newIdleTimeoutReader(body, upstreamIdleTimeout)
 }
 
-func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, model string, bearer string) (*http.Response, error) {
+func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, model string, bearer string, intent string) (*http.Response, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal payload: %w", err)
@@ -117,7 +118,7 @@ func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, mode
 	}
 	req = req.WithContext(ctx)
 
-	headers := auth.BuildUpstreamHeaders(model)
+	headers := auth.BuildUpstreamHeaders(model, intent)
 	if bearer != "" {
 		headers["Authorization"] = "Bearer " + bearer
 	}
@@ -184,10 +185,10 @@ func parseSSELine(line string) (data string, done bool, ok bool) {
 	return dataStr, false, true
 }
 
-func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
+func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string) {
 	requestID := "chatcmpl-" + randomHex(12)
 
-	resp, err := doUpstreamRequest(ctx, payload, model, bearer)
+	resp, err := doUpstreamRequest(ctx, payload, model, bearer, "craft")
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			writeSSEError(w, ue.Error())
@@ -207,6 +208,7 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 	flusher, canFlush := w.(http.Flusher)
 
 	var writeErr error
+	var promptTokens, completionTokens int
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -232,6 +234,8 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 		}
 
 		if done {
+			// 流结束，上报 chat_message_response 事件
+			telemetry.ReportChatResponse(conversationID, telemetryRequestID, model, model, traceID, promptTokens, completionTokens)
 			_, writeErr = fmt.Fprintf(w, "data: [DONE]\n\n")
 			if canFlush {
 				flusher.Flush()
@@ -242,6 +246,16 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 		var chunk map[string]interface{}
 		if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
 			continue
+		}
+
+		// 提取 usage 信息用于上报
+		if u, ok := chunk["usage"].(map[string]interface{}); ok {
+			if pt, ok := u["prompt_tokens"].(float64); ok {
+				promptTokens = int(pt)
+			}
+			if ct, ok := u["completion_tokens"].(float64); ok {
+				completionTokens = int(ct)
+			}
 		}
 
 		if _, ok := chunk["choices"]; ok {
@@ -272,7 +286,7 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	resp, err := doUpstreamRequest(ctx, payload, model, bearer)
+	resp, err := doUpstreamRequest(ctx, payload, model, bearer, "craft")
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			return &CollectedResult{StatusCode: ue.StatusCode, ErrorText: ue.Message}, nil

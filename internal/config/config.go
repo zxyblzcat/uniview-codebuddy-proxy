@@ -21,6 +21,8 @@ var (
 	TokenRefreshURL string
 	ChatURL         string
 	ConfigURL       string
+	ReportURL       string
+	ModelReportURL  string
 )
 
 var (
@@ -51,6 +53,8 @@ func init() {
 	TokenRefreshURL = BaseURL + "/v2/plugin/auth/token/refresh"
 	ChatURL = BaseURL + "/v2/chat/completions"
 	ConfigURL = BaseURL + "/v2/config"
+	ReportURL = BaseURL + "/v2/report"
+	ModelReportURL = BaseURL + "/llm/data/report"
 
 	cacheEnabled.Store(getEnv("CACHE_ENABLED", "") == "true")
 	ttl := getEnv("CACHE_TTL", "300")

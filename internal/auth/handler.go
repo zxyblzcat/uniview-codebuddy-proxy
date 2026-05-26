@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +21,25 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// machineID 是持久化的机器标识，启动时生成一次
+var machineID string
+
+func init() {
+	// 基于主机名和用户目录生成稳定的机器 ID
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown-host"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "unknown-home"
+	}
+	seed := hostname + "|" + home
+	h := fnv.New128a()
+	h.Write([]byte(seed))
+	machineID = hex.EncodeToString(h.Sum(nil))
+}
 
 // upstreamClient 用于非流式认证请求（带超时）
 var upstreamClient = &http.Client{
@@ -389,20 +409,33 @@ func authPollHeaders() map[string]string {
 }
 
 // BuildUpstreamHeaders 构建发送到上游的请求头
-func BuildUpstreamHeaders(model string) map[string]string {
+// intent: "craft" (Chat), "CodeCompletion" (代码补全)
+func BuildUpstreamHeaders(model string, intent string) map[string]string {
+	if intent == "" {
+		intent = "craft"
+	}
+	rid := generateRequestID()
+	span := generateSpanID()
 	return map[string]string{
 		"Accept":            "text/event-stream",
 		"Content-Type":      "application/json",
 		"X-Requested-With":  "XMLHttpRequest",
+		"X-B3-TraceId":      rid,
 		"X-B3-ParentSpanId": "",
+		"X-B3-SpanId":       span,
 		"X-B3-Sampled":      "1",
-		"X-Agent-Intent":    "CodeCompletion",
+		"b3":                fmt.Sprintf("%s-%s-1-", rid, span),
+		"X-Agent-Intent":    intent,
 		"X-Env-ID":          "production",
 		"X-Domain":          config.Domain,
 		"X-Product":         "SaaS",
 		"X-User-Id":         GetUserID(),
-		"X-Machine-Id":      generateRequestID(),
-		"X-Request-ID":      generateRequestID(),
+		"X-Machine-Id":      machineID,
+		"X-Request-ID":      rid,
+		"X-Conversation-ID": generateRequestID(),
+		"X-Session-ID":      generateRequestID(),
+		"X-IDE-Type":        "CLI",
+		"X-Product-Version": "1.0.8",
 		"User-Agent":        "CLI/1.0.8 CodeBuddy/1.0.8",
 	}
 }

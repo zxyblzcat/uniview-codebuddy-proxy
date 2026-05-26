@@ -9,10 +9,12 @@ import (
 	"log"
 	"net/http"
 	"sort"
+
+	"uniview-codebuddy-proxy/internal/telemetry"
 )
 
 // StreamAnthropicMessages 向上游发送请求，将 OpenAI SSE 流实时转换为 Anthropic SSE 流
-func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter) {
+func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string) {
 	msgID := "msg_" + randomHex(24)
 
 	// 状态机变量
@@ -27,7 +29,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 	started := false
 	finished := false
 
-	resp, err := doUpstreamRequest(ctx, payload, model, bearer)
+	resp, err := doUpstreamRequest(ctx, payload, model, bearer, "craft")
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			writeAnthropicSSEError(w, ue.Error())
@@ -319,6 +321,8 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			log.Printf("SSE scan error: %v", err)
 		}
 	}
+	// 上报 chat_message_response 事件
+	telemetry.ReportChatResponse(conversationID, telemetryRequestID, model, model, traceID, inputTokens, outputTokens)
 }
 
 // writeSSE 写入 SSE 数据并 flush，返回写入错误

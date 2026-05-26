@@ -12,6 +12,7 @@ import (
 	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/cache"
 	"uniview-codebuddy-proxy/internal/config"
+	"uniview-codebuddy-proxy/internal/telemetry"
 	"uniview-codebuddy-proxy/internal/version"
 
 	"github.com/gin-gonic/gin"
@@ -106,7 +107,7 @@ func handleChatCompletions(c *gin.Context) {
 	if v, ok := body["stream"].(bool); ok {
 		isStream = v
 	}
-	model := "auto-chat"
+	model := "glm-5.1"
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
@@ -126,6 +127,23 @@ func handleChatCompletions(c *gin.Context) {
 
 	// 确保至少 2 条消息
 	ensureMinMessages(payload)
+
+	// 生成追踪 ID 用于事件上报
+	conversationID := "conv-" + randomHex(16)
+	telemetryRequestID := "req-" + randomHex(16)
+	traceID := randomHex(16)
+
+	// 计算输入长度用于上报
+	inputLength := 0
+	if msgs, ok := body["messages"].([]interface{}); ok {
+		for _, m := range msgs {
+			if msg, ok := m.(map[string]interface{}); ok {
+				if c, ok := msg["content"].(string); ok {
+					inputLength += len(c)
+				}
+			}
+		}
+	}
 
 	// 探活请求检测
 	if maxTokens, ok := body["max_tokens"].(float64); ok && maxTokens == 1 && isStream {
@@ -154,9 +172,12 @@ func handleChatCompletions(c *gin.Context) {
 		return
 	}
 
+	// 上报 chat_request_send 事件
+	telemetry.ReportChatRequest(conversationID, telemetryRequestID, model, model, traceID, inputLength)
+
 	if isStream {
 		// 流式响应：直接用 SSE 转发
-		StreamChatCompletions(c.Request.Context(), payload, model, bearer, c.Writer)
+		StreamChatCompletions(c.Request.Context(), payload, model, bearer, c.Writer, conversationID, telemetryRequestID, traceID)
 	} else {
 		// 非流式响应：收集所有 chunk 后组装
 		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer)
@@ -172,6 +193,9 @@ func handleChatCompletions(c *gin.Context) {
 			})
 			return
 		}
+
+		// 上报 chat_message_response 事件
+		telemetry.ReportChatResponse(conversationID, telemetryRequestID, model, model, traceID, result.PromptTokens, result.CompletionTokens)
 
 		requestID := "chatcmpl-" + randomHex(12)
 		content := strings.Join(result.ContentParts, "")
@@ -394,7 +418,7 @@ func handleAnthropicMessages(c *gin.Context) {
 		return
 	}
 
-	model := "deepseek-v3"
+	model := "glm-5.1"
 	if v, ok := body["model"].(string); ok {
 		model = v
 	}
@@ -435,6 +459,23 @@ func handleAnthropicMessages(c *gin.Context) {
 	// 确保至少 2 条消息
 	ensureMinMessages(payload)
 
+	// 生成追踪 ID 用于事件上报
+	anthropicConversationID := "conv-" + randomHex(16)
+	anthropicRequestID := "req-" + randomHex(16)
+	anthropicTraceID := randomHex(16)
+
+	// 计算输入长度用于上报
+	anthropicInputLength := 0
+	if msgs, ok := body["messages"].([]interface{}); ok {
+		for _, m := range msgs {
+			if msg, ok := m.(map[string]interface{}); ok {
+				if c, ok := msg["content"].(string); ok {
+					anthropicInputLength += len(c)
+				}
+			}
+		}
+	}
+
 	// 探活请求检测
 	if maxTokens == 1 && isStream {
 		msgID := "msg_" + randomHex(24)
@@ -451,8 +492,11 @@ func handleAnthropicMessages(c *gin.Context) {
 		return
 	}
 
+	// 上报 chat_request_send 事件
+	telemetry.ReportChatRequest(anthropicConversationID, anthropicRequestID, model, model, anthropicTraceID, anthropicInputLength)
+
 	if isStream {
-		StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer)
+		StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer, anthropicConversationID, anthropicRequestID, anthropicTraceID)
 	} else {
 		// 非流式：检查缓存
 		if config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled() {
@@ -471,6 +515,8 @@ func handleAnthropicMessages(c *gin.Context) {
 			anthropicErrorResponse(c, result.StatusCode, "api_error", result.ErrorText)
 			return
 		}
+		// 上报 chat_message_response 事件
+		telemetry.ReportChatResponse(anthropicConversationID, anthropicRequestID, model, model, anthropicTraceID, result.PromptTokens, result.CompletionTokens)
 		// 缓存响应
 		if config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled() {
 			buf := &bytes.Buffer{}

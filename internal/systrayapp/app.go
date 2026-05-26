@@ -6,12 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
-	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"uniview-codebuddy-proxy/internal/auth"
@@ -20,6 +16,7 @@ import (
 	"uniview-codebuddy-proxy/internal/i18n"
 	"uniview-codebuddy-proxy/internal/logbuf"
 	"uniview-codebuddy-proxy/internal/proxy"
+	"uniview-codebuddy-proxy/internal/telemetry"
 	"uniview-codebuddy-proxy/internal/web"
 	"uniview-codebuddy-proxy/internal/version"
 
@@ -74,9 +71,10 @@ func (a *App) RunHeadless() {
 	}()
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	setupSignalNotify(sigCh)
 	<-sigCh
 	fmt.Println("\nReceived signal, shutting down...")
+	telemetry.Shutdown()
 	a.stopServer()
 }
 
@@ -216,6 +214,7 @@ func (a *App) onReady() {
 }
 
 func (a *App) onExit() {
+	telemetry.Shutdown()
 	a.stopServer()
 	a.logWriter.Close()
 }
@@ -377,6 +376,9 @@ func (a *App) startServerE() error {
 		log.Printf("Cache enabled (TTL: %ds)", config.CacheTTLAtomic())
 	}
 
+	// 初始化遥测上报服务
+	telemetry.Init()
+
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery(), maxBodySize(10<<20))
@@ -481,49 +483,6 @@ func (a *App) listenWithRetry(srv *http.Server) error {
 // isAddrInUse checks if the error is "address already in use".
 func isAddrInUse(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "address already in use")
-}
-
-// killProcessOnPort kills the process occupying the given port using lsof.
-func killProcessOnPort(port int) error {
-	cmd := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-ti", fmt.Sprintf(":%d", port))
-	out, err := cmd.Output()
-	if err != nil {
-		// lsof exits non-zero when nothing is listening — that's fine
-		return nil
-	}
-
-	pidStr := strings.TrimSpace(string(out))
-	if pidStr == "" {
-		return nil
-	}
-
-	for _, pidStr := range strings.Split(pidStr, "\n") {
-		pid, err := strconv.Atoi(strings.TrimSpace(pidStr))
-		if err != nil {
-			continue
-		}
-
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			continue
-		}
-
-		log.Printf("Killing process %d on port %d...", pid, port)
-		if err := proc.Signal(syscall.SIGTERM); err != nil {
-			return fmt.Errorf("failed to kill PID %d: %w", pid, err)
-		}
-	}
-
-	// Wait for the process to release the port (poll up to 2s)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		check := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-ti", fmt.Sprintf(":%d", port))
-		if out, _ := check.Output(); len(strings.TrimSpace(string(out))) == 0 {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return nil
 }
 
 // cleanupLoop runs periodic cleanup for logs and expired token files.
