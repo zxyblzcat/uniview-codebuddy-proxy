@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -49,6 +50,8 @@ func registerAPIRoutes(g *gin.RouterGroup) {
 	}
 	g.POST("/chat/completions", handleChatCompletions)
 	g.GET("/models", handleModels)
+	g.POST("/completions", handleCompletions)
+	g.POST("/embeddings", handleEmbeddings)
 	g.POST("/messages", handleAnthropicMessages)
 	g.POST("/messages/count_tokens", handleCountTokens)
 }
@@ -83,6 +86,18 @@ func ensureMinMessages(payload map[string]interface{}) {
 		sysMsg := map[string]interface{}{"role": "system", "content": "You are a helpful assistant."}
 		payload["messages"] = append([]interface{}{sysMsg}, messages...)
 	}
+}
+
+// buildConversationHeaders 从客户端请求中提取对话头，用于覆盖上游生成的随机值
+func buildConversationHeaders(c *gin.Context) map[string]string {
+	headers := map[string]string{}
+	if convID := c.GetHeader("X-Conversation-ID"); convID != "" {
+		headers["X-Conversation-ID"] = convID
+	}
+	if msgID := c.GetHeader("X-Conversation-Message-ID"); msgID != "" {
+		headers["X-Conversation-Message-ID"] = msgID
+	}
+	return headers
 }
 
 // handleChatCompletions POST /v1/chat/completions
@@ -175,12 +190,15 @@ func handleChatCompletions(c *gin.Context) {
 	// 上报 chat_request_send 事件
 	telemetry.ReportChatRequest(conversationID, telemetryRequestID, model, model, traceID, inputLength)
 
+	// 对话头透传
+	extraHeaders := buildConversationHeaders(c)
+
 	if isStream {
 		// 流式响应：直接用 SSE 转发
-		StreamChatCompletions(c.Request.Context(), payload, model, bearer, c.Writer, conversationID, telemetryRequestID, traceID)
+		StreamChatCompletions(c.Request.Context(), payload, model, bearer, c.Writer, conversationID, telemetryRequestID, traceID, extraHeaders)
 	} else {
 		// 非流式响应：收集所有 chunk 后组装
-		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer)
+		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer, extraHeaders)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": gin.H{"message": err.Error(), "type": "proxy_error"},
@@ -237,6 +255,77 @@ func handleModels(c *gin.Context) {
 	})
 }
 
+// handleEmbeddings POST /v1/embeddings
+func handleEmbeddings(c *gin.Context) {
+	bearer := auth.GetBearerToken()
+	if bearer == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": gin.H{"message": "No token. Visit /auth/start to login.", "type": "auth_required"},
+		})
+		return
+	}
+
+	var body map[string]interface{}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{"message": "Invalid request body", "type": "invalid_request"},
+		})
+		return
+	}
+
+	model := "text-embedding-3-large"
+	if v, ok := body["model"].(string); ok {
+		model = v
+	}
+
+	inputVal, ok := body["input"]
+	if !ok || inputVal == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{"message": "input is required", "type": "invalid_request"},
+		})
+		return
+	}
+
+	// 构建白名单 payload，避免转发客户端注入的字段（如 stream）
+	payload := map[string]interface{}{
+		"model": model,
+		"input": inputVal,
+	}
+	for _, k := range []string{"encoding_format", "dimensions", "user"} {
+		if v, ok := body[k]; ok {
+			payload[k] = v
+		}
+	}
+
+	extraHeaders := buildConversationHeaders(c)
+	extraHeaders["Accept"] = "application/json"
+
+	resp, err := doUpstreamRequest(c.Request.Context(), config.EmbeddingURL, payload, model, bearer, "embedding", extraHeaders)
+	if err != nil {
+		if ue, ok := err.(*upstreamError); ok {
+			c.JSON(ue.StatusCode, gin.H{
+				"error": gin.H{"message": ue.Message, "type": "upstream_error"},
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": gin.H{"message": err.Error(), "type": "proxy_error"},
+			})
+		}
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{"message": "Failed to read upstream response", "type": "proxy_error"},
+		})
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json", respBody)
+}
+
 // handleHealth GET /health
 func handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -252,9 +341,11 @@ func handleRoot(c *gin.Context) {
 		"service": "CodeBuddy CN -> OpenAI API Proxy",
 		"version": version.Version,
 		"endpoints": gin.H{
-			"chat":     "POST /v1/chat/completions",
-			"messages": "POST /v1/messages (Anthropic)",
-			"models":   "GET /v1/models",
+			"chat":        "POST /v1/chat/completions",
+			"completions": "POST /v1/completions",
+			"embeddings":  "POST /v1/embeddings",
+			"messages":    "POST /v1/messages (Anthropic)",
+			"models":      "GET /v1/models",
 		},
 	}
 
@@ -495,8 +586,11 @@ func handleAnthropicMessages(c *gin.Context) {
 	// 上报 chat_request_send 事件
 	telemetry.ReportChatRequest(anthropicConversationID, anthropicRequestID, model, model, anthropicTraceID, anthropicInputLength)
 
+	// 对话头透传
+	anthropicExtraHeaders := buildConversationHeaders(c)
+
 	if isStream {
-		StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer, anthropicConversationID, anthropicRequestID, anthropicTraceID)
+		StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer, anthropicConversationID, anthropicRequestID, anthropicTraceID, anthropicExtraHeaders)
 	} else {
 		// 非流式：检查缓存
 		if config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled() {
@@ -506,7 +600,7 @@ func handleAnthropicMessages(c *gin.Context) {
 				return
 			}
 		}
-		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer)
+		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer, anthropicExtraHeaders)
 		if err != nil {
 			anthropicErrorResponse(c, http.StatusInternalServerError, "api_error", err.Error())
 			return

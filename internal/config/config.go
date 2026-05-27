@@ -20,6 +20,8 @@ var (
 	AuthTokenURL    string
 	TokenRefreshURL string
 	ChatURL         string
+	CompletionURL   string
+	EmbeddingURL    string
 	ConfigURL       string
 	ReportURL       string
 	ModelReportURL  string
@@ -52,6 +54,8 @@ func init() {
 	AuthTokenURL = BaseURL + "/v2/plugin/auth/token"
 	TokenRefreshURL = BaseURL + "/v2/plugin/auth/token/refresh"
 	ChatURL = BaseURL + "/v2/chat/completions"
+	CompletionURL = BaseURL + "/v2/completions"
+	EmbeddingURL = BaseURL + "/v2/embeddings"
 	ConfigURL = BaseURL + "/v2/config"
 	ReportURL = BaseURL + "/v2/report"
 	ModelReportURL = BaseURL + "/llm/data/report"

@@ -102,7 +102,7 @@ func TestStreamAnthropicMessages_TextOnly(t *testing.T) {
 	defer func() { config.ChatURL = origChatURL }()
 
 	w := httptest.NewRecorder()
-	StreamAnthropicMessages(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "test", "", w, "conv-test", "req-test", "trace-test")
+	StreamAnthropicMessages(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "test", "", w, "conv-test", "req-test", "trace-test", nil)
 
 	events := parseSSEEvents(t, w.Body.String())
 
@@ -173,7 +173,7 @@ func TestStreamAnthropicMessages_ToolCalls(t *testing.T) {
 	defer func() { config.ChatURL = origChatURL }()
 
 	w := httptest.NewRecorder()
-	StreamAnthropicMessages(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "test", "", w, "conv-test", "req-test", "trace-test")
+	StreamAnthropicMessages(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "test", "", w, "conv-test", "req-test", "trace-test", nil)
 
 	events := parseSSEEvents(t, w.Body.String())
 
@@ -225,7 +225,7 @@ func TestStreamAnthropicMessages_MultipleToolCalls_Ordered(t *testing.T) {
 	defer func() { config.ChatURL = origChatURL }()
 
 	w := httptest.NewRecorder()
-	StreamAnthropicMessages(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "test", "", w, "conv-test", "req-test", "trace-test")
+	StreamAnthropicMessages(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "test", "", w, "conv-test", "req-test", "trace-test", nil)
 
 	events := parseSSEEvents(t, w.Body.String())
 
@@ -264,7 +264,7 @@ func TestStreamChatCompletions_ReplacesModelAndID(t *testing.T) {
 	defer func() { config.ChatURL = origChatURL }()
 
 	w := httptest.NewRecorder()
-	StreamChatCompletions(context.Background(), map[string]interface{}{"model": "my-model", "messages": []interface{}{}, "stream": true}, "my-model", "", w, "conv-test", "req-test", "trace-test")
+	StreamChatCompletions(context.Background(), map[string]interface{}{"model": "my-model", "messages": []interface{}{}, "stream": true}, "my-model", "", w, "conv-test", "req-test", "trace-test", nil)
 
 	body := w.Body.String()
 	// 验证 model 被替换为本地 model
@@ -293,7 +293,7 @@ func TestCollectUpstreamChunks_ToolCallNameNotDuplicated(t *testing.T) {
 	config.ChatURL = srv.URL
 	defer func() { config.ChatURL = origChatURL }()
 
-	result, err := CollectUpstreamChunks(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "")
+	result, err := CollectUpstreamChunks(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestCollectUpstreamChunks_ArgumentsConcatenated(t *testing.T) {
 	config.ChatURL = srv.URL
 	defer func() { config.ChatURL = origChatURL }()
 
-	result, err := CollectUpstreamChunks(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "")
+	result, err := CollectUpstreamChunks(context.Background(), map[string]interface{}{"model": "test", "messages": []interface{}{}, "stream": true}, "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

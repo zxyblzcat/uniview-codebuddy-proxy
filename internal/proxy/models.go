@@ -23,6 +23,7 @@ type Model struct {
 
 // 额外模型：/v2/config 不返回但实测可用的模型
 var extraModels = []Model{
+	// 国产模型
 	{ID: "glm-5.1", Object: "model", Created: 1700000000, OwnedBy: "zhipu"},
 	{ID: "glm-5.0", Object: "model", Created: 1700000000, OwnedBy: "zhipu"},
 	{ID: "glm-4.7", Object: "model", Created: 1700000000, OwnedBy: "zhipu"},
@@ -33,6 +34,14 @@ var extraModels = []Model{
 	{ID: "deepseek-r1", Object: "model", Created: 1700000000, OwnedBy: "deepseek"},
 	{ID: "deepseek-v3-1-lkeap", Object: "model", Created: 1700000000, OwnedBy: "deepseek"},
 	{ID: "hunyuan-2.0-instruct", Object: "model", Created: 1700000000, OwnedBy: "tencent"},
+	// 外部模型（兜底，/v2/config 动态获取失败时使用）
+	{ID: "claude-4.0", Object: "model", Created: 1700000000, OwnedBy: "anthropic"},
+	{ID: "claude-3.7", Object: "model", Created: 1700000000, OwnedBy: "anthropic"},
+	{ID: "gpt-4.1", Object: "model", Created: 1700000000, OwnedBy: "openai"},
+	{ID: "gpt-4.1-mini", Object: "model", Created: 1700000000, OwnedBy: "openai"},
+	{ID: "gpt-4.1-nano", Object: "model", Created: 1700000000, OwnedBy: "openai"},
+	{ID: "gemini-2.5-pro", Object: "model", Created: 1700000000, OwnedBy: "google"},
+	{ID: "gemini-2.5-flash", Object: "model", Created: 1700000000, OwnedBy: "google"},
 }
 
 var (
@@ -52,6 +61,12 @@ func inferOwnedBy(name string) string {
 		"glm":      "zhipu",
 		"minimax":  "minimax",
 		"kimi":     "moonshot",
+		"claude":   "anthropic",
+		"gpt":      "openai",
+		"o1":       "openai",
+		"o3":       "openai",
+		"o4":       "openai",
+		"gemini":   "google",
 	}
 	for prefix, owner := range prefixes {
 		if strings.HasPrefix(name, prefix) {
