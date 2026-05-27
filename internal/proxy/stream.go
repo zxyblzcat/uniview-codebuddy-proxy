@@ -106,13 +106,13 @@ func wrapWithIdleTimeout(body io.ReadCloser) io.ReadCloser {
 	return newIdleTimeoutReader(body, upstreamIdleTimeout)
 }
 
-func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, model string, bearer string, intent string) (*http.Response, error) {
+func doUpstreamRequest(ctx context.Context, url string, payload map[string]interface{}, model string, bearer string, intent string, extraHeaders map[string]string) (*http.Response, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", config.ChatURL, bytes.NewReader(payloadJSON))
+	req, err := http.NewRequest("POST", url, bytes.NewReader(payloadJSON))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -124,6 +124,16 @@ func doUpstreamRequest(ctx context.Context, payload map[string]interface{}, mode
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
+	}
+	// extraHeaders 中禁止覆盖认证和安全相关头
+	protectedHeaders := map[string]bool{
+		"Authorization": true, "X-Machine-Id": true, "X-User-Id": true,
+		"Content-Type": true, "Host": true,
+	}
+	for k, v := range extraHeaders {
+		if !protectedHeaders[k] {
+			req.Header.Set(k, v)
+		}
 	}
 
 	resp, err := httpClient.Do(req)
@@ -185,10 +195,10 @@ func parseSSELine(line string) (data string, done bool, ok bool) {
 	return dataStr, false, true
 }
 
-func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string) {
+func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string, extraHeaders map[string]string) {
 	requestID := "chatcmpl-" + randomHex(12)
 
-	resp, err := doUpstreamRequest(ctx, payload, model, bearer, "craft")
+	resp, err := doUpstreamRequest(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			writeSSEError(w, ue.Error())
@@ -240,7 +250,7 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 			if canFlush {
 				flusher.Flush()
 			}
-			continue
+			break
 		}
 
 		var chunk map[string]interface{}
@@ -280,13 +290,13 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 	}
 }
 
-func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, bearer string) (*CollectedResult, error) {
+func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, bearer string, extraHeaders map[string]string) (*CollectedResult, error) {
 	model, _ := payload["model"].(string)
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	resp, err := doUpstreamRequest(ctx, payload, model, bearer, "craft")
+	resp, err := doUpstreamRequest(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			return &CollectedResult{StatusCode: ue.StatusCode, ErrorText: ue.Message}, nil

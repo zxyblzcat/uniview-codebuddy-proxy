@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"sort"
 
+	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/telemetry"
 )
 
 // StreamAnthropicMessages 向上游发送请求，将 OpenAI SSE 流实时转换为 Anthropic SSE 流
-func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string) {
+func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string, extraHeaders map[string]string) {
 	msgID := "msg_" + randomHex(24)
 
 	// 状态机变量
@@ -29,7 +30,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 	started := false
 	finished := false
 
-	resp, err := doUpstreamRequest(ctx, payload, model, bearer, "craft")
+	resp, err := doUpstreamRequest(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			writeAnthropicSSEError(w, ue.Error())
