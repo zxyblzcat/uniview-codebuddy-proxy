@@ -10,3 +10,4 @@ uniview-codebuddy-proxy-*
 *.syso
 .idea/
 PLAN.md
+.claude
