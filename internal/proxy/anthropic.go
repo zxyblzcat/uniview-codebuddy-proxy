@@ -285,7 +285,7 @@ func finishReasonToStopReason(finishReason string) string {
 }
 
 // convertOpenAIToAnthropicResponse 将 OpenAI 收集结果转换为 Anthropic 非流式响应格式
-func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, c *gin.Context) {
+func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, payload map[string]interface{}, c *gin.Context) {
 	msgID := "msg_" + randomHex(24)
 	var contentBlocks []interface{}
 
@@ -326,6 +326,12 @@ func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, c *
 		})
 	}
 
+	// 如果上游未返回 input_tokens，使用估算值
+	inputTokens := result.PromptTokens
+	if inputTokens == 0 {
+		inputTokens = estimateInputTokens(payload)
+	}
+
 	c.JSON(http.StatusOK, map[string]interface{}{
 		"id":            msgID,
 		"type":          "message",
@@ -335,7 +341,7 @@ func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, c *
 		"stop_reason":   finishReasonToStopReason(result.FinishReason),
 		"stop_sequence": nil,
 		"usage": map[string]interface{}{
-			"input_tokens":                result.PromptTokens,
+			"input_tokens":                inputTokens,
 			"output_tokens":               result.CompletionTokens,
 			"cache_creation_input_tokens": 0,
 			"cache_read_input_tokens":     result.CachedTokens,

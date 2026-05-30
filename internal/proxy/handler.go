@@ -399,7 +399,9 @@ func handleCountTokens(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"input_tokens": tokens,
+		"input_tokens":                tokens,
+		"cache_creation_input_tokens": 0,
+		"cache_read_input_tokens":     0,
 	})
 }
 
@@ -616,10 +618,10 @@ func handleAnthropicMessages(c *gin.Context) {
 			buf := &bytes.Buffer{}
 			cw := &cacheWriter{ResponseWriter: c.Writer, body: buf}
 			c.Writer = cw
-			convertOpenAIToAnthropicResponse(result, model, c)
+			convertOpenAIToAnthropicResponse(result, model, payload, c)
 			cache.GlobalCache.Set(cache.Key(model, payload["messages"], payload["tools"], 0), buf.Bytes())
 			return
 		}
-		convertOpenAIToAnthropicResponse(result, model, c)
+		convertOpenAIToAnthropicResponse(result, model, payload, c)
 	}
 }

@@ -481,6 +481,98 @@ func getIntFromMap(m map[string]interface{}, key string) int {
 	return int(v)
 }
 
+// estimateInputTokens 基于请求 payload 估算 input_tokens 数量
+// 当上游不返回 usage 信息时，使用此估算值替代
+// 估算规则：约 1 token ≈ 4 字节（综合中英文场景）
+func estimateInputTokens(payload map[string]interface{}) int {
+	totalBytes := 0
+
+	// 统计 messages 中的文本字节
+	if msgs, ok := payload["messages"].([]interface{}); ok {
+		for _, m := range msgs {
+			if msg, ok := m.(map[string]interface{}); ok {
+				totalBytes += estimateMessageBytes(msg)
+			}
+		}
+	}
+
+	// 统计 tools 定义
+	if tools, ok := payload["tools"].([]interface{}); ok {
+		for _, t := range tools {
+			if tool, ok := t.(map[string]interface{}); ok {
+				if b, err := json.Marshal(tool); err == nil {
+					totalBytes += len(b)
+				}
+			}
+		}
+	}
+
+	tokens := totalBytes / 4
+	if tokens == 0 {
+		tokens = 1
+	}
+	return tokens
+}
+
+// estimateMessageBytes 估算单条消息的字节大小
+func estimateMessageBytes(msg map[string]interface{}) int {
+	n := 0
+	if content, ok := msg["content"].(string); ok {
+		n += len(content)
+	} else if contentArr, ok := msg["content"].([]interface{}); ok {
+		for _, block := range contentArr {
+			n += estimateBlockBytes(block)
+		}
+	}
+	// tool_calls 也计入
+	if tcs, ok := msg["tool_calls"].([]interface{}); ok {
+		for _, tc := range tcs {
+			if b, err := json.Marshal(tc); err == nil {
+				n += len(b)
+			}
+		}
+	}
+	return n
+}
+
+// estimateBlockBytes 估算内容块的字节大小
+func estimateBlockBytes(block interface{}) int {
+	b, ok := block.(map[string]interface{})
+	if !ok {
+		return 0
+	}
+	n := 0
+	switch b["type"] {
+	case "text":
+		if text, ok := b["text"].(string); ok {
+			n += len(text)
+		}
+	case "tool_result":
+		if content, ok := b["content"].(string); ok {
+			n += len(content)
+		} else if contentArr, ok := b["content"].([]interface{}); ok {
+			for _, sub := range contentArr {
+				n += estimateBlockBytes(sub)
+			}
+		}
+	case "tool_use":
+		if serialized, err := json.Marshal(b); err == nil {
+			n += len(serialized)
+		}
+	case "image_url":
+		if url, ok := b["image_url"].(map[string]interface{}); ok {
+			if u, ok := url["url"].(string); ok {
+				n += len(u) / 3
+			}
+		}
+	default:
+		if text, ok := b["text"].(string); ok {
+			n += len(text)
+		}
+	}
+	return n
+}
+
 func randomHex(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
