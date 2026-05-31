@@ -18,9 +18,27 @@ esac
 
 echo "Building ${APP_NAME} for darwin/${GOARCH}..."
 
-# Build the binary
+HELPER_NAME="codebuddy-proxy-helper"
+
+# Build the main binary (with GUI/systray support)
 CGO_ENABLED=1 GOOS=darwin GOARCH=$GOARCH \
-    go build -ldflags "$LDFLAGS" -o "${BINARY_NAME}" ./cmd/proxy
+    go build -tags gui -ldflags "$LDFLAGS" -o "${BINARY_NAME}" ./cmd/proxy
+
+# Build the minimal helper binary (no systray/gin, only --login-item logic)
+CGO_ENABLED=0 GOOS=darwin GOARCH=$GOARCH \
+    go build -ldflags "-s -w" -o "${HELPER_NAME}" ./cmd/helper
+
+# Compress binaries with UPX if available
+# ⚠️ 仅压缩 helper 二进制，主二进制跳过
+# macOS 内核代码签名验证在运行时检查内存中的二进制内容
+# UPX 在运行时解压会修改内存映像，导致 POSIX error 153 (ENOTSUP)
+# 签名验证失败，应用无法启动
+if command -v upx &>/dev/null; then
+    echo "Compressing helper binary with UPX..."
+    upx -5 --force-macos "${HELPER_NAME}" 2>/dev/null || true
+else
+    echo "UPX not found, skipping compression (install with: brew install upx)"
+fi
 
 # Create .app bundle structure
 APP_BUNDLE="${APP_NAME}.app"
@@ -37,12 +55,12 @@ mkdir -p "$MACOS"
 mkdir -p "$RESOURCES"
 mkdir -p "$HELPER_MACOS"
 
-# Copy main binary (go build already sets 755)
+# Copy main binary
 cp "${BINARY_NAME}" "${MACOS}/${BINARY_NAME}"
 chmod +x "${MACOS}/${BINARY_NAME}"
 
-# Copy helper binary (same binary, --login-item flag distinguishes role)
-cp "${BINARY_NAME}" "${HELPER_MACOS}/${BINARY_NAME}"
+# Copy helper binary (minimal binary, only --login-item logic)
+cp "${HELPER_NAME}" "${HELPER_MACOS}/${BINARY_NAME}"
 chmod +x "${HELPER_MACOS}/${BINARY_NAME}"
 
 # Create Info.plist for main app
@@ -99,8 +117,19 @@ cat > "${HELPER_APP}/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
-# Copy icon if available
-if [ -f "assets/icons/icon.icns" ]; then
+# Generate optimized icon from source PNG (smaller than pre-built icns)
+if [ -f "assets/icons/icon.png" ]; then
+    ICONSET_DIR=$(mktemp -d)/icon.iconset
+    mkdir -p "$ICONSET_DIR"
+    for size in 16 32 64 128 256 512; do
+        sips -z $size $size "assets/icons/icon.png" --out "${ICONSET_DIR}/icon_${size}x${size}.png" -s format png >/dev/null 2>&1
+    done
+    for size in 16 32 64 128 256; do
+        sips -z $((size*2)) $((size*2)) "assets/icons/icon.png" --out "${ICONSET_DIR}/icon_${size}x${size}@2x.png" -s format png >/dev/null 2>&1
+    done
+    iconutil -c icns "$ICONSET_DIR" -o "${RESOURCES}/AppIcon.icns" 2>/dev/null
+    rm -rf "$(dirname "$ICONSET_DIR")"
+elif [ -f "assets/icons/icon.icns" ]; then
     cp assets/icons/icon.icns "${RESOURCES}/AppIcon.icns"
 fi
 
@@ -111,3 +140,4 @@ codesign --force --sign - "${HELPER_APP}"
 codesign --force --sign - "${APP_BUNDLE}"
 
 echo "Built ${APP_BUNDLE} successfully"
+echo "Size: $(du -sh "${APP_BUNDLE}" | awk '{print $1}')"

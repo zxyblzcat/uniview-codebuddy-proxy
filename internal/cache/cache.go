@@ -16,11 +16,11 @@ type CacheEntry struct {
 
 // Cache 简单的 TTL 内存缓存
 type Cache struct {
-	mu           sync.RWMutex
-	store        map[string]*CacheEntry
-	ttl          time.Duration
-	enabled      bool
-	cleanupDone  chan struct{} // 防止并发 cleanup goroutine
+	mu          sync.RWMutex
+	store       map[string]*CacheEntry
+	ttl         time.Duration
+	enabled     bool
+	cleanupDone chan struct{} // 防止并发 cleanup goroutine
 }
 
 // New 创建新的缓存实例
@@ -58,7 +58,7 @@ func (c *Cache) SetTTL(ttl time.Duration) {
 }
 
 // Key 构建缓存 key
-func Key(model string, messages, tools interface{}, temperature float64) string {
+func Key(model string, messages, tools interface{}, temperature float64, maxTokens int) string {
 	h := sha256.New()
 	h.Write([]byte(model))
 	if messages != nil {
@@ -70,27 +70,32 @@ func Key(model string, messages, tools interface{}, temperature float64) string 
 		h.Write(b)
 	}
 	h.Write([]byte(fmt.Sprintf("%v", temperature)))
+	h.Write([]byte(fmt.Sprintf("%d", maxTokens)))
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // Get 获取缓存条目
 func (c *Cache) Get(key string) json.RawMessage {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	if !c.enabled {
+		c.mu.RUnlock()
 		return nil
 	}
 
 	entry, ok := c.store[key]
 	if !ok {
+		c.mu.RUnlock()
 		return nil
 	}
 
 	if time.Since(entry.CreatedAt) > c.ttl {
+		// 过期条目：异步触发清理（Get 持有 RLock 不能直接删除）
+		c.mu.RUnlock()
+		c.triggerCleanup()
 		return nil
 	}
 
+	c.mu.RUnlock()
 	return entry.Data
 }
 
@@ -112,13 +117,18 @@ func (c *Cache) Set(key string, data json.RawMessage) {
 		CreatedAt: time.Now(),
 	}
 
-	// 惰性清理过期条目（防止并发 cleanup goroutine）
+	// 惰性清理过期条目
 	if len(c.store) > 10000 {
-		select {
-		case c.cleanupDone <- struct{}{}:
-			go c.cleanup()
-		default:
-		}
+		c.triggerCleanup()
+	}
+}
+
+// triggerCleanup 非阻塞地启动清理 goroutine（防止并发 cleanup goroutine）
+func (c *Cache) triggerCleanup() {
+	select {
+	case c.cleanupDone <- struct{}{}:
+		go c.cleanup()
+	default:
 	}
 }
 

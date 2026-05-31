@@ -39,7 +39,10 @@
     "clear": "Clear",
     "connected": "Connected",
     "disconnected": "Disconnected",
-    "waiting": "Waiting for logs..."
+    "waiting": "Waiting for logs...",
+    "filterAll": "All",
+    "filterDebug": "Debug Only",
+    "filterHideDebug": "Hide Debug"
   },
   "config": {
     "title": "Configuration",
@@ -52,7 +55,9 @@
     "cacheSettings": "Cache Settings",
     "enableCache": "Enable response cache",
     "cacheTtl": "Cache TTL (seconds):",
-    "language": "Language"
+    "language": "Language",
+    "debugSettings": "Debug Settings",
+    "enableDebug": "Enable debug mode (log request timing)"
   },
   "login": {
     "password": "API Password",

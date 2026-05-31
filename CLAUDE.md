@@ -82,7 +82,7 @@ The upstream base URL (`https://unvcoding.copilot.qq.com`) is hardcoded, not con
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **uniview-codebuddy-proxy** (1148 symbols, 2849 relationships, 99 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **uniview-codebuddy-proxy** (1341 symbols, 3390 relationships, 116 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

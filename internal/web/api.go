@@ -43,6 +43,7 @@ func handleGetConfig(c *gin.Context) {
 		"cache_ttl":        config.CacheTTLAtomic(),
 		"base_url":         config.BaseURL,
 		"locale":           i18n.GetLocale().String(),
+		"debug_enabled":    config.DebugEnabledAtomic(),
 	})
 }
 
@@ -61,6 +62,9 @@ func handlePutConfig(c *gin.Context) {
 		ttl := int(v)
 		config.SetCacheTTL(ttl)
 		cache.GlobalCache.SetTTL(time.Duration(config.CacheTTLAtomic()) * time.Second)
+	}
+	if v, ok := body["debug_enabled"].(bool); ok {
+		config.SetDebugEnabled(v)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

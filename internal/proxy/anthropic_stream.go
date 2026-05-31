@@ -9,13 +9,17 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"time"
 
 	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/telemetry"
 )
 
 // StreamAnthropicMessages 向上游发送请求，将 OpenAI SSE 流实时转换为 Anthropic SSE 流
-func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string, extraHeaders map[string]string) {
+// 返回 TTFB（从发起上游请求到收到首个有效 SSE 数据的时间）
+func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string, extraHeaders map[string]string) time.Duration {
+	var ttfb time.Duration
+	upstreamStart := time.Now()
 	msgID := "msg_" + randomHex(24)
 
 	// 预估 input_tokens：上游可能不返回 usage 或在最后才返回，
@@ -36,12 +40,13 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 
 	resp, err := doUpstreamRequest(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
 	if err != nil {
+		ttfb = time.Since(upstreamStart)
 		if ue, ok := err.(*upstreamError); ok {
 			writeAnthropicSSEError(w, ue.Error())
 		} else {
 			writeAnthropicSSEError(w, err.Error())
 		}
-		return
+		return ttfb
 	}
 	defer resp.Body.Close()
 	body := wrapWithIdleTimeout(resp.Body)
@@ -106,11 +111,11 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 		// 客户端断连或写入失败时停止
 		select {
 		case <-ctx.Done():
-			return
+			return ttfb
 		default:
 		}
 		if writeErr != nil {
-			return
+			return ttfb
 		}
 
 		line := scanner.Text()
@@ -123,6 +128,10 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			continue
 		}
 
+		// 首次解析到有效 SSE 数据时记录 TTFB
+		if ttfb == 0 {
+			ttfb = time.Since(upstreamStart)
+		}
 		if done {
 			if !finished {
 				finished = true
@@ -266,22 +275,23 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 					}
 
 					if !toolBlocksStarted[tcIdx] {
+						// 首次出现此 tool_call index：先关闭前面的 thinking/text block
+						// 必须在 id 检查之前执行，否则无 id 的 tool_call chunk 不会关闭前面的 block
+						if thinkingBlockIdx >= 0 {
+							safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
+								"type": "content_block_stop", "index": thinkingBlockIdx,
+							}))
+							thinkingBlockIdx = -1
+						}
+						if textBlockIdx >= 0 {
+							safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
+								"type": "content_block_stop", "index": textBlockIdx,
+							}))
+							textBlockIdx = -1
+						}
+
 						if id, ok := tcMap["id"].(string); ok && id != "" {
 							toolBlocksStarted[tcIdx] = true
-							// 关闭前面的 thinking block
-							if thinkingBlockIdx >= 0 {
-								safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
-									"type": "content_block_stop", "index": thinkingBlockIdx,
-								}))
-								thinkingBlockIdx = -1
-							}
-							// 关闭前面的文本 block
-							if textBlockIdx >= 0 {
-								safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
-									"type": "content_block_stop", "index": textBlockIdx,
-								}))
-								textBlockIdx = -1
-							}
 							fnName := ""
 							if fn, ok := tcMap["function"].(map[string]interface{}); ok {
 								fnName, _ = fn["name"].(string)
@@ -336,10 +346,24 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			log.Printf("SSE scan error: %v", err)
 		}
+		// 向客户端发送流截断通知，避免客户端无限等待
+		if !finished {
+			closeOpenBlocks()
+			it := resolveInputTokens()
+			safeWrite(anthropicSSE("message_delta", map[string]interface{}{
+				"type":  "message_delta",
+				"delta": map[string]interface{}{"stop_reason": "end_turn", "stop_sequence": nil},
+				"usage": map[string]interface{}{"input_tokens": it, "output_tokens": outputTokens, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
+			}))
+			safeWrite(anthropicSSE("message_stop", map[string]interface{}{
+				"type": "message_stop",
+			}))
+		}
 	}
 	// 上报 chat_message_response 事件（使用真实值或估算值）
 	it := resolveInputTokens()
 	telemetry.ReportChatResponse(conversationID, telemetryRequestID, model, model, traceID, it, outputTokens)
+	return ttfb
 }
 
 // writeSSE 写入 SSE 数据并 flush，返回写入错误

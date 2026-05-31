@@ -96,9 +96,9 @@ var httpClient = &http.Client{
 	Timeout: 0,
 	Transport: &http.Transport{
 		ResponseHeaderTimeout: 30 * time.Minute,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
 	},
 }
 
@@ -195,17 +195,22 @@ func parseSSELine(line string) (data string, done bool, ok bool) {
 	return dataStr, false, true
 }
 
-func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string, extraHeaders map[string]string) {
+// StreamChatCompletions 向上游发送请求，将上游 SSE 流实时转发给客户端
+// 返回 TTFB（从发起上游请求到收到首个有效 SSE 数据的时间）
+func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, conversationID, telemetryRequestID, traceID string, extraHeaders map[string]string) time.Duration {
 	requestID := "chatcmpl-" + randomHex(12)
+	var ttfb time.Duration
+	upstreamStart := time.Now()
 
 	resp, err := doUpstreamRequest(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
 	if err != nil {
+		ttfb = time.Since(upstreamStart)
 		if ue, ok := err.(*upstreamError); ok {
 			writeSSEError(w, ue.Error())
 		} else {
 			writeSSEError(w, err.Error())
 		}
-		return
+		return ttfb
 	}
 	defer resp.Body.Close()
 	body := wrapWithIdleTimeout(resp.Body)
@@ -226,11 +231,11 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
-			return
+			return ttfb
 		default:
 		}
 		if writeErr != nil {
-			return
+			return ttfb
 		}
 
 		line := scanner.Text()
@@ -241,6 +246,11 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 		dataStr, done, ok := parseSSELine(line)
 		if !ok {
 			continue
+		}
+
+		// 首次解析到有效 SSE 数据时记录 TTFB
+		if ttfb == 0 {
+			ttfb = time.Since(upstreamStart)
 		}
 
 		if done {
@@ -288,6 +298,7 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 			log.Printf("SSE scan error: %v", err)
 		}
 	}
+	return ttfb
 }
 
 func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, bearer string, extraHeaders map[string]string) (*CollectedResult, error) {
@@ -474,6 +485,9 @@ func writeSSEError(w http.ResponseWriter, msg string) {
 	})
 	fmt.Fprintf(w, "data: %s\n\n", string(errJSON))
 	fmt.Fprintf(w, "data: [DONE]\n\n")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func getIntFromMap(m map[string]interface{}, key string) int {
@@ -481,9 +495,16 @@ func getIntFromMap(m map[string]interface{}, key string) int {
 	return int(v)
 }
 
-// estimateInputTokens 基于请求 payload 估算 input_tokens 数量
-// 当上游不返回 usage 信息时，使用此估算值替代
-// 估算规则：约 1 token ≈ 4 字节（综合中英文场景）
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		log.Printf("Warning: crypto/rand.Read failed: %v", err)
+		for i := range b {
+			b[i] = byte(mrand.IntN(256))
+		}
+	}
+	return hex.EncodeToString(b)
+}
 func estimateInputTokens(payload map[string]interface{}) int {
 	totalBytes := 0
 
@@ -573,13 +594,3 @@ func estimateBlockBytes(block interface{}) int {
 	return n
 }
 
-func randomHex(n int) string {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		log.Printf("Warning: crypto/rand.Read failed: %v", err)
-		for i := range b {
-			b[i] = byte(mrand.IntN(256))
-		}
-	}
-	return hex.EncodeToString(b)
-}

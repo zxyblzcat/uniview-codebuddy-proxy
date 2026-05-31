@@ -9,6 +9,7 @@ interface Config {
   cache_ttl: number
   base_url: string
   locale: string
+  debug_enabled: boolean
 }
 
 export default function ConfigPage() {
@@ -17,6 +18,7 @@ export default function ConfigPage() {
   const [config, setConfig] = useState<Config | null>(null)
   const [cacheEnabled, setCacheEnabled] = useState(false)
   const [cacheTTL, setCacheTTL] = useState(300)
+  const [debugEnabled, setDebugEnabled] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -27,6 +29,7 @@ export default function ConfigPage() {
         setConfig(data)
         setCacheEnabled(data.cache_enabled || false)
         setCacheTTL(data.cache_ttl || 300)
+        setDebugEnabled(data.debug_enabled || false)
       })
       .catch(() => {})
   }, [])
@@ -38,7 +41,7 @@ export default function ConfigPage() {
       const res = await authFetch('/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cache_enabled: cacheEnabled, cache_ttl: cacheTTL }),
+        body: JSON.stringify({ cache_enabled: cacheEnabled, cache_ttl: cacheTTL, debug_enabled: debugEnabled }),
       })
       if (res.ok) {
         setSaveMsg({ ok: true, text: t('common.saved') })
@@ -136,6 +139,29 @@ export default function ConfigPage() {
             </span>
           )}
         </div>
+      </div>
+
+      <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 space-y-3">
+        <h3 className="text-sm font-medium text-slate-300">{t('config.debugSettings')}</h3>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={debugEnabled}
+            onChange={async (e) => {
+              const v = e.target.checked
+              setDebugEnabled(v)
+              try {
+                await authFetch('/api/config', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ debug_enabled: v }),
+                })
+              } catch { /* best-effort */ }
+            }}
+            className="rounded"
+          />
+          <span className="text-white">{t('config.enableDebug')}</span>
+        </label>
       </div>
     </div>
   )

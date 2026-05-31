@@ -39,7 +39,10 @@
     "clear": "清空",
     "connected": "已连接",
     "disconnected": "已断开",
-    "waiting": "等待日志..."
+    "waiting": "等待日志...",
+    "filterAll": "全部",
+    "filterDebug": "仅调试",
+    "filterHideDebug": "隐藏调试"
   },
   "config": {
     "title": "配置",
@@ -52,7 +55,9 @@
     "cacheSettings": "缓存设置",
     "enableCache": "启用响应缓存",
     "cacheTtl": "缓存 TTL（秒）：",
-    "language": "语言"
+    "language": "语言",
+    "debugSettings": "调试设置",
+    "enableDebug": "启用调试模式（记录请求耗时）"
   },
   "login": {
     "password": "API 密码",

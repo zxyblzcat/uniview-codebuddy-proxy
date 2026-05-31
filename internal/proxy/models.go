@@ -9,39 +9,84 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/config"
 )
 
 // Model 表示 OpenAI 格式的模型条目
 type Model struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	OwnedBy string `json:"owned_by"`
+	ID               string `json:"id"`
+	Object           string `json:"object"`
+	Created          int64  `json:"created"`
+	OwnedBy          string `json:"owned_by"`
+	MaxContextWindow int    `json:"max_context_window,omitempty"`
+}
+
+// 模型上下文窗口大小映射
+// 这些值用于让 Claude Code 等客户端正确判断上下文使用率，从而触发 autocompact
+// 值基于各模型官方公布的上下文窗口大小
+var modelContextWindows = map[string]int{
+	// GLM 系列
+	"glm-5.1": 128000,
+	"glm-5.0": 128000,
+	"glm-4.7": 128000,
+	"glm-4.6": 128000,
+	"glm-4.5": 128000,
+	"glm-4.4": 128000,
+	// MiniMax
+	"minimax-m2.7": 1000000,
+	"minimax-m2.5": 245000,
+	// Kimi
+	"kimi-k2.5": 131072,
+	// DeepSeek
+	"deepseek-r1":            131072,
+	"deepseek-r1-0528":       131072,
+	"deepseek-r1-0528-lkeap": 131072,
+	"deepseek-v3-1-lkeap":    131072,
+	"deepseek-v3":            131072,
+	"deepseek-v3-0324":       131072,
+	// 混元
+	"hunyuan-2.0-instruct": 131072,
+	"hunyuan-chat":         131072,
+	"hunyuan":              131072,
+	"hunyuan-3b":           32768,
+	// Anthropic (兜底)
+	"claude-4.0":    200000,
+	"claude-3.7":    200000,
+	"claude-3.5":    200000,
+	"claude-3-opus": 200000,
+	// OpenAI
+	"gpt-4.1":      1047576,
+	"gpt-4.1-mini": 1047576,
+	"gpt-4.1-nano": 1047576,
+	// Google
+	"gemini-2.5-pro":   1048576,
+	"gemini-2.5-flash": 1048576,
 }
 
 // 额外模型：/v2/config 不返回但实测可用的模型
 var extraModels = []Model{
 	// 国产模型
-	{ID: "glm-5.1", Object: "model", Created: 1700000000, OwnedBy: "zhipu"},
-	{ID: "glm-5.0", Object: "model", Created: 1700000000, OwnedBy: "zhipu"},
-	{ID: "glm-4.7", Object: "model", Created: 1700000000, OwnedBy: "zhipu"},
-	{ID: "glm-4.6", Object: "model", Created: 1700000000, OwnedBy: "zhipu"},
-	{ID: "minimax-m2.7", Object: "model", Created: 1700000000, OwnedBy: "minimax"},
-	{ID: "minimax-m2.5", Object: "model", Created: 1700000000, OwnedBy: "minimax"},
-	{ID: "kimi-k2.5", Object: "model", Created: 1700000000, OwnedBy: "moonshot"},
-	{ID: "deepseek-r1", Object: "model", Created: 1700000000, OwnedBy: "deepseek"},
-	{ID: "deepseek-v3-1-lkeap", Object: "model", Created: 1700000000, OwnedBy: "deepseek"},
-	{ID: "hunyuan-2.0-instruct", Object: "model", Created: 1700000000, OwnedBy: "tencent"},
+	{ID: "glm-5.1", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 128000},
+	{ID: "glm-5.0", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 128000},
+	{ID: "glm-4.7", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 128000},
+	{ID: "glm-4.6", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 128000},
+	{ID: "minimax-m2.7", Object: "model", Created: 1700000000, OwnedBy: "minimax", MaxContextWindow: 1000000},
+	{ID: "minimax-m2.5", Object: "model", Created: 1700000000, OwnedBy: "minimax", MaxContextWindow: 245000},
+	{ID: "kimi-k2.5", Object: "model", Created: 1700000000, OwnedBy: "moonshot", MaxContextWindow: 131072},
+	{ID: "deepseek-r1", Object: "model", Created: 1700000000, OwnedBy: "deepseek", MaxContextWindow: 131072},
+	{ID: "deepseek-v3-1-lkeap", Object: "model", Created: 1700000000, OwnedBy: "deepseek", MaxContextWindow: 131072},
+	{ID: "hunyuan-2.0-instruct", Object: "model", Created: 1700000000, OwnedBy: "tencent", MaxContextWindow: 131072},
 	// 外部模型（兜底，/v2/config 动态获取失败时使用）
-	{ID: "claude-4.0", Object: "model", Created: 1700000000, OwnedBy: "anthropic"},
-	{ID: "claude-3.7", Object: "model", Created: 1700000000, OwnedBy: "anthropic"},
-	{ID: "gpt-4.1", Object: "model", Created: 1700000000, OwnedBy: "openai"},
-	{ID: "gpt-4.1-mini", Object: "model", Created: 1700000000, OwnedBy: "openai"},
-	{ID: "gpt-4.1-nano", Object: "model", Created: 1700000000, OwnedBy: "openai"},
-	{ID: "gemini-2.5-pro", Object: "model", Created: 1700000000, OwnedBy: "google"},
-	{ID: "gemini-2.5-flash", Object: "model", Created: 1700000000, OwnedBy: "google"},
+	{ID: "claude-4.0", Object: "model", Created: 1700000000, OwnedBy: "anthropic", MaxContextWindow: 200000},
+	{ID: "claude-3.7", Object: "model", Created: 1700000000, OwnedBy: "anthropic", MaxContextWindow: 200000},
+	{ID: "gpt-4.1", Object: "model", Created: 1700000000, OwnedBy: "openai", MaxContextWindow: 1047576},
+	{ID: "gpt-4.1-mini", Object: "model", Created: 1700000000, OwnedBy: "openai", MaxContextWindow: 1047576},
+	{ID: "gpt-4.1-nano", Object: "model", Created: 1700000000, OwnedBy: "openai", MaxContextWindow: 1047576},
+	{ID: "gemini-2.5-pro", Object: "model", Created: 1700000000, OwnedBy: "google", MaxContextWindow: 1048576},
+	{ID: "gemini-2.5-flash", Object: "model", Created: 1700000000, OwnedBy: "google", MaxContextWindow: 1048576},
 }
 
 var (
@@ -153,6 +198,31 @@ func FetchModels() []Model {
 		return result
 	}
 
+	// 调试：输出上游 config 响应中第一个模型的完整字段，确认是否有上下文窗口信息
+	if config.DebugEnabledAtomic() {
+		if modelList, ok := configResp["models"].([]interface{}); ok && len(modelList) > 0 {
+			if first, ok := modelList[0].(map[string]interface{}); ok {
+				if b, err := json.MarshalIndent(first, "", "  "); err == nil {
+					log.Printf("[DEBUG] /v2/config first model fields: %s", string(b))
+				}
+			}
+			// 列出所有上游返回的模型 ID
+			var ids []string
+			for _, m := range modelList {
+				if mm, ok := m.(map[string]interface{}); ok {
+					if rb, ok := mm["requestBody"].(map[string]interface{}); ok {
+						if mid, ok := rb["model"].(string); ok && mid != "" {
+							ids = append(ids, mid)
+						}
+					} else if mid, ok := mm["name"].(string); ok && mid != "" {
+						ids = append(ids, mid)
+					}
+				}
+			}
+			log.Printf("[DEBUG] /v2/config model IDs (%d): %v", len(ids), ids)
+		}
+	}
+
 	// 提取模型列表
 	existingIDs := make(map[string]bool)
 	for _, m := range result {
@@ -174,10 +244,11 @@ func FetchModels() []Model {
 
 		if !existingIDs[realModel] {
 			result = append(result, Model{
-				ID:      realModel,
-				Object:  "model",
-				Created: 1700000000,
-				OwnedBy: inferOwnedBy(realModel),
+				ID:               realModel,
+				Object:           "model",
+				Created:          1700000000,
+				OwnedBy:          inferOwnedBy(realModel),
+				MaxContextWindow: getModelContextWindow(realModel),
 			})
 			existingIDs[realModel] = true
 		}
@@ -186,10 +257,11 @@ func FetchModels() []Model {
 		configName, _ := mMap["name"].(string)
 		if configName != "" && configName != realModel && !existingIDs[configName] {
 			result = append(result, Model{
-				ID:      configName,
-				Object:  "model",
-				Created: 1700000000,
-				OwnedBy: inferOwnedBy(realModel),
+				ID:               configName,
+				Object:           "model",
+				Created:          1700000000,
+				OwnedBy:          inferOwnedBy(realModel),
+				MaxContextWindow: getModelContextWindow(realModel),
 			})
 			existingIDs[configName] = true
 		}
@@ -199,4 +271,97 @@ func FetchModels() []Model {
 	modelsCache = result
 	modelsExpires = time.Now().Unix() + modelsCacheTTL
 	return result
+}
+
+// getModelContextWindow 返回模型的上下文窗口大小，未知模型默认 128000
+func getModelContextWindow(modelID string) int {
+	if w, ok := modelContextWindows[modelID]; ok {
+		return w
+	}
+	// 前缀匹配：按前缀长度降序排序，优先匹配更具体的前缀
+	// 避免 "hunyuan-3b" 被 "hunyuan" 覆盖、或 "deepseek-v3-1-lkeap" 被 "deepseek-v3" 覆盖
+	var bestPrefix string
+	var bestW int
+	for prefix, w := range modelContextWindows {
+		if strings.HasPrefix(modelID, prefix) && len(prefix) > len(bestPrefix) {
+			bestPrefix = prefix
+			bestW = w
+		}
+	}
+	if bestPrefix != "" {
+		return bestW
+	}
+	return 128000 // 默认值
+}
+
+// AnthropicModelInfo 表示 Anthropic API 格式的模型信息
+// 用于 GET /v1/models/:id 端点，让 Claude Code 等客户端能自动发现模型的上下文窗口大小
+type AnthropicModelInfo struct {
+	ID             string `json:"id"`
+	Type           string `json:"type"`
+	DisplayName    string `json:"display_name"`
+	CreatedAt      string `json:"created_at"`
+	MaxInputTokens int    `json:"max_input_tokens"`
+	MaxTokens      int    `json:"max_tokens"`
+}
+
+// FindModelByID 根据模型 ID 查找模型信息
+func FindModelByID(modelID string) *Model {
+	models := FetchModels()
+	for i := range models {
+		if models[i].ID == modelID {
+			return &models[i]
+		}
+	}
+	return nil
+}
+
+// HandleModelByID GET /v1/models/:id — Anthropic 格式的单个模型信息端点
+// 返回 max_input_tokens 字段，使 Claude Code 能自动发现正确的上下文窗口大小
+func HandleModelByID(c *gin.Context) {
+	modelID := c.Param("id")
+	if modelID == "" {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":    "not_found_error",
+				"message": "Model not found",
+			},
+		})
+		return
+	}
+
+	model := FindModelByID(modelID)
+	if model == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":    "not_found_error",
+				"message": "Model not found: " + modelID,
+			},
+		})
+		return
+	}
+
+	// 将 MaxContextWindow 映射为 Anthropic 格式的 max_input_tokens
+	maxInputTokens := model.MaxContextWindow
+	if maxInputTokens == 0 {
+		maxInputTokens = getModelContextWindow(model.ID)
+	}
+
+	// MaxTokens 设置为上下文窗口的 1/4，确保客户端有合理的输出空间
+	// 过低的值会导致 Claude Code 等客户端过早截断长输出
+	maxTokens := maxInputTokens / 4
+	if maxTokens < 8192 {
+		maxTokens = 8192
+	}
+
+	info := AnthropicModelInfo{
+		ID:             model.ID,
+		Type:           "model",
+		DisplayName:    model.ID,
+		CreatedAt:      time.Unix(model.Created, 0).UTC().Format(time.RFC3339),
+		MaxInputTokens: maxInputTokens,
+		MaxTokens:      maxTokens,
+	}
+
+	c.JSON(http.StatusOK, info)
 }

@@ -32,6 +32,7 @@ var (
 	cacheTTL             atomic.Int32
 	logMaxSizeMB         atomic.Int32
 	logCleanupInterval   atomic.Int32
+	debugEnabled         atomic.Bool
 )
 
 func init() {
@@ -82,6 +83,9 @@ func init() {
 		interval = 1800
 	}
 	SetLogCleanupInterval(interval)
+
+	// 调试模式配置
+	debugEnabled.Store(getEnv("DEBUG", "") == "true")
 }
 
 // ListenAddr 返回服务监听地址
@@ -127,6 +131,12 @@ func SetLogCleanupInterval(v int) {
 	}
 	logCleanupInterval.Store(int32(v))
 }
+
+// DebugEnabledAtomic 返回调试模式是否启用。
+func DebugEnabledAtomic() bool { return debugEnabled.Load() }
+
+// SetDebugEnabled 设置调试模式开关。
+func SetDebugEnabled(v bool) { debugEnabled.Store(v) }
 
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

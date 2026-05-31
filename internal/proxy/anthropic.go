@@ -241,8 +241,10 @@ func convertToolsAnthropicToOpenai(tools []interface{}) []interface{} {
 	return openaiTools
 }
 
-// convertToolChoiceAnthropicToOpenai 将 Anthropic 的 tool_choice 转换为 OpenAI 格式
-func convertToolChoiceAnthropicToOpenai(toolChoice interface{}) interface{} {
+// convertToolChoiceAnthropicToOpenai 将 Anthropic 的 tool_choice 转换为上游可接受的字符串格式
+// 上游 CodeBuddy 的 tool_choice 字段只接受 string 类型（"auto"/"required"/"none"），
+// 不接受 OpenAI 规范中的对象形式（如 {"type":"function","function":{"name":"xxx"}}）
+func convertToolChoiceAnthropicToOpenai(toolChoice interface{}) string {
 	switch tc := toolChoice.(type) {
 	case string:
 		return tc
@@ -256,13 +258,33 @@ func convertToolChoiceAnthropicToOpenai(toolChoice interface{}) interface{} {
 		case "none":
 			return "none"
 		case "tool":
-			name, _ := tc["name"].(string)
-			return map[string]interface{}{
-				"type": "function",
-				"function": map[string]interface{}{
-					"name": name,
-				},
-			}
+			// 上游不支持对象形式的 tool_choice，回退为 "auto"
+			// 指定函数的语义无法在上游 API 中表达
+			return "auto"
+		}
+	}
+	return "auto"
+}
+
+// sanitizeToolChoiceOpenai 将 OpenAI 格式的 tool_choice 规范化为上游可接受的字符串
+// 上游 CodeBuddy 的 tool_choice 字段只接受 string 类型，不接受对象形式
+func sanitizeToolChoiceOpenai(toolChoice interface{}) string {
+	switch tc := toolChoice.(type) {
+	case string:
+		return tc
+	case map[string]interface{}:
+		// OpenAI 对象形式: {"type": "auto"} / {"type": "none"} / {"type": "function", "function": {"name": "xxx"}}
+		tcType, _ := tc["type"].(string)
+		switch tcType {
+		case "auto":
+			return "auto"
+		case "none":
+			return "none"
+		case "required":
+			return "required"
+		case "function":
+			// 指定函数的语义无法在上游 API 中表达，回退为 "auto"
+			return "auto"
 		}
 	}
 	return "auto"
@@ -326,7 +348,8 @@ func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, pay
 		})
 	}
 
-	// 如果上游未返回 input_tokens，使用估算值
+	// 使用真实 input_tokens，当上游返回 0 时回退到估算值
+	// 避免返回 input_tokens:0 导致 Claude Code autocompact 永不触发
 	inputTokens := result.PromptTokens
 	if inputTokens == 0 {
 		inputTokens = estimateInputTokens(payload)

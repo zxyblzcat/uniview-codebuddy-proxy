@@ -23,6 +23,16 @@ if command -v go-winres &>/dev/null; then
 fi
 
 CGO_ENABLED=1 GOOS=windows GOARCH=$GOARCH \
-    go build -ldflags "$LDFLAGS" -o "${BINARY_NAME}.exe" ./cmd/proxy
+    go build -tags gui -ldflags "$LDFLAGS" -o "${BINARY_NAME}.exe" ./cmd/proxy
+
+# Compress with UPX if available
+# 使用 -5 而非 --best：--best 耗时 ~280s 只比 -5 多省 ~8%
+if command -v upx &>/dev/null; then
+    echo "Compressing with UPX..."
+    upx -5 "${BINARY_NAME}.exe" 2>/dev/null || true
+else
+    echo "UPX not found, skipping compression (install with: brew install upx)"
+fi
 
 echo "Built ${BINARY_NAME}.exe successfully"
+echo "Size: $(ls -lh "${BINARY_NAME}.exe" | awk '{print $5}')"

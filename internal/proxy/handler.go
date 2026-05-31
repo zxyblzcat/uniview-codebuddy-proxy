@@ -5,10 +5,12 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/cache"
@@ -18,6 +20,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// activeRequests 跟踪当前正在处理的并发请求数
+var activeRequests atomic.Int64
 
 // cacheWriter 用于捕获 gin 响应体以便缓存
 type cacheWriter struct {
@@ -50,6 +55,7 @@ func registerAPIRoutes(g *gin.RouterGroup) {
 	}
 	g.POST("/chat/completions", handleChatCompletions)
 	g.GET("/models", handleModels)
+	g.GET("/models/:id", HandleModelByID)
 	g.POST("/completions", handleCompletions)
 	g.POST("/embeddings", handleEmbeddings)
 	g.POST("/messages", handleAnthropicMessages)
@@ -134,11 +140,18 @@ func handleChatCompletions(c *gin.Context) {
 		"stream":   true,
 	}
 	// 可选参数
-	for _, k := range []string{"temperature", "max_tokens", "tools", "tool_choice", "stop", "stream_options"} {
+	for _, k := range []string{"temperature", "max_tokens", "tools", "stop"} {
 		if v, ok := body[k]; ok {
 			payload[k] = v
 		}
 	}
+	// tool_choice 需要规范化：上游只接受 string 类型，不接受对象形式
+	if v, ok := body["tool_choice"]; ok {
+		payload["tool_choice"] = sanitizeToolChoiceOpenai(v)
+	}
+
+	// 强制请求上游在流式响应中返回 usage 信息（即使客户端传了也覆盖）
+	payload["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	// 确保至少 2 条消息
 	ensureMinMessages(payload)
@@ -148,17 +161,11 @@ func handleChatCompletions(c *gin.Context) {
 	telemetryRequestID := "req-" + randomHex(16)
 	traceID := randomHex(16)
 
-	// 计算输入长度用于上报
-	inputLength := 0
-	if msgs, ok := body["messages"].([]interface{}); ok {
-		for _, m := range msgs {
-			if msg, ok := m.(map[string]interface{}); ok {
-				if c, ok := msg["content"].(string); ok {
-					inputLength += len(c)
-				}
-			}
-		}
-	}
+	// 计算输入长度用于上报（复用 estimateInputTokens 估算逻辑）
+	inputLength := estimateInputTokens(map[string]interface{}{
+		"messages": body["messages"],
+		"tools":    body["tools"],
+	}) * 4 // estimateInputTokens 返回 token 估算值，乘 4 转回字节长度用于上报
 
 	// 探活请求检测
 	if maxTokens, ok := body["max_tokens"].(float64); ok && maxTokens == 1 && isStream {
@@ -187,6 +194,18 @@ func handleChatCompletions(c *gin.Context) {
 		return
 	}
 
+	// 调试模式：请求计时（在入口处捕获一次 debug 状态，避免运行中切换导致计时不一致）
+	var debugStartTime time.Time
+	var debugUpstreamStart time.Time
+	var debugRequestID string
+	debugEnabled := config.DebugEnabledAtomic()
+	if debugEnabled {
+		debugStartTime = time.Now()
+		debugRequestID = "dbg-" + randomHex(8)
+		activeRequests.Add(1)
+		defer activeRequests.Add(-1)
+	}
+
 	// 上报 chat_request_send 事件
 	telemetry.ReportChatRequest(conversationID, telemetryRequestID, model, model, traceID, inputLength)
 
@@ -195,9 +214,30 @@ func handleChatCompletions(c *gin.Context) {
 
 	if isStream {
 		// 流式响应：直接用 SSE 转发
-		StreamChatCompletions(c.Request.Context(), payload, model, bearer, c.Writer, conversationID, telemetryRequestID, traceID, extraHeaders)
+		var ttfb time.Duration
+		if debugEnabled {
+			debugUpstreamStart = time.Now()
+		}
+		ttfb = StreamChatCompletions(c.Request.Context(), payload, model, bearer, c.Writer, conversationID, telemetryRequestID, traceID, extraHeaders)
+		if debugEnabled {
+			totalStreamDuration := time.Since(debugUpstreamStart) // 整个流传输时间（含 TTFB）
+			total := time.Since(debugStartTime)
+			streamingDuration := totalStreamDuration - ttfb
+			if streamingDuration < 0 {
+				streamingDuration = 0
+			}
+			proxyOverhead := total - totalStreamDuration
+			if proxyOverhead < 0 {
+				proxyOverhead = 0
+			}
+			log.Printf("[DEBUG] request_id=%s format=openai model=%s stream=true upstream_ttfb=%s upstream_streaming=%s proxy_overhead=%s total=%s active_requests=%d goroutines=%d",
+				debugRequestID, model, fmtDur(ttfb), fmtDur(streamingDuration), fmtDur(proxyOverhead), fmtDur(total), activeRequests.Load(), runtime.NumGoroutine())
+		}
 	} else {
 		// 非流式响应：收集所有 chunk 后组装
+		if debugEnabled {
+			debugUpstreamStart = time.Now()
+		}
 		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer, extraHeaders)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -210,6 +250,17 @@ func handleChatCompletions(c *gin.Context) {
 				"error": gin.H{"message": result.ErrorText, "type": "upstream_error"},
 			})
 			return
+		}
+
+		if debugEnabled {
+			upstreamDuration := time.Since(debugUpstreamStart)
+			total := time.Since(debugStartTime)
+			proxyOverhead := total - upstreamDuration
+			if proxyOverhead < 0 {
+				proxyOverhead = 0
+			}
+			log.Printf("[DEBUG] request_id=%s format=openai model=%s stream=false upstream_ttfb=%s upstream_streaming=0s proxy_overhead=%s total=%s active_requests=%d goroutines=%d",
+				debugRequestID, model, fmtDur(upstreamDuration), fmtDur(proxyOverhead), fmtDur(total), activeRequests.Load(), runtime.NumGoroutine())
 		}
 
 		// 上报 chat_message_response 事件
@@ -241,6 +292,9 @@ func handleChatCompletions(c *gin.Context) {
 				"prompt_tokens":     result.PromptTokens,
 				"completion_tokens": result.CompletionTokens,
 				"total_tokens":      result.PromptTokens + result.CompletionTokens,
+				"prompt_tokens_details": gin.H{
+					"cached_tokens": result.CachedTokens,
+				},
 			},
 		})
 	}
@@ -346,6 +400,7 @@ func handleRoot(c *gin.Context) {
 			"embeddings":  "POST /v1/embeddings",
 			"messages":    "POST /v1/messages (Anthropic)",
 			"models":      "GET /v1/models",
+			"model_info":  "GET /v1/models/:id (Anthropic)",
 		},
 	}
 
@@ -368,7 +423,8 @@ func handleHeadV1(c *gin.Context) {
 }
 
 // handleCountTokens POST /v1/messages/count_tokens — Anthropic token counting 兼容端点
-// 上游不提供此 API，返回基于字符数的估算值
+// 上游不提供真实的 token 计数 API，使用消息内容长度估算
+// 返回 0 会导致 Claude Code autocompact 永不触发
 func handleCountTokens(c *gin.Context) {
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -376,120 +432,39 @@ func handleCountTokens(c *gin.Context) {
 		return
 	}
 
-	// 基于 rune 数估算 token 数（约 1.3 token/字符）
-	charCount := countContentChars(body)
-
-	// tools 定义也计入 token
-	if tools, ok := body["tools"].([]interface{}); ok {
-		for _, t := range tools {
-			if tool, ok := t.(map[string]interface{}); ok {
-				if name, ok := tool["name"].(string); ok {
-					charCount += utf8.RuneCountInString(name)
-				}
-				if desc, ok := tool["description"].(string); ok {
-					charCount += utf8.RuneCountInString(desc)
-				}
-			}
+	// 使用 estimateInputTokens 估算 token 数（复用流式路径的估算逻辑，覆盖 messages + tools）
+	// 构造与 estimateInputTokens 兼容的 payload 格式
+	estimatePayload := map[string]interface{}{
+		"messages": body["messages"],
+		"tools":    body["tools"],
+	}
+	// system prompt 也计入：转为 messages 中的 system 消息
+	if sys := body["system"]; sys != nil {
+		sysText := ""
+		switch s := sys.(type) {
+		case string:
+			sysText = s
+		case []interface{}:
+			sysText = extractAnthropicText(s)
+		}
+		if sysText != "" {
+			estimatePayload["messages"] = append([]interface{}{
+				map[string]interface{}{"role": "system", "content": sysText},
+			}, estimatePayload["messages"])
 		}
 	}
 
-	tokens := charCount * 13 / 10 // ~1.3 token/char
-	if tokens == 0 {
-		tokens = 1
+	estimatedTokens := estimateInputTokens(estimatePayload)
+	// 确保至少返回 1，避免返回 0 导致 Claude Code autocompact 永不触发
+	if estimatedTokens < 1 {
+		estimatedTokens = 1
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"input_tokens":                tokens,
+		"input_tokens":                estimatedTokens,
 		"cache_creation_input_tokens": 0,
 		"cache_read_input_tokens":     0,
 	})
-}
-
-// countContentChars 统计 messages 和 system 中所有文本的 rune 数
-func countContentChars(body map[string]interface{}) int {
-	charCount := 0
-
-	if msgs, ok := body["messages"].([]interface{}); ok {
-		for _, m := range msgs {
-			if msg, ok := m.(map[string]interface{}); ok {
-				charCount += countMessageChars(msg)
-			}
-		}
-	}
-	if sys, ok := body["system"].(string); ok {
-		charCount += utf8.RuneCountInString(sys)
-	} else if sysBlocks, ok := body["system"].([]interface{}); ok {
-		for _, block := range sysBlocks {
-			charCount += countBlockChars(block)
-		}
-	}
-
-	return charCount
-}
-
-// countMessageChars 统计单条 message 中 content 的 rune 数
-func countMessageChars(msg map[string]interface{}) int {
-	n := 0
-	if content, ok := msg["content"].(string); ok {
-		n += utf8.RuneCountInString(content)
-	} else if contentArr, ok := msg["content"].([]interface{}); ok {
-		for _, block := range contentArr {
-			n += countBlockChars(block)
-		}
-	}
-	return n
-}
-
-// countBlockChars 统计内容块中文本的 rune 数，覆盖 text/tool_result/tool_use/thinking
-func countBlockChars(block interface{}) int {
-	b, ok := block.(map[string]interface{})
-	if !ok {
-		return 0
-	}
-	n := 0
-	switch b["type"] {
-	case "text":
-		if text, ok := b["text"].(string); ok {
-			n += utf8.RuneCountInString(text)
-		}
-	case "tool_result":
-		if content, ok := b["content"].(string); ok {
-			n += utf8.RuneCountInString(content)
-		} else if contentArr, ok := b["content"].([]interface{}); ok {
-			for _, sub := range contentArr {
-				n += countBlockChars(sub)
-			}
-		}
-	case "tool_use":
-		if name, ok := b["name"].(string); ok {
-			n += utf8.RuneCountInString(name)
-		}
-		if input, ok := b["input"].(map[string]interface{}); ok {
-			n += estimateMapChars(input)
-		}
-	case "thinking":
-		if text, ok := b["thinking"].(string); ok {
-			n += utf8.RuneCountInString(text)
-		}
-	default:
-		// 兜底：提取所有字符串值
-		if text, ok := b["text"].(string); ok {
-			n += utf8.RuneCountInString(text)
-		}
-	}
-	return n
-}
-
-// estimateMapChars 粗略估算 map 序列化后的字符数
-func estimateMapChars(m map[string]interface{}) int {
-	n := 0
-	for k, v := range m {
-		n += utf8.RuneCountInString(k)
-		if s, ok := v.(string); ok {
-			n += utf8.RuneCountInString(s)
-		}
-	}
-	return n
 }
 
 // handleAnthropicMessages POST /v1/messages — Anthropic Messages API 兼容端点
@@ -549,6 +524,10 @@ func handleAnthropicMessages(c *gin.Context) {
 		payload["stop"] = ss
 	}
 
+	// 强制请求上游在流式响应中返回 usage 信息（即使客户端传了也覆盖）
+	// Claude Code 的 autocompact 依赖 message_delta 中的 usage.input_tokens 判断上下文占用率
+	payload["stream_options"] = map[string]interface{}{"include_usage": true}
+
 	// 确保至少 2 条消息
 	ensureMinMessages(payload)
 
@@ -557,17 +536,11 @@ func handleAnthropicMessages(c *gin.Context) {
 	anthropicRequestID := "req-" + randomHex(16)
 	anthropicTraceID := randomHex(16)
 
-	// 计算输入长度用于上报
-	anthropicInputLength := 0
-	if msgs, ok := body["messages"].([]interface{}); ok {
-		for _, m := range msgs {
-			if msg, ok := m.(map[string]interface{}); ok {
-				if c, ok := msg["content"].(string); ok {
-					anthropicInputLength += len(c)
-				}
-			}
-		}
-	}
+	// 计算输入长度用于上报（复用 estimateInputTokens 估算逻辑）
+	anthropicInputLength := estimateInputTokens(map[string]interface{}{
+		"messages": body["messages"],
+		"tools":    body["tools"],
+	}) * 4 // estimateInputTokens 返回 token 估算值，乘 4 转回字节长度用于上报
 
 	// 探活请求检测
 	if maxTokens == 1 && isStream {
@@ -585,6 +558,18 @@ func handleAnthropicMessages(c *gin.Context) {
 		return
 	}
 
+	// 调试模式：请求计时（在入口处捕获一次 debug 状态，避免运行中切换导致计时不一致）
+	var debugStartTime time.Time
+	var debugUpstreamStart time.Time
+	var debugRequestID string
+	debugEnabled := config.DebugEnabledAtomic()
+	if debugEnabled {
+		debugStartTime = time.Now()
+		debugRequestID = "dbg-" + randomHex(8)
+		activeRequests.Add(1)
+		defer activeRequests.Add(-1)
+	}
+
 	// 上报 chat_request_send 事件
 	telemetry.ReportChatRequest(anthropicConversationID, anthropicRequestID, model, model, anthropicTraceID, anthropicInputLength)
 
@@ -592,15 +577,42 @@ func handleAnthropicMessages(c *gin.Context) {
 	anthropicExtraHeaders := buildConversationHeaders(c)
 
 	if isStream {
-		StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer, anthropicConversationID, anthropicRequestID, anthropicTraceID, anthropicExtraHeaders)
+		var ttfb time.Duration
+		if debugEnabled {
+			debugUpstreamStart = time.Now()
+		}
+		ttfb = StreamAnthropicMessages(c.Request.Context(), payload, model, bearer, c.Writer, anthropicConversationID, anthropicRequestID, anthropicTraceID, anthropicExtraHeaders)
+		if debugEnabled {
+			totalStreamDuration := time.Since(debugUpstreamStart) // 整个流传输时间（含 TTFB）
+			total := time.Since(debugStartTime)
+			streamingDuration := totalStreamDuration - ttfb
+			if streamingDuration < 0 {
+				streamingDuration = 0
+			}
+			proxyOverhead := total - totalStreamDuration
+			if proxyOverhead < 0 {
+				proxyOverhead = 0
+			}
+			log.Printf("[DEBUG] request_id=%s format=anthropic model=%s stream=true upstream_ttfb=%s upstream_streaming=%s proxy_overhead=%s total=%s active_requests=%d goroutines=%d",
+				debugRequestID, model, fmtDur(ttfb), fmtDur(streamingDuration), fmtDur(proxyOverhead), fmtDur(total), activeRequests.Load(), runtime.NumGoroutine())
+		}
 	} else {
+		// 计算缓存 key（lookup 和 store 共用，避免重复计算）
+		cacheTemp := 0.0
+		if v, ok := payload["temperature"].(float64); ok {
+			cacheTemp = v
+		}
+		ck := cache.Key(model, payload["messages"], payload["tools"], cacheTemp, maxTokens)
+
 		// 非流式：检查缓存
 		if config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled() {
-			ck := cache.Key(model, payload["messages"], payload["tools"], 0)
 			if cached := cache.GlobalCache.Get(ck); cached != nil {
 				c.Data(http.StatusOK, "application/json", cached)
 				return
 			}
+		}
+		if debugEnabled {
+			debugUpstreamStart = time.Now()
 		}
 		result, err := CollectUpstreamChunks(c.Request.Context(), payload, bearer, anthropicExtraHeaders)
 		if err != nil {
@@ -611,6 +623,16 @@ func handleAnthropicMessages(c *gin.Context) {
 			anthropicErrorResponse(c, result.StatusCode, "api_error", result.ErrorText)
 			return
 		}
+		if debugEnabled {
+			upstreamDuration := time.Since(debugUpstreamStart)
+			total := time.Since(debugStartTime)
+			proxyOverhead := total - upstreamDuration
+			if proxyOverhead < 0 {
+				proxyOverhead = 0
+			}
+			log.Printf("[DEBUG] request_id=%s format=anthropic model=%s stream=false upstream_ttfb=%s upstream_streaming=0s proxy_overhead=%s total=%s active_requests=%d goroutines=%d",
+				debugRequestID, model, fmtDur(upstreamDuration), fmtDur(proxyOverhead), fmtDur(total), activeRequests.Load(), runtime.NumGoroutine())
+		}
 		// 上报 chat_message_response 事件
 		telemetry.ReportChatResponse(anthropicConversationID, anthropicRequestID, model, model, anthropicTraceID, result.PromptTokens, result.CompletionTokens)
 		// 缓存响应
@@ -619,9 +641,14 @@ func handleAnthropicMessages(c *gin.Context) {
 			cw := &cacheWriter{ResponseWriter: c.Writer, body: buf}
 			c.Writer = cw
 			convertOpenAIToAnthropicResponse(result, model, payload, c)
-			cache.GlobalCache.Set(cache.Key(model, payload["messages"], payload["tools"], 0), buf.Bytes())
+			cache.GlobalCache.Set(ck, buf.Bytes())
 			return
 		}
 		convertOpenAIToAnthropicResponse(result, model, payload, c)
 	}
+}
+
+// fmtDur 格式化 time.Duration 为秒（保留2位小数）
+func fmtDur(d time.Duration) string {
+	return fmt.Sprintf("%.2fs", d.Seconds())
 }

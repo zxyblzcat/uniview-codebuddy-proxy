@@ -17,6 +17,8 @@ export default function LogPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [connected, setConnected] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  type FilterMode = 'all' | 'debug' | 'hide-debug'
+  const [filter, setFilter] = useState<FilterMode>('all')
   const containerRef = useRef<HTMLDivElement>(null)
   const retryRef = useRef(BASE_RETRY_MS)
   const logIdRef = useRef(0)
@@ -93,6 +95,32 @@ export default function LogPage() {
             <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
             {t('logs.autoScroll')}
           </label>
+          <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5">
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                filter === 'all' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t('logs.filterAll')}
+            </button>
+            <button
+              onClick={() => setFilter('debug')}
+              className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                filter === 'debug' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t('logs.filterDebug')}
+            </button>
+            <button
+              onClick={() => setFilter('hide-debug')}
+              className={`px-2 py-0.5 rounded-md text-xs font-medium transition-colors ${
+                filter === 'hide-debug' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t('logs.filterHideDebug')}
+            </button>
+          </div>
           <button onClick={clearLogs} className="btn btn-secondary text-xs">{t('logs.clear')}</button>
           <span className={`text-xs ${connected ? 'text-green-400' : 'text-red-400'}`}>
             {connected ? t('logs.connected') : t('logs.disconnected')}
@@ -103,15 +131,23 @@ export default function LogPage() {
         ref={containerRef}
         className="bg-slate-950 rounded-xl border border-slate-700 p-4 h-[70vh] overflow-y-auto font-mono text-xs text-slate-300 space-y-0.5"
       >
-        {logs.length === 0 ? (
-          <div className="text-slate-500">{t('logs.waiting')}</div>
-        ) : (
-          logs.map((log) => (
-            <div key={log.id} className="whitespace-pre-wrap break-all hover:bg-slate-800/50 rounded px-1">
-              {log.text}
-            </div>
-          ))
-        )}
+        {(() => {
+          const filteredLogs = logs.filter((log) => {
+            if (filter === 'all') return true
+            if (filter === 'debug') return log.text.startsWith('[DEBUG]')
+            if (filter === 'hide-debug') return !log.text.startsWith('[DEBUG]')
+            return true
+          })
+          return filteredLogs.length === 0 ? (
+            <div className="text-slate-500">{t('logs.waiting')}</div>
+          ) : (
+            filteredLogs.map((log) => (
+              <div key={log.id} className="whitespace-pre-wrap break-all hover:bg-slate-800/50 rounded px-1">
+                {log.text}
+              </div>
+            ))
+          )
+        })()}
       </div>
     </div>
   )

@@ -67,6 +67,9 @@ func handleCompletions(c *gin.Context) {
 		}
 	}
 
+	// 请求上游返回 usage 数据
+	payload["stream_options"] = map[string]interface{}{"include_usage": true}
+
 	// 构建 extraHeaders：X-API-Version + 对话头透传
 	extraHeaders := buildConversationHeaders(c)
 	extraHeaders["X-API-Version"] = "v2"
