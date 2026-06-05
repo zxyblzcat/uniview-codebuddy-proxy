@@ -118,8 +118,20 @@ func handleChatCompletions(c *gin.Context) {
 
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
+		errMsg := "Invalid request body"
+		if strings.Contains(err.Error(), "http: request body too large") {
+			errMsg = "请求体过大（超过限制），请减少输入内容后重试"
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{"message": "Invalid request body", "type": "invalid_request"},
+			"error": gin.H{"message": errMsg, "type": "invalid_request"},
+		})
+		return
+	}
+
+	// 检测 messages 中是否包含 image_url 类型的内容（上游不支持 vision 输入）
+	if hasImageURLContent(body) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request"},
 		})
 		return
 	}
@@ -161,11 +173,7 @@ func handleChatCompletions(c *gin.Context) {
 	telemetryRequestID := "req-" + randomHex(16)
 	traceID := randomHex(16)
 
-	// 计算输入长度用于上报（复用 estimateInputTokens 估算逻辑）
-	inputLength := estimateInputTokens(map[string]interface{}{
-		"messages": body["messages"],
-		"tools":    body["tools"],
-	}) * 4 // estimateInputTokens 返回 token 估算值，乘 4 转回字节长度用于上报
+	// 遥测上报的 input_length：不再使用本地估算，留待上游返回真实值后在上报时使用
 
 	// 探活请求检测
 	if maxTokens, ok := body["max_tokens"].(float64); ok && maxTokens == 1 && isStream {
@@ -207,7 +215,7 @@ func handleChatCompletions(c *gin.Context) {
 	}
 
 	// 上报 chat_request_send 事件
-	telemetry.ReportChatRequest(conversationID, telemetryRequestID, model, model, traceID, inputLength)
+	telemetry.ReportChatRequest(conversationID, telemetryRequestID, model, model, traceID, 0)
 
 	// 对话头透传
 	extraHeaders := buildConversationHeaders(c)
@@ -321,8 +329,12 @@ func handleEmbeddings(c *gin.Context) {
 
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
+		errMsg := "Invalid request body"
+		if strings.Contains(err.Error(), "http: request body too large") {
+			errMsg = "请求体过大（超过限制），请减少输入内容后重试"
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{"message": "Invalid request body", "type": "invalid_request"},
+			"error": gin.H{"message": errMsg, "type": "invalid_request"},
 		})
 		return
 	}
@@ -428,40 +440,19 @@ func handleHeadV1(c *gin.Context) {
 func handleCountTokens(c *gin.Context) {
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Invalid request body")
+		errMsg := "Invalid request body"
+		if strings.Contains(err.Error(), "http: request body too large") {
+			errMsg = "请求体过大（超过限制），请减少输入内容后重试"
+		}
+		anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", errMsg)
 		return
 	}
 
-	// 使用 estimateInputTokens 估算 token 数（复用流式路径的估算逻辑，覆盖 messages + tools）
-	// 构造与 estimateInputTokens 兼容的 payload 格式
-	estimatePayload := map[string]interface{}{
-		"messages": body["messages"],
-		"tools":    body["tools"],
-	}
-	// system prompt 也计入：转为 messages 中的 system 消息
-	if sys := body["system"]; sys != nil {
-		sysText := ""
-		switch s := sys.(type) {
-		case string:
-			sysText = s
-		case []interface{}:
-			sysText = extractAnthropicText(s)
-		}
-		if sysText != "" {
-			estimatePayload["messages"] = append([]interface{}{
-				map[string]interface{}{"role": "system", "content": sysText},
-			}, estimatePayload["messages"])
-		}
-	}
-
-	estimatedTokens := estimateInputTokens(estimatePayload)
-	// 确保至少返回 1，避免返回 0 导致 Claude Code autocompact 永不触发
-	if estimatedTokens < 1 {
-		estimatedTokens = 1
-	}
-
+	// 不再使用本地估算，返回 0
+	// 真实的 token 计数由上游 glm-5.1 tokenizer 提供，
+	// 在实际的 /v1/messages 请求响应中通过 usage.input_tokens 返回
 	c.JSON(http.StatusOK, gin.H{
-		"input_tokens":                estimatedTokens,
+		"input_tokens":                0,
 		"cache_creation_input_tokens": 0,
 		"cache_read_input_tokens":     0,
 	})
@@ -474,6 +465,13 @@ func handleAnthropicMessages(c *gin.Context) {
 		c.Header("anthropic-version", v)
 	}
 
+	// 回传 anthropic-beta 请求头
+	// Claude Code 通过此头声明启用的 beta 特性（如 extended-thinking、prompt-caching），
+	// 代理需要将其回传给客户端，让 Claude Code 知道这些特性已被接受
+	if v := c.GetHeader("anthropic-beta"); v != "" {
+		c.Header("anthropic-beta", v)
+	}
+
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
 		anthropicErrorResponse(c, http.StatusUnauthorized, "authentication_error", "No token. Visit /auth/start to login.")
@@ -482,7 +480,17 @@ func handleAnthropicMessages(c *gin.Context) {
 
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Invalid request body")
+		errMsg := "Invalid request body"
+		if strings.Contains(err.Error(), "http: request body too large") {
+			errMsg = "请求体过大（超过限制），请减少输入内容后重试"
+		}
+		anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", errMsg)
+		return
+	}
+
+	// 检测是否包含 image_url（上游不支持 vision 输入）
+	if hasImageURLContent(body) {
+		anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "上游 API 不支持图片输入（image_url），请移除图片后重试")
 		return
 	}
 
@@ -524,8 +532,13 @@ func handleAnthropicMessages(c *gin.Context) {
 		payload["stop"] = ss
 	}
 
+	// 处理 thinking 配置块：Claude Code 在启用 extended thinking 时发送此字段
+	// 上游 CodeBuddy API 不支持 Anthropic 的 thinking 参数，静默忽略即可
+	// 上游模型（如 deepseek-r1）如果自身支持 reasoning，会自动返回 reasoning_content，
+	// 代理在流式转换中已将其映射为 Anthropic 的 thinking content block
+
 	// 强制请求上游在流式响应中返回 usage 信息（即使客户端传了也覆盖）
-	// Claude Code 的 autocompact 依赖 message_delta 中的 usage.input_tokens 判断上下文占用率
+	// input_tokens 在 message_start 事件中返回，Claude Code 依赖此值判断上下文占用率
 	payload["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	// 确保至少 2 条消息
@@ -536,25 +549,14 @@ func handleAnthropicMessages(c *gin.Context) {
 	anthropicRequestID := "req-" + randomHex(16)
 	anthropicTraceID := randomHex(16)
 
-	// 计算输入长度用于上报（复用 estimateInputTokens 估算逻辑）
-	anthropicInputLength := estimateInputTokens(map[string]interface{}{
-		"messages": body["messages"],
-		"tools":    body["tools"],
-	}) * 4 // estimateInputTokens 返回 token 估算值，乘 4 转回字节长度用于上报
+	// 遥测上报的 input_length：不再使用本地估算，留待上游返回真实值后在上报时使用
 
 	// 探活请求检测
 	if maxTokens == 1 && isStream {
 		msgID := "msg_" + randomHex(24)
-		c.JSON(http.StatusOK, map[string]interface{}{
-			"id":            msgID,
-			"type":          "message",
-			"role":          "assistant",
-			"content":       []interface{}{map[string]interface{}{"type": "text", "text": "ok"}},
-			"model":         model,
-			"stop_reason":   "end_turn",
-			"stop_sequence": nil,
-			"usage":         map[string]interface{}{"input_tokens": 0, "output_tokens": 1},
-		})
+		// 探活请求不经过上游，input_tokens 返回 0
+		// 真实的 token 计数在实际的 /v1/messages 请求响应中通过 usage.input_tokens 返回
+		writeAnthropicProbeSSE(c, msgID, model, 0)
 		return
 	}
 
@@ -571,7 +573,7 @@ func handleAnthropicMessages(c *gin.Context) {
 	}
 
 	// 上报 chat_request_send 事件
-	telemetry.ReportChatRequest(anthropicConversationID, anthropicRequestID, model, model, anthropicTraceID, anthropicInputLength)
+	telemetry.ReportChatRequest(anthropicConversationID, anthropicRequestID, model, model, anthropicTraceID, 0)
 
 	// 对话头透传
 	anthropicExtraHeaders := buildConversationHeaders(c)
@@ -651,4 +653,129 @@ func handleAnthropicMessages(c *gin.Context) {
 // fmtDur 格式化 time.Duration 为秒（保留2位小数）
 func fmtDur(d time.Duration) string {
 	return fmt.Sprintf("%.2fs", d.Seconds())
+}
+
+// hasImageURLContent 检测 messages 和 system 中是否包含图片类型的内容
+// 同时检测 OpenAI 格式 (type: "image_url") 和 Anthropic 格式 (source.type: "base64")
+// 注意：Anthropic API 允许 system 字段为数组形式的内容块，其中可能包含图片
+func hasImageURLContent(body map[string]interface{}) bool {
+	// 检查 messages 中的图片内容
+	messages, _ := body["messages"].([]interface{})
+	for _, msg := range messages {
+		m, _ := msg.(map[string]interface{})
+		if m == nil {
+			continue
+		}
+		if hasImageInContent(m["content"]) {
+			return true
+		}
+	}
+
+	// 检查 system 字段中的图片内容（Anthropic 格式允许 system 为数组）
+	if sys, ok := body["system"]; ok {
+		if hasImageInContent(sys) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasImageInContent 检测内容中是否包含图片类型
+// content 可以是字符串（无图片）、[]interface{} 数组或单个 map 对象
+func hasImageInContent(content interface{}) bool {
+	switch c := content.(type) {
+	case []interface{}:
+		for _, item := range c {
+			part, _ := item.(map[string]interface{})
+			if part == nil {
+				continue
+			}
+			// OpenAI 格式: {"type": "image_url", ...}
+			if typ, _ := part["type"].(string); typ == "image_url" {
+				return true
+			}
+			// Anthropic 格式: {"type": "image", "source": {"type": "base64"/"url", ...}}
+			if typ, _ := part["type"].(string); typ == "image" {
+				if src, _ := part["source"].(map[string]interface{}); src != nil {
+					if srcType, _ := src["type"].(string); srcType == "base64" || srcType == "url" {
+						return true
+					}
+				}
+			}
+		}
+	case map[string]interface{}:
+		// 单个对象也可能是图片内容块
+		if typ, _ := c["type"].(string); typ == "image" {
+			if src, _ := c["source"].(map[string]interface{}); src != nil {
+				if srcType, _ := src["type"].(string); srcType == "base64" || srcType == "url" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// writeAnthropicProbeSSE 返回 Anthropic SSE 格式的探活响应
+// 探活请求（max_tokens=1, stream=true）的客户端期望 SSE 格式而非 JSON
+// 使用 anthropicSSE 辅助函数构建事件，确保与流式路径的 SSE 格式一致
+func writeAnthropicProbeSSE(c *gin.Context, msgID, model string, inputTokens int) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Status(http.StatusOK)
+
+	w := c.Writer
+
+	// message_start
+	fmt.Fprint(w, anthropicSSE("message_start", map[string]interface{}{
+		"type": "message_start",
+		"message": map[string]interface{}{
+			"id":            msgID,
+			"type":          "message",
+			"role":          "assistant",
+			"content":       []interface{}{},
+			"model":         model,
+			"stop_reason":   nil,
+			"stop_sequence": nil,
+			"usage":         map[string]interface{}{"input_tokens": inputTokens, "output_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+		},
+	}))
+
+	// content_block_start (text block)
+	fmt.Fprint(w, anthropicSSE("content_block_start", map[string]interface{}{
+		"type":          "content_block_start",
+		"index":         0,
+		"content_block": map[string]interface{}{"type": "text", "text": ""},
+	}))
+
+	// content_block_delta
+	fmt.Fprint(w, anthropicSSE("content_block_delta", map[string]interface{}{
+		"type":  "content_block_delta",
+		"index": 0,
+		"delta": map[string]interface{}{"type": "text_delta", "text": "ok"},
+	}))
+
+	// content_block_stop
+	fmt.Fprint(w, anthropicSSE("content_block_stop", map[string]interface{}{
+		"type":  "content_block_stop",
+		"index": 0,
+	}))
+
+	// message_delta
+	fmt.Fprint(w, anthropicSSE("message_delta", map[string]interface{}{
+		"type":  "message_delta",
+		"delta": map[string]interface{}{"stop_reason": "end_turn", "stop_sequence": nil},
+		"usage": map[string]interface{}{"output_tokens": 1},
+	}))
+
+	// message_stop
+	fmt.Fprint(w, anthropicSSE("message_stop", map[string]interface{}{
+		"type": "message_stop",
+	}))
+
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }

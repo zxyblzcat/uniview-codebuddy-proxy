@@ -383,7 +383,7 @@ func (a *App) startServerE() error {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(gin.Recovery(), maxBodySize(10<<20))
+	r.Use(gin.Recovery(), maxBodySize(50<<20))
 
 	auth.RegisterRoutes(r)
 	proxy.RegisterRoutes(r)

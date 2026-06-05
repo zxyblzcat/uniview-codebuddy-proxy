@@ -29,12 +29,12 @@ type Model struct {
 // 值基于各模型官方公布的上下文窗口大小
 var modelContextWindows = map[string]int{
 	// GLM 系列
-	"glm-5.1": 128000,
-	"glm-5.0": 128000,
-	"glm-4.7": 128000,
-	"glm-4.6": 128000,
-	"glm-4.5": 128000,
-	"glm-4.4": 128000,
+	"glm-5.1": 200000,
+	"glm-5.0": 200000,
+	"glm-4.7": 200000,
+	"glm-4.6": 200000,
+	"glm-4.5": 200000,
+	"glm-4.4": 200000,
 	// MiniMax
 	"minimax-m2.7": 1000000,
 	"minimax-m2.5": 245000,
@@ -69,10 +69,10 @@ var modelContextWindows = map[string]int{
 // 额外模型：/v2/config 不返回但实测可用的模型
 var extraModels = []Model{
 	// 国产模型
-	{ID: "glm-5.1", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 128000},
-	{ID: "glm-5.0", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 128000},
-	{ID: "glm-4.7", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 128000},
-	{ID: "glm-4.6", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 128000},
+	{ID: "glm-5.1", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 200000},
+	{ID: "glm-5.0", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 200000},
+	{ID: "glm-4.7", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 200000},
+	{ID: "glm-4.6", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 200000},
 	{ID: "minimax-m2.7", Object: "model", Created: 1700000000, OwnedBy: "minimax", MaxContextWindow: 1000000},
 	{ID: "minimax-m2.5", Object: "model", Created: 1700000000, OwnedBy: "minimax", MaxContextWindow: 245000},
 	{ID: "kimi-k2.5", Object: "model", Created: 1700000000, OwnedBy: "moonshot", MaxContextWindow: 131072},
@@ -273,7 +273,7 @@ func FetchModels() []Model {
 	return result
 }
 
-// getModelContextWindow 返回模型的上下文窗口大小，未知模型默认 128000
+// getModelContextWindow 返回模型的上下文窗口大小，未知模型默认 200000
 func getModelContextWindow(modelID string) int {
 	if w, ok := modelContextWindows[modelID]; ok {
 		return w
@@ -291,18 +291,71 @@ func getModelContextWindow(modelID string) int {
 	if bestPrefix != "" {
 		return bestW
 	}
-	return 128000 // 默认值
+	return 200000 // 默认值
 }
 
 // AnthropicModelInfo 表示 Anthropic API 格式的模型信息
-// 用于 GET /v1/models/:id 端点，让 Claude Code 等客户端能自动发现模型的上下文窗口大小
+// 用于 GET /v1/models/:id 和 GET /v1/models 端点
+// 必须包含 capabilities 字段，Claude Code 通过 capabilities.context_management 判断是否支持 auto-compact
 type AnthropicModelInfo struct {
-	ID             string `json:"id"`
-	Type           string `json:"type"`
-	DisplayName    string `json:"display_name"`
-	CreatedAt      string `json:"created_at"`
-	MaxInputTokens int    `json:"max_input_tokens"`
-	MaxTokens      int    `json:"max_tokens"`
+	ID              string                 `json:"id"`
+	Type            string                 `json:"type"`
+	DisplayName     string                 `json:"display_name"`
+	CreatedAt       string                 `json:"created_at"`
+	MaxInputTokens  int                    `json:"max_input_tokens"`
+	MaxOutputTokens int                    `json:"max_output_tokens"`
+	Capabilities    map[string]interface{} `json:"capabilities"`
+}
+
+// buildCapabilities 构建模型能力信息，兼容 Anthropic API 格式
+// Claude Code 依赖 capabilities.context_management.compact_20260112.supported 来判断是否支持 auto-compact
+// capabilities 是静态的模型能力信息，使用包级别变量避免每次请求都重新分配
+// 每个键值使用独立的 map 字面量，避免共享引用导致潜在的 mutation 风险
+var capabilities = map[string]interface{}{
+	"batch":              map[string]interface{}{"supported": false},
+	"citations":          map[string]interface{}{"supported": false},
+	"code_execution":     map[string]interface{}{"supported": false},
+	"context_management": map[string]interface{}{
+		"clear_thinking_20251015": map[string]interface{}{"supported": true},
+		"clear_tool_uses_20250919": map[string]interface{}{"supported": true},
+		"compact_20260112":        map[string]interface{}{"supported": true},
+		"supported":               map[string]interface{}{"supported": true},
+	},
+	"effort": map[string]interface{}{
+		"high":      map[string]interface{}{"supported": true},
+		"low":       map[string]interface{}{"supported": true},
+		"max":       map[string]interface{}{"supported": true},
+		"medium":    map[string]interface{}{"supported": true},
+		"supported": map[string]interface{}{"supported": true},
+		"xhigh":     map[string]interface{}{"supported": false},
+	},
+	"image_input":        map[string]interface{}{"supported": false},
+	"pdf_input":          map[string]interface{}{"supported": false},
+	"structured_outputs": map[string]interface{}{"supported": false},
+	"thinking": map[string]interface{}{
+		"supported": map[string]interface{}{"supported": false},
+		"types": map[string]interface{}{
+			"adaptive": map[string]interface{}{"supported": false},
+			"enabled":  map[string]interface{}{"supported": false},
+		},
+	},
+}
+
+// buildCapabilities 返回模型能力信息的深拷贝，兼容 Anthropic API 格式
+// Claude Code 依赖 capabilities.context_management.compact_20260112.supported 来判断是否支持 auto-compact
+// 返回深拷贝而非共享引用，防止调用方意外修改包级别变量
+func buildCapabilities() map[string]interface{} {
+	// 使用 JSON 序列化/反序列化实现深拷贝，避免手动递归复制嵌套 map
+	data, err := json.Marshal(capabilities)
+	if err != nil {
+		// 不应发生：capabilities 是硬编码的合法 JSON 结构
+		return map[string]interface{}{}
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return map[string]interface{}{}
+	}
+	return result
 }
 
 // FindModelByID 根据模型 ID 查找模型信息
@@ -347,20 +400,21 @@ func HandleModelByID(c *gin.Context) {
 		maxInputTokens = getModelContextWindow(model.ID)
 	}
 
-	// MaxTokens 设置为上下文窗口的 1/4，确保客户端有合理的输出空间
+	// MaxOutputTokens 设置为上下文窗口的 1/4，确保客户端有合理的输出空间
 	// 过低的值会导致 Claude Code 等客户端过早截断长输出
-	maxTokens := maxInputTokens / 4
-	if maxTokens < 8192 {
-		maxTokens = 8192
+	maxOutputTokens := maxInputTokens / 4
+	if maxOutputTokens < 8192 {
+		maxOutputTokens = 8192
 	}
 
 	info := AnthropicModelInfo{
-		ID:             model.ID,
-		Type:           "model",
-		DisplayName:    model.ID,
-		CreatedAt:      time.Unix(model.Created, 0).UTC().Format(time.RFC3339),
-		MaxInputTokens: maxInputTokens,
-		MaxTokens:      maxTokens,
+		ID:              model.ID,
+		Type:            "model",
+		DisplayName:     model.ID,
+		CreatedAt:       time.Unix(model.Created, 0).UTC().Format(time.RFC3339),
+		MaxInputTokens:  maxInputTokens,
+		MaxOutputTokens: maxOutputTokens,
+		Capabilities:    buildCapabilities(),
 	}
 
 	c.JSON(http.StatusOK, info)

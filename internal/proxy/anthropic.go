@@ -258,9 +258,10 @@ func convertToolChoiceAnthropicToOpenai(toolChoice interface{}) string {
 		case "none":
 			return "none"
 		case "tool":
-			// 上游不支持对象形式的 tool_choice，回退为 "auto"
-			// 指定函数的语义无法在上游 API 中表达
-			return "auto"
+			// 上游不支持对象形式的 tool_choice（指定特定函数），
+			// 降级为 "required" 而非 "auto"：确保模型必须调用某个工具，
+			// 即使无法精确指定是哪个工具，也比 "auto"（可能不调用工具直接回复文本）更接近原始语义
+			return "required"
 		}
 	}
 	return "auto"
@@ -283,8 +284,10 @@ func sanitizeToolChoiceOpenai(toolChoice interface{}) string {
 		case "required":
 			return "required"
 		case "function":
-			// 指定函数的语义无法在上游 API 中表达，回退为 "auto"
-			return "auto"
+			// 指定函数的语义无法在上游 API 中表达，降级为 "required"
+			// 与 Anthropic tool_choice.type="tool" 的映射策略保持一致：
+			// 确保模型必须调用某个工具，比 "auto" 更接近原始语义
+			return "required"
 		}
 	}
 	return "auto"
@@ -348,12 +351,9 @@ func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, pay
 		})
 	}
 
-	// 使用真实 input_tokens，当上游返回 0 时回退到估算值
-	// 避免返回 input_tokens:0 导致 Claude Code autocompact 永不触发
+	// 直接使用上游返回的 prompt_tokens 作为 input_tokens
+	// 上游 CodeBuddy 使用 glm-5.1 tokenizer 计算 prompt_tokens
 	inputTokens := result.PromptTokens
-	if inputTokens == 0 {
-		inputTokens = estimateInputTokens(payload)
-	}
 
 	c.JSON(http.StatusOK, map[string]interface{}{
 		"id":            msgID,

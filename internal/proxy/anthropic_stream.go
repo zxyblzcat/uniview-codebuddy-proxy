@@ -22,10 +22,6 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 	upstreamStart := time.Now()
 	msgID := "msg_" + randomHex(24)
 
-	// 预估 input_tokens：上游可能不返回 usage 或在最后才返回，
-	// 使用估算值作为初始值，确保 message_start 中有合理的 input_tokens
-	estimatedInputTokens := estimateInputTokens(payload)
-
 	// 状态机变量
 	nextBlockIdx := 0
 	thinkingBlockIdx := -1
@@ -68,12 +64,26 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 		writeErr = writeSSE(w, flusher, canFlush, data)
 	}
 
+	// emitThinkingSignatureDelta 发送 thinking block 的 signature_delta 事件
+	// Anthropic SSE 协议要求在 content_block_stop 之前发送 signature_delta
+	emitThinkingSignatureDelta := func(blockIdx int) {
+		safeWrite(anthropicSSE("content_block_delta", map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": blockIdx,
+			"delta": map[string]interface{}{
+				"type":      "signature_delta",
+				"signature": "",
+			},
+		}))
+	}
+
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	// closeOpenBlocks 关闭所有已开启的 content block
 	closeOpenBlocks := func() {
 		if thinkingBlockIdx >= 0 {
+			emitThinkingSignatureDelta(thinkingBlockIdx)
 			safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
 				"type": "content_block_stop", "index": thinkingBlockIdx,
 			}))
@@ -99,13 +109,9 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 		}
 	}
 
-	// resolveInputTokens 返回最佳的 input_tokens 值：优先使用上游真实值，回退到估算值
-	resolveInputTokens := func() int {
-		if inputTokens > 0 {
-			return inputTokens
-		}
-		return estimatedInputTokens
-	}
+	// 直接使用上游返回的 prompt_tokens 作为 input_tokens
+	// 上游的 usage 在流的最后（finish_reason chunk）才提供真实 prompt_tokens，
+	// message_start 阶段 inputTokens 为 0，在 message_delta 中补充真实值
 
 	for scanner.Scan() {
 		// 客户端断连或写入失败时停止
@@ -136,11 +142,13 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			if !finished {
 				finished = true
 				closeOpenBlocks()
-				it := resolveInputTokens()
+				if config.DebugEnabledAtomic() {
+					log.Printf("[DEBUG] compact: [DONE] input_tokens=%d cached=%d model=%s", inputTokens, cachedTokens, model)
+				}
 				safeWrite(anthropicSSE("message_delta", map[string]interface{}{
 					"type":  "message_delta",
 					"delta": map[string]interface{}{"stop_reason": "end_turn", "stop_sequence": nil},
-					"usage": map[string]interface{}{"input_tokens": it, "output_tokens": outputTokens, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
+					"usage": map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens},
 				}))
 				safeWrite(anthropicSSE("message_stop", map[string]interface{}{
 					"type": "message_stop",
@@ -184,7 +192,9 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			// 首次收到有效内容时发送 message_start
 			if !started {
 				started = true
-				it := resolveInputTokens()
+				if config.DebugEnabledAtomic() {
+					log.Printf("[DEBUG] compact: message_start input_tokens=%d cached=%d model=%s", inputTokens, cachedTokens, model)
+				}
 				safeWrite(anthropicSSE("message_start", map[string]interface{}{
 					"type": "message_start",
 					"message": map[string]interface{}{
@@ -195,7 +205,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 						"model":         model,
 						"stop_reason":   nil,
 						"stop_sequence": nil,
-						"usage":         map[string]interface{}{"input_tokens": it, "output_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
+						"usage":         map[string]interface{}{"input_tokens": inputTokens, "output_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
 					},
 				}))
 			}
@@ -227,8 +237,9 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 
 			// 处理文本内容
 			if content, ok := delta["content"].(string); ok && content != "" {
-				// thinking→text 切换：关闭 thinking block
+				// thinking→text 切换：关闭 thinking block（先发送 signature_delta）
 				if thinkingBlockIdx >= 0 {
+					emitThinkingSignatureDelta(thinkingBlockIdx)
 					safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
 						"type": "content_block_stop", "index": thinkingBlockIdx,
 					}))
@@ -278,6 +289,7 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 						// 首次出现此 tool_call index：先关闭前面的 thinking/text block
 						// 必须在 id 检查之前执行，否则无 id 的 tool_call chunk 不会关闭前面的 block
 						if thinkingBlockIdx >= 0 {
+							emitThinkingSignatureDelta(thinkingBlockIdx)
 							safeWrite(anthropicSSE("content_block_stop", map[string]interface{}{
 								"type": "content_block_stop", "index": thinkingBlockIdx,
 							}))
@@ -330,11 +342,13 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 			if fr != "" && !finished {
 				finished = true
 				closeOpenBlocks()
-				it := resolveInputTokens()
+				if config.DebugEnabledAtomic() {
+					log.Printf("[DEBUG] compact: finish_reason=%s input_tokens=%d cached=%d model=%s", fr, inputTokens, cachedTokens, model)
+				}
 				safeWrite(anthropicSSE("message_delta", map[string]interface{}{
 					"type":  "message_delta",
 					"delta": map[string]interface{}{"stop_reason": finishReasonToStopReason(fr), "stop_sequence": nil},
-					"usage": map[string]interface{}{"input_tokens": it, "output_tokens": outputTokens, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
+					"usage": map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens},
 				}))
 				safeWrite(anthropicSSE("message_stop", map[string]interface{}{
 					"type": "message_stop",
@@ -349,20 +363,18 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 		// 向客户端发送流截断通知，避免客户端无限等待
 		if !finished {
 			closeOpenBlocks()
-			it := resolveInputTokens()
 			safeWrite(anthropicSSE("message_delta", map[string]interface{}{
 				"type":  "message_delta",
-				"delta": map[string]interface{}{"stop_reason": "end_turn", "stop_sequence": nil},
-				"usage": map[string]interface{}{"input_tokens": it, "output_tokens": outputTokens, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cachedTokens},
+				"delta": map[string]interface{}{"stop_reason": "stop_sequence", "stop_sequence": "<stream_error>"},
+				"usage": map[string]interface{}{"input_tokens": inputTokens, "output_tokens": outputTokens},
 			}))
 			safeWrite(anthropicSSE("message_stop", map[string]interface{}{
 				"type": "message_stop",
 			}))
 		}
 	}
-	// 上报 chat_message_response 事件（使用真实值或估算值）
-	it := resolveInputTokens()
-	telemetry.ReportChatResponse(conversationID, telemetryRequestID, model, model, traceID, it, outputTokens)
+	// 上报 chat_message_response 事件（直接使用上游返回的 prompt_tokens）
+	telemetry.ReportChatResponse(conversationID, telemetryRequestID, model, model, traceID, inputTokens, outputTokens)
 	return ttfb
 }
 
