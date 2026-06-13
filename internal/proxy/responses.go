@@ -475,7 +475,7 @@ func handleResponses(c *gin.Context) {
 							req.Input = newInput
 						}
 					}
-					log.Printf("images: understood and replaced image content in responses request, forwarding text-only")
+					log.Printf("images: auto-parsed image content in responses request, forwarding text-only")
 				} else if config.DropImagesWhenUnsupportedAtomic() {
 					stripImagesFromBody(bodyForCheck)
 					// 解包回 input 格式
@@ -613,7 +613,7 @@ func handleResponsesCompact(c *gin.Context) {
 							body["input"] = msgs
 						}
 					}
-					log.Printf("images: understood and replaced image content in responses compact request, forwarding text-only")
+					log.Printf("images: auto-parsed image content in responses compact request, forwarding text-only")
 				} else if config.DropImagesWhenUnsupportedAtomic() {
 					stripImagesFromBody(bodyForCheck)
 					// 解包回 input 格式并回写 body

@@ -157,10 +157,10 @@
   },
   {
     "id": "menu.image_understanding",
-    "translation": "Image Understanding"
+    "translation": "Auto Image Parsing"
   },
   {
     "id": "menu.image_understanding_tooltip",
-    "translation": "Understand images via Vision model and convert to text"
+    "translation": "Automatically parse images via Vision model into text"
   }
 ]

@@ -56,8 +56,8 @@ func handleGetConfig(c *gin.Context) {
 		"cooldown_duration_secs": config.CooldownDurationSecsAtomic(),
 		"telemetry_enabled":            config.TelemetryEnabledAtomic(),
 		"drop_images_when_unsupported": config.DropImagesWhenUnsupportedAtomic(),
-		"image_understanding":        config.ImageUnderstandingAtomic(),
-		"image_understanding_model":  config.ImageUnderstandingModelAtomic(),
+		"auto_image_parsing":        config.ImageUnderstandingAtomic(),
+		"auto_image_parsing_model":  config.ImageUnderstandingModelAtomic(),
 	})
 }
 
@@ -101,10 +101,10 @@ func handlePutConfig(c *gin.Context) {
  if v, ok := body["drop_images_when_unsupported"].(bool); ok {
 		config.SetDropImagesWhenUnsupported(v)
 	}
-	if v, ok := body["image_understanding"].(bool); ok {
+	if v, ok := body["auto_image_parsing"].(bool); ok {
 		config.SetImageUnderstanding(v)
 	}
-	if v, ok := body["image_understanding_model"].(string); ok {
+	if v, ok := body["auto_image_parsing_model"].(string); ok {
 		config.SetImageUnderstandingModel(v)
 	}
 	// 熔断器重置

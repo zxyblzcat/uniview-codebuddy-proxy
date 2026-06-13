@@ -135,7 +135,7 @@ func handleChatCompletions(c *gin.Context) {
 	if hasImageURLContent(body) {
 		if config.ImageUnderstandingAtomic() {
 			if understandImages(body) {
-				log.Printf("images: understood and replaced image content in chat completions request, forwarding text-only")
+				log.Printf("images: auto-parsed image content in chat completions request, forwarding text-only")
 			}
 		} else if config.DropImagesWhenUnsupportedAtomic() {
 			if stripImagesFromBody(body) {
@@ -616,7 +616,7 @@ func handleAnthropicMessages(c *gin.Context) {
 	if hasImageURLContent(body) {
 		if config.ImageUnderstandingAtomic() {
 			if understandImages(body) {
-				log.Printf("images: understood and replaced image content in anthropic request, forwarding text-only")
+				log.Printf("images: auto-parsed image content in anthropic request, forwarding text-only")
 			}
 		} else if config.DropImagesWhenUnsupportedAtomic() {
 			if stripImagesFromBody(body) {

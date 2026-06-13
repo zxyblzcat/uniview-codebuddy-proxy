@@ -14,7 +14,7 @@ import (
 )
 
 // understandImages 遍历 body 中的 messages 和 system 字段，
-// 对每个图片块调用 Vision 模型生成文本描述，用文本块替换图片块。
+// 对每个图片块调用 Vision 模型自动解析为文本描述，用文本块替换图片块。
 // 返回是否进行了替换。
 func understandImages(body map[string]interface{}) bool {
 	replaced := false
@@ -67,7 +67,7 @@ func replaceImagesWithDescriptions(parent map[string]interface{}, key string) bo
 			if typ == "image_url" {
 				desc, err := understandImage(part)
 				if err != nil {
-					log.Printf("images: failed to understand image_url block: %v, stripping instead", err)
+					log.Printf("images: failed to auto-parse image_url block: %v, stripping instead", err)
 					// 理解失败，跳过（等同于剥离）
 					telemetry.ReportImageUnderstandingFailure("image_url", err.Error())
 					replaced = true
@@ -88,7 +88,7 @@ func replaceImagesWithDescriptions(parent map[string]interface{}, key string) bo
 					if srcType, _ := src["type"].(string); srcType == "base64" || srcType == "url" {
 						desc, err := understandImage(part)
 						if err != nil {
-							log.Printf("images: failed to understand image block: %v, stripping instead", err)
+							log.Printf("images: failed to auto-parse image block: %v, stripping instead", err)
 							telemetry.ReportImageUnderstandingFailure("image", err.Error())
 							replaced = true
 							continue
@@ -192,7 +192,7 @@ func understandImage(imageBlock map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("vision model returned empty description")
 	}
 
-	log.Printf("images: understood image using %s (%d tokens in, %d tokens out)",
+	log.Printf("images: auto-parsed image using %s (%d tokens in, %d tokens out)",
 		model, result.PromptTokens, result.CompletionTokens)
 
 	return description, nil
