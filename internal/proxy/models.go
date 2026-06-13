@@ -33,6 +33,7 @@ var modelContextWindows = map[string]int{
 	"glm-5.0": 200000,
 	"glm-4.7": 200000,
 	"glm-4.6": 200000,
+	"glm-4.6v": 8192,
 	"glm-4.5": 200000,
 	"glm-4.4": 200000,
 	// MiniMax
@@ -73,6 +74,7 @@ var extraModels = []Model{
 	{ID: "glm-5.0", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 200000},
 	{ID: "glm-4.7", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 200000},
 	{ID: "glm-4.6", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 200000},
+	{ID: "glm-4.6v", Object: "model", Created: 1700000000, OwnedBy: "zhipu", MaxContextWindow: 8192},
 	{ID: "minimax-m2.7", Object: "model", Created: 1700000000, OwnedBy: "minimax", MaxContextWindow: 1000000},
 	{ID: "minimax-m2.5", Object: "model", Created: 1700000000, OwnedBy: "minimax", MaxContextWindow: 245000},
 	{ID: "kimi-k2.5", Object: "model", Created: 1700000000, OwnedBy: "moonshot", MaxContextWindow: 131072},

@@ -154,5 +154,13 @@
   {
     "id": "menu.drop_images_tooltip",
     "translation": "检测到图片时自动剥离而非拒绝"
+  },
+  {
+    "id": "menu.image_understanding",
+    "translation": "图片理解"
+  },
+  {
+    "id": "menu.image_understanding_tooltip",
+    "translation": "用 Vision 模型理解图片并转为文本描述"
   }
 ]

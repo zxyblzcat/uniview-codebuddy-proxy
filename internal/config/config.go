@@ -40,6 +40,8 @@ var (
 	cooldownDurationSecs   atomic.Int32
 	telemetryEnabled        atomic.Bool
 	dropImagesWhenUnsupported atomic.Bool
+	imageUnderstanding      atomic.Bool
+	imageUnderstandingModel atomic.Value // string
 )
 
 func init() {
@@ -129,6 +131,12 @@ func init() {
 
 	// 图片自动剥离开关（默认开启，剥离比硬拒绝更友好）
 	dropImagesWhenUnsupported.Store(getEnv("DROP_IMAGES_WHEN_UNSUPPORTED", "true") == "true")
+
+	// 图片理解开关（默认开启，用 Vision 模型理解图片并转为文本描述）
+	imageUnderstanding.Store(getEnv("IMAGE_UNDERSTANDING", "true") == "true")
+
+	// 图片理解模型（默认 glm-4.6v，需为支持 Vision 的模型）
+	imageUnderstandingModel.Store(getEnv("IMAGE_UNDERSTANDING_MODEL", "glm-4.6v"))
 }
 
 // ListenAddr 返回服务监听地址
@@ -242,6 +250,28 @@ func DropImagesWhenUnsupportedAtomic() bool { return dropImagesWhenUnsupported.L
 
 // SetDropImagesWhenUnsupported 设置图片自动剥离开关。
 func SetDropImagesWhenUnsupported(v bool) { dropImagesWhenUnsupported.Store(v) }
+
+// ImageUnderstandingAtomic 返回是否启用图片理解（Vision 模型）。
+func ImageUnderstandingAtomic() bool { return imageUnderstanding.Load() }
+
+// SetImageUnderstanding 设置图片理解开关。
+func SetImageUnderstanding(v bool) { imageUnderstanding.Store(v) }
+
+// ImageUnderstandingModelAtomic 返回图片理解使用的模型名称。
+func ImageUnderstandingModelAtomic() string {
+	if v, ok := imageUnderstandingModel.Load().(string); ok {
+		return v
+	}
+	return "glm-4.6v"
+}
+
+// SetImageUnderstandingModel 设置图片理解模型名称。
+func SetImageUnderstandingModel(v string) {
+	if v == "" {
+		v = "glm-4.6v"
+	}
+	imageUnderstandingModel.Store(v)
+}
 
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

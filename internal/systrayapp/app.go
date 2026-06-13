@@ -34,7 +34,8 @@ type App struct {
 	authItem      *systray.MenuItem
 	autostartItem *systray.MenuItem
 	telemetryItem  *systray.MenuItem
-	dropImagesItem *systray.MenuItem
+	dropImagesItem         *systray.MenuItem
+	imageUnderstandingItem *systray.MenuItem
 	statusItem    *systray.MenuItem
 	restartItem   *systray.MenuItem
 	logItem       *systray.MenuItem
@@ -201,6 +202,22 @@ func (a *App) onReady() {
 			} else {
 				config.SetDropImagesWhenUnsupported(true)
 				a.dropImagesItem.Check()
+			}
+		}
+	}()
+
+	a.imageUnderstandingItem = systray.AddMenuItem(i18n.T("menu.image_understanding"), i18n.T("menu.image_understanding_tooltip"))
+	if config.ImageUnderstandingAtomic() {
+		a.imageUnderstandingItem.Check()
+	}
+	go func() {
+		for range a.imageUnderstandingItem.ClickedCh {
+			if a.imageUnderstandingItem.Checked() {
+				config.SetImageUnderstanding(false)
+				a.imageUnderstandingItem.Uncheck()
+			} else {
+				config.SetImageUnderstanding(true)
+				a.imageUnderstandingItem.Check()
 			}
 		}
 	}()
@@ -383,6 +400,10 @@ func (a *App) rebuildMenu() {
 	if a.dropImagesItem != nil {
 		a.dropImagesItem.SetTitle(i18n.T("menu.drop_images"))
 		a.dropImagesItem.SetTooltip(i18n.T("menu.drop_images_tooltip"))
+	}
+	if a.imageUnderstandingItem != nil {
+		a.imageUnderstandingItem.SetTitle(i18n.T("menu.image_understanding"))
+		a.imageUnderstandingItem.SetTooltip(i18n.T("menu.image_understanding_tooltip"))
 	}
 	if a.quitItem != nil {
 		a.quitItem.SetTitle(i18n.T("menu.quit"))

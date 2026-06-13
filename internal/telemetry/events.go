@@ -11,8 +11,11 @@ const (
 	EventLogin                = "login"
 	EventResponsesRequest     = "responses_request_send"
 	EventResponsesResponse    = "responses_message_response"
-	EventUpstreamRetry        = "upstream_retry"
-	EventUpstreamFailure      = "upstream_failure"
+	EventUpstreamRetry          = "upstream_retry"
+	EventUpstreamFailure        = "upstream_failure"
+	EventImageUnderstandingReq  = "image_understanding_request"
+	EventImageUnderstandingOk   = "image_understanding_success"
+	EventImageUnderstandingFail = "image_understanding_failure"
 )
 
 // CompletionAction 值

@@ -133,7 +133,11 @@ func handleChatCompletions(c *gin.Context) {
 
 	// 检测 messages 中是否包含 image_url 类型的内容（上游不支持 vision 输入）
 	if hasImageURLContent(body) {
-		if config.DropImagesWhenUnsupportedAtomic() {
+		if config.ImageUnderstandingAtomic() {
+			if understandImages(body) {
+				log.Printf("images: understood and replaced image content in chat completions request, forwarding text-only")
+			}
+		} else if config.DropImagesWhenUnsupportedAtomic() {
 			if stripImagesFromBody(body) {
 				log.Printf("images: stripped image content from chat completions request, forwarding text-only")
 			}
@@ -610,7 +614,11 @@ func handleAnthropicMessages(c *gin.Context) {
 
 	// 检测是否包含 image_url（上游不支持 vision 输入）
 	if hasImageURLContent(body) {
-		if config.DropImagesWhenUnsupportedAtomic() {
+		if config.ImageUnderstandingAtomic() {
+			if understandImages(body) {
+				log.Printf("images: understood and replaced image content in anthropic request, forwarding text-only")
+			}
+		} else if config.DropImagesWhenUnsupportedAtomic() {
 			if stripImagesFromBody(body) {
 				log.Printf("images: stripped image content from anthropic request, forwarding text-only")
 			}

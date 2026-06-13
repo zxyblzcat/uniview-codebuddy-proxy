@@ -154,5 +154,13 @@
   {
     "id": "menu.drop_images_tooltip",
     "translation": "Strip images instead of rejecting when unsupported"
+  },
+  {
+    "id": "menu.image_understanding",
+    "translation": "Image Understanding"
+  },
+  {
+    "id": "menu.image_understanding_tooltip",
+    "translation": "Understand images via Vision model and convert to text"
   }
 ]

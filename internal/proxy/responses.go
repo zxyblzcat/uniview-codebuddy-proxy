@@ -461,7 +461,22 @@ func handleResponses(c *gin.Context) {
 			}
 
 			if bodyForCheck != nil && hasImageURLContent(bodyForCheck) {
-				if config.DropImagesWhenUnsupportedAtomic() {
+				if config.ImageUnderstandingAtomic() {
+					understandImages(bodyForCheck)
+					// 解包回 input 格式
+					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
+						var newInput json.RawMessage
+						if len(msgs) == 1 {
+							newInput, _ = json.Marshal(msgs[0])
+						} else {
+							newInput, _ = json.Marshal(msgs)
+						}
+						if newInput != nil {
+							req.Input = newInput
+						}
+					}
+					log.Printf("images: understood and replaced image content in responses request, forwarding text-only")
+				} else if config.DropImagesWhenUnsupportedAtomic() {
 					stripImagesFromBody(bodyForCheck)
 					// 解包回 input 格式
 					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
@@ -588,7 +603,18 @@ func handleResponsesCompact(c *gin.Context) {
 				bodyForCheck = map[string]interface{}{"messages": []interface{}{inputMap}}
 			}
 			if bodyForCheck != nil && hasImageURLContent(bodyForCheck) {
-				if config.DropImagesWhenUnsupportedAtomic() {
+				if config.ImageUnderstandingAtomic() {
+					understandImages(bodyForCheck)
+					// 解包回 input 格式并回写 body
+					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
+						if len(msgs) == 1 {
+							body["input"] = msgs[0]
+						} else {
+							body["input"] = msgs
+						}
+					}
+					log.Printf("images: understood and replaced image content in responses compact request, forwarding text-only")
+				} else if config.DropImagesWhenUnsupportedAtomic() {
 					stripImagesFromBody(bodyForCheck)
 					// 解包回 input 格式并回写 body
 					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
