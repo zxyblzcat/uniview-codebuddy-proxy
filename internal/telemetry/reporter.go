@@ -3,6 +3,7 @@ package telemetry
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -43,6 +44,9 @@ func Init() {
 
 // Report 向全局 Reporter 添加一个事件
 func Report(eventCode string, data map[string]interface{}) {
+	if !config.TelemetryEnabledAtomic() {
+		return
+	}
 	if defaultReporter == nil {
 		return
 	}
@@ -116,6 +120,56 @@ func ReportCompletionAccept(conversationID, modelID, modelName, traceID string) 
 		"modelId":        modelID,
 		"modelName":      modelName,
 		"traceId":        traceID,
+	})
+}
+
+// ReportResponsesRequest 便捷方法：上报 responses_request_send 事件
+func ReportResponsesRequest(conversationID, requestID, modelID, modelName, traceID string, inputLength int) {
+	Report(EventResponsesRequest, map[string]interface{}{
+		"mode":           "craft",
+		"conversationId": conversationID,
+		"requestId":      requestID,
+		"inputLength":    inputLength,
+		"inputType":      "text",
+		"modelId":        modelID,
+		"modelName":      modelName,
+		"traceId":        traceID,
+	})
+}
+
+// ReportResponsesResponse 便捷方法：上报 responses_message_response 事件
+func ReportResponsesResponse(conversationID, requestID, modelID, modelName, traceID string, inputToken, outputToken int) {
+	Report(EventResponsesResponse, map[string]interface{}{
+		"conversationId": conversationID,
+		"requestId":      requestID,
+		"inputToken":     inputToken,
+		"outputToken":    outputToken,
+		"totalToken":     inputToken + outputToken,
+		"modelId":        modelID,
+		"modelName":      modelName,
+		"traceId":        traceID,
+	})
+}
+
+// ReportUpstreamRetry 便捷方法：上报 upstream_retry 事件
+func ReportUpstreamRetry(model string, statusCode int, attempt int, maxRetries int, delayMs int64) {
+	Report(EventUpstreamRetry, map[string]interface{}{
+		"model":      model,
+		"statusCode": statusCode,
+		"attempt":    attempt,
+		"maxRetries": maxRetries,
+		"delayMs":    delayMs,
+	})
+}
+
+// ReportUpstreamFailure 便捷方法：上报 upstream_failure 事件
+func ReportUpstreamFailure(model string, statusCode int, attempt int, maxRetries int, errMsg string) {
+	Report(EventUpstreamFailure, map[string]interface{}{
+		"model":      model,
+		"statusCode": statusCode,
+		"attempt":    attempt,
+		"maxRetries": maxRetries,
+		"errMsg":     errMsg,
 	})
 }
 
@@ -201,7 +255,7 @@ func (r *Reporter) send(events []Event) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Product", "SaaS")
 	req.Header.Set("X-Domain", config.Domain)
-	req.Header.Set("User-Agent", "CLI/1.0.8 CodeBuddy/1.0.8")
+	req.Header.Set("User-Agent", fmt.Sprintf("CLI/%s CodeBuddy/%s", auth.CodebuddyVersion(), auth.CodebuddyVersion()))
 	if uid := auth.GetUserID(); uid != "" {
 		req.Header.Set("X-User-Id", uid)
 	}

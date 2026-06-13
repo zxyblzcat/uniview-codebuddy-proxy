@@ -13,6 +13,7 @@ import (
 	"log"
 	mrand "math/rand/v2"
 	"net/http"
+	"strconv"
 	"regexp"
 	"strings"
 	"time"
@@ -106,6 +107,12 @@ func wrapWithIdleTimeout(body io.ReadCloser) io.ReadCloser {
 	return newIdleTimeoutReader(body, upstreamIdleTimeout)
 }
 
+// protectedHeaders 是禁止被 extraHeaders 覆盖的安全相关头
+var protectedHeaders = map[string]bool{
+	"Authorization": true, "X-Machine-Id": true, "X-User-Id": true,
+	"Content-Type": true, "Host": true,
+}
+
 func doUpstreamRequest(ctx context.Context, url string, payload map[string]interface{}, model string, bearer string, intent string, extraHeaders map[string]string) (*http.Response, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -126,12 +133,15 @@ func doUpstreamRequest(ctx context.Context, url string, payload map[string]inter
 		req.Header.Set(k, v)
 	}
 	// extraHeaders 中禁止覆盖认证和安全相关头
-	protectedHeaders := map[string]bool{
-		"Authorization": true, "X-Machine-Id": true, "X-User-Id": true,
-		"Content-Type": true, "Host": true,
-	}
 	for k, v := range extraHeaders {
 		if !protectedHeaders[k] {
+			// anthropic-beta 头需要合并而非覆盖（客户端和 Claude Inject 都可能发送）
+			if k == "anthropic-beta" {
+				if existing := req.Header.Get(k); existing != "" {
+					req.Header.Set(k, existing+","+v)
+					continue
+				}
+			}
 			req.Header.Set(k, v)
 		}
 	}
@@ -155,13 +165,16 @@ func doUpstreamRequest(ctx context.Context, url string, payload map[string]inter
 		log.Printf("upstream error %d: %s", resp.StatusCode, errText)
 		// 标记 token 健康状态
 		userID := auth.GetUserID()
+		ue := &upstreamError{StatusCode: resp.StatusCode, Message: errText}
 		switch resp.StatusCode {
 		case 429:
-			auth.GetPool().MarkCooldown(userID)
+			retryAfter := parseRetryAfterHeader(resp.Header)
+			ue.RetryAfter = retryAfter
+			auth.GetPool().MarkCooldown(userID, retryAfter)
 		case 401:
 			auth.GetPool().MarkUnavailable(userID)
 		}
-		return nil, &upstreamError{StatusCode: resp.StatusCode, Message: errText}
+		return nil, ue
 	}
 
 	return resp, nil
@@ -170,6 +183,7 @@ func doUpstreamRequest(ctx context.Context, url string, payload map[string]inter
 type upstreamError struct {
 	StatusCode int
 	Message    string
+	RetryAfter time.Duration // 从 429 响应的 Retry-After 头解析
 }
 
 func (e *upstreamError) Error() string {
@@ -206,11 +220,16 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 	var ttfb time.Duration
 	upstreamStart := time.Now()
 
-	resp, err := doUpstreamRequest(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
+	resp, err := doUpstreamRequestWithRetry(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
 	if err != nil {
 		ttfb = time.Since(upstreamStart)
 		if ue, ok := err.(*upstreamError); ok {
-			writeSSEError(w, ue.Error())
+			// 检测上下文窗口超限，返回 invalid_request_error 格式
+			if isContextLimitError(ue.Message) {
+				writeSSEContextLimitError(w, ue.Message)
+			} else {
+				writeSSEError(w, ue.Error())
+			}
 		} else {
 			writeSSEError(w, err.Error())
 		}
@@ -311,7 +330,7 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	resp, err := doUpstreamRequest(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
+	resp, err := doUpstreamRequestWithRetry(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			return &CollectedResult{StatusCode: ue.StatusCode, ErrorText: ue.Message}, nil
@@ -483,6 +502,7 @@ func stripHTML(s string) string {
 
 func writeSSEError(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
 	errJSON, _ := json.Marshal(map[string]interface{}{
 		"error": map[string]string{"message": msg, "type": "upstream_error"},
@@ -494,9 +514,42 @@ func writeSSEError(w http.ResponseWriter, msg string) {
 	}
 }
 
+// writeSSEContextLimitError 写入上下文超限的 SSE 错误（OpenAI 格式）
+// 返回 invalid_request_error 类型，让客户端知道是上下文超限而非普通上游错误
+func writeSSEContextLimitError(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	errJSON, _ := json.Marshal(map[string]interface{}{
+		"error": map[string]interface{}{"message": "request too large: " + msg, "type": "invalid_request_error"},
+	})
+	fmt.Fprintf(w, "data: %s\n\n", string(errJSON))
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func getIntFromMap(m map[string]interface{}, key string) int {
 	v, _ := m[key].(float64)
 	return int(v)
+}
+
+// parseRetryAfterHeader 从 HTTP 响应头解析 Retry-After
+func parseRetryAfterHeader(headers http.Header) time.Duration {
+	val := headers.Get("Retry-After")
+	if val == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(val); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(val); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 func randomHex(n int) string {

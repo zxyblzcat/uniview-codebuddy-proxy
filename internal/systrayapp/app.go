@@ -33,6 +33,8 @@ type App struct {
 	logWriter     *logbuf.MultiWriter
 	authItem      *systray.MenuItem
 	autostartItem *systray.MenuItem
+	telemetryItem  *systray.MenuItem
+	dropImagesItem *systray.MenuItem
 	statusItem    *systray.MenuItem
 	restartItem   *systray.MenuItem
 	logItem       *systray.MenuItem
@@ -166,6 +168,39 @@ func (a *App) onReady() {
 				log.Println("Autostart enabled")
 				a.dispatchUI(func() { setTrayTitle(i18n.T("status.autostart_enabled")) })
 				a.scheduleClearTrayTitle()
+			}
+		}
+	}()
+
+
+	a.telemetryItem = systray.AddMenuItem(i18n.T("menu.telemetry"), i18n.T("menu.telemetry_tooltip"))
+	if config.TelemetryEnabledAtomic() {
+		a.telemetryItem.Check()
+	}
+	go func() {
+		for range a.telemetryItem.ClickedCh {
+			if a.telemetryItem.Checked() {
+				config.SetTelemetryEnabled(false)
+				a.telemetryItem.Uncheck()
+			} else {
+				config.SetTelemetryEnabled(true)
+				a.telemetryItem.Check()
+			}
+		}
+	}()
+
+	a.dropImagesItem = systray.AddMenuItem(i18n.T("menu.drop_images"), i18n.T("menu.drop_images_tooltip"))
+	if config.DropImagesWhenUnsupportedAtomic() {
+		a.dropImagesItem.Check()
+	}
+	go func() {
+		for range a.dropImagesItem.ClickedCh {
+			if a.dropImagesItem.Checked() {
+				config.SetDropImagesWhenUnsupported(false)
+				a.dropImagesItem.Uncheck()
+			} else {
+				config.SetDropImagesWhenUnsupported(true)
+				a.dropImagesItem.Check()
 			}
 		}
 	}()
@@ -340,6 +375,14 @@ func (a *App) rebuildMenu() {
 	if a.autostartItem != nil {
 		a.autostartItem.SetTitle(i18n.T("menu.autostart"))
 		a.autostartItem.SetTooltip(i18n.T("menu.autostart_tooltip"))
+	}
+	if a.telemetryItem != nil {
+		a.telemetryItem.SetTitle(i18n.T("menu.telemetry"))
+		a.telemetryItem.SetTooltip(i18n.T("menu.telemetry_tooltip"))
+	}
+	if a.dropImagesItem != nil {
+		a.dropImagesItem.SetTitle(i18n.T("menu.drop_images"))
+		a.dropImagesItem.SetTooltip(i18n.T("menu.drop_images_tooltip"))
 	}
 	if a.quitItem != nil {
 		a.quitItem.SetTitle(i18n.T("menu.quit"))

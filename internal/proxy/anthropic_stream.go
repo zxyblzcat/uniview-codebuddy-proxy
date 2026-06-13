@@ -34,11 +34,16 @@ func StreamAnthropicMessages(ctx context.Context, payload map[string]interface{}
 	started := false
 	finished := false
 
-	resp, err := doUpstreamRequest(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
+	resp, err := doUpstreamRequestWithRetry(ctx, config.ChatURL, payload, model, bearer, "craft", extraHeaders)
 	if err != nil {
 		ttfb = time.Since(upstreamStart)
 		if ue, ok := err.(*upstreamError); ok {
-			writeAnthropicSSEError(w, ue.Error())
+			// 检测上下文窗口超限，返回 invalid_request_error 让 Claude Code 触发自动压缩
+			if isContextLimitError(ue.Message) {
+				writeAnthropicSSEContextLimitError(w, ue.Message)
+			} else {
+				writeAnthropicSSEError(w, ue.Error())
+			}
 		} else {
 			writeAnthropicSSEError(w, err.Error())
 		}
@@ -399,6 +404,57 @@ func writeAnthropicSSEError(w http.ResponseWriter, msg string) {
 			"message": msg,
 		},
 	})
+	// Anthropic 协议要求 message_start 在 message_stop 之前
+	msgStartData, _ := json.Marshal(map[string]interface{}{
+		"type": "message_start",
+		"message": map[string]interface{}{
+			"id":   "msg_error",
+			"type": "message",
+			"role": "assistant",
+			"content": []interface{}{},
+			"model": "",
+			"stop_reason": nil,
+			"usage": map[string]interface{}{"input_tokens": 0, "output_tokens": 0},
+		},
+	})
+	fmt.Fprintf(w, "event: message_start\ndata: %s\n\n", string(msgStartData))
 	fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(errData))
 	fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// writeAnthropicSSEContextLimitError 写入 Anthropic 格式的上下文超限 SSE 错误
+// 返回 invalid_request_error 类型，让 Claude Code 触发自动压缩（autocompact）
+func writeAnthropicSSEContextLimitError(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	errData, _ := json.Marshal(map[string]interface{}{
+		"type": "error",
+		"error": map[string]interface{}{
+			"type":    "invalid_request_error",
+			"message": "request too large: " + msg,
+		},
+	})
+	// Anthropic 协议要求 message_start 在 message_stop 之前
+	msgStartData, _ := json.Marshal(map[string]interface{}{
+		"type": "message_start",
+		"message": map[string]interface{}{
+			"id":   "msg_ctxlimit",
+			"type": "message",
+			"role": "assistant",
+			"content": []interface{}{},
+			"model": "",
+			"stop_reason": nil,
+			"usage": map[string]interface{}{"input_tokens": 0, "output_tokens": 0},
+		},
+	})
+	fmt.Fprintf(w, "event: message_start\ndata: %s\n\n", string(msgStartData))
+	fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(errData))
+	fmt.Fprintf(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }

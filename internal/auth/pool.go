@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-)
 
-const cooldownDuration = 30 * time.Second
+	"uniview-codebuddy-proxy/internal/config"
+)
 
 // TokenEntry 是 pool 中的一个 token 条目
 type TokenEntry struct {
@@ -154,13 +154,17 @@ func (p *TokenPool) NextToken() *TokenData {
 }
 
 // MarkCooldown 标记某个 token 进入冷却期（429 后调用）
-func (p *TokenPool) MarkCooldown(userID string) {
+// duration 为 0 时使用配置的默认冷却时间
+func (p *TokenPool) MarkCooldown(userID string, duration time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if duration <= 0 {
+		duration = time.Duration(config.CooldownDurationSecsAtomic()) * time.Second
+	}
 	for _, e := range p.entries {
 		if e.Token.UserID == userID {
-			e.Cooldown = time.Now().Add(cooldownDuration)
-			log.Printf("Token for %s cooled down for %v", userID, cooldownDuration)
+			e.Cooldown = time.Now().Add(duration)
+			log.Printf("Token for %s cooled down for %v", userID, duration)
 		}
 	}
 }

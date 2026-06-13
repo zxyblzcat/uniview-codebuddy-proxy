@@ -97,9 +97,15 @@ func handleCompletions(c *gin.Context) {
 			return
 		}
 		if result.StatusCode != 200 {
-			c.JSON(result.StatusCode, gin.H{
-				"error": gin.H{"message": result.ErrorText, "type": "upstream_error"},
-			})
+			if isContextLimitError(result.ErrorText) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": gin.H{"message": "request too large: " + result.ErrorText, "type": "invalid_request_error"},
+				})
+			} else {
+				c.JSON(result.StatusCode, gin.H{
+					"error": gin.H{"message": result.ErrorText, "type": "upstream_error"},
+				})
+			}
 			return
 		}
 
@@ -143,10 +149,14 @@ type CompletionResult struct {
 func StreamCompletions(ctx context.Context, payload map[string]interface{}, model string, bearer string, w http.ResponseWriter, extraHeaders map[string]string, conversationID, traceID string) {
 	requestID := "cmpl-" + randomHex(12)
 
-	resp, err := doUpstreamRequest(ctx, config.CompletionURL, payload, model, bearer, "CodeCompletion", extraHeaders)
+	resp, err := doUpstreamRequestWithRetry(ctx, config.CompletionURL, payload, model, bearer, "CodeCompletion", extraHeaders)
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
-			writeSSEError(w, ue.Error())
+			if isContextLimitError(ue.Message) {
+				writeSSEContextLimitError(w, ue.Message)
+			} else {
+				writeSSEError(w, ue.Error())
+			}
 		} else {
 			writeSSEError(w, err.Error())
 		}
@@ -240,7 +250,7 @@ func CollectCompletionChunks(ctx context.Context, payload map[string]interface{}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	resp, err := doUpstreamRequest(ctx, config.CompletionURL, payload, model, bearer, "CodeCompletion", extraHeaders)
+	resp, err := doUpstreamRequestWithRetry(ctx, config.CompletionURL, payload, model, bearer, "CodeCompletion", extraHeaders)
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			return &CompletionResult{StatusCode: ue.StatusCode, ErrorText: ue.Message}, nil

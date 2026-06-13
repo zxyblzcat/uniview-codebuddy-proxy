@@ -8,6 +8,7 @@ import (
 
 	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/cache"
+	"uniview-codebuddy-proxy/internal/circuitbreaker"
 	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/i18n"
 	"uniview-codebuddy-proxy/internal/logbuf"
@@ -36,14 +37,25 @@ func RegisterAPIRoutes(r *gin.Engine, lw *logbuf.MultiWriter) {
 }
 
 func handleGetConfig(c *gin.Context) {
+	cbState, cbFailures, cbLastFailure := circuitbreaker.GetBreaker().Stats()
 	c.JSON(http.StatusOK, gin.H{
-		"port":             config.Port,
-		"api_password_set": config.APIPassword != "",
-		"cache_enabled":    config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled(),
-		"cache_ttl":        config.CacheTTLAtomic(),
-		"base_url":         config.BaseURL,
-		"locale":           i18n.GetLocale().String(),
-		"debug_enabled":    config.DebugEnabledAtomic(),
+		"port":                   config.Port,
+		"api_password_set":       config.APIPassword != "",
+		"cache_enabled":          config.CacheEnabledAtomic() && cache.GlobalCache.IsEnabled(),
+		"cache_ttl":              config.CacheTTLAtomic(),
+		"base_url":               config.BaseURL,
+		"locale":                 i18n.GetLocale().String(),
+		"debug_enabled":          config.DebugEnabledAtomic(),
+		"claude_inject":          config.ClaudeInjectAtomic(),
+		"max_retries":            config.MaxRetriesAtomic(),
+		"cb_state":               cbState.String(),
+		"cb_failures":            cbFailures,
+		"cb_last_failure":        cbLastFailure,
+		"cb_max_failures":        config.CBMaxFailuresAtomic(),
+		"cb_reset_timeout_secs":  config.CBResetTimeoutSecsAtomic(),
+		"cooldown_duration_secs": config.CooldownDurationSecsAtomic(),
+		"telemetry_enabled":            config.TelemetryEnabledAtomic(),
+		"drop_images_when_unsupported": config.DropImagesWhenUnsupportedAtomic(),
 	})
 }
 
@@ -65,6 +77,31 @@ func handlePutConfig(c *gin.Context) {
 	}
 	if v, ok := body["debug_enabled"].(bool); ok {
 		config.SetDebugEnabled(v)
+	}
+	if v, ok := body["claude_inject"].(bool); ok {
+		config.SetClaudeInject(v)
+	}
+	if v, ok := body["max_retries"].(float64); ok {
+		config.SetMaxRetries(int(v))
+	}
+	if v, ok := body["cb_max_failures"].(float64); ok {
+		config.SetCBMaxFailures(int(v))
+	}
+	if v, ok := body["cb_reset_timeout_secs"].(float64); ok {
+		config.SetCBResetTimeoutSecs(int(v))
+	}
+	if v, ok := body["cooldown_duration_secs"].(float64); ok {
+		config.SetCooldownDurationSecs(int(v))
+	}
+	if v, ok := body["telemetry_enabled"].(bool); ok {
+		config.SetTelemetryEnabled(v)
+	}
+	if v, ok := body["drop_images_when_unsupported"].(bool); ok {
+		config.SetDropImagesWhenUnsupported(v)
+	}
+	// 熔断器重置
+	if v, ok := body["cb_reset"].(bool); ok && v {
+		circuitbreaker.GetBreaker().Reset()
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

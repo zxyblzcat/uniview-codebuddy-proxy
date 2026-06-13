@@ -376,7 +376,7 @@ func authStartHeaders() map[string]string {
 		"X-No-User-Id":         "true",
 		"X-No-Enterprise-Id":   "true",
 		"X-No-Department-Info": "true",
-		"User-Agent":           "CLI/1.0.8 CodeBuddy/1.0.8",
+		"User-Agent":           fmt.Sprintf("CLI/%s CodeBuddy/%s", codebuddyVersion, codebuddyVersion),
 		"X-Product":            "SaaS",
 		"X-Request-ID":         generateRequestID(),
 	}
@@ -403,10 +403,16 @@ func authPollHeaders() map[string]string {
 		"X-No-Enterprise-Id":   "true",
 		"X-No-Department-Info": "true",
 		"X-Domain":             config.Domain,
-		"User-Agent":           "CLI/1.0.8 CodeBuddy/1.0.8",
+		"User-Agent":           fmt.Sprintf("CLI/%s CodeBuddy/%s", codebuddyVersion, codebuddyVersion),
 		"X-Product":            "SaaS",
 	}
 }
+
+// codebuddyVersion CodeBuddy 版本号，与官方 CLI 保持一致
+const codebuddyVersion = "2.92.0"
+
+// CodebuddyVersion 返回 CodeBuddy 版本号字符串
+func CodebuddyVersion() string { return codebuddyVersion }
 
 // BuildUpstreamHeaders 构建发送到上游的请求头
 // intent: "craft" (Chat), "CodeCompletion" (代码补全)
@@ -416,7 +422,7 @@ func BuildUpstreamHeaders(model string, intent string) map[string]string {
 	}
 	rid := generateRequestID()
 	span := generateSpanID()
-	return map[string]string{
+	headers := map[string]string{
 		"Accept":            "text/event-stream",
 		"Content-Type":      "application/json",
 		"X-Requested-With":  "XMLHttpRequest",
@@ -435,8 +441,37 @@ func BuildUpstreamHeaders(model string, intent string) map[string]string {
 		"X-Conversation-ID": generateRequestID(),
 		"X-Session-ID":      generateRequestID(),
 		"X-IDE-Type":        "CLI",
-		"X-Product-Version": "1.0.8",
-		"User-Agent":        "CLI/1.0.8 CodeBuddy/1.0.8",
+		"X-Product-Version": codebuddyVersion,
+		"User-Agent":        fmt.Sprintf("CLI/%s CodeBuddy/%s", codebuddyVersion, codebuddyVersion),
+	}
+
+	// Claude Inject: 注入 Claude Code 兼容的请求头
+	if config.ClaudeInjectAtomic() {
+		for k, v := range BuildClaudeInjectHeaders() {
+			headers[k] = v
+		}
+	}
+
+	return headers
+}
+
+// BuildClaudeInjectHeaders 返回 Claude Code 兼容的额外请求头
+// 当 CLAUDE_INJECT=true 时，这些头会被合并到上游请求中
+func BuildClaudeInjectHeaders() map[string]string {
+	return map[string]string{
+		"X-Enterprise-Id":     "",
+		"X-Tenant-Id":         "",
+		"X-IDE-Name":          "claude-code",
+		"X-IDE-Version":       codebuddyVersion,
+		"x-codebuddy-request": "true",
+		"anthropic-beta": strings.Join([]string{
+			"claude-code-20250219",
+			"interleaved-thinking-2025-05-14",
+			"prompt-caching-scope-2026-01-05",
+			"effort-2025-11-24",
+			"context-management-2025-06-27",
+			"extended-cache-ttl-2025-04-11",
+		}, ","),
 	}
 }
 

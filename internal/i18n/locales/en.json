@@ -138,5 +138,21 @@
   {
     "id": "log.token_reload_timeout",
     "translation": "Timed out waiting for token reload"
+  },
+  {
+    "id": "menu.telemetry",
+    "translation": "Telemetry"
+  },
+  {
+    "id": "menu.telemetry_tooltip",
+    "translation": "Toggle telemetry reporting"
+  },
+  {
+    "id": "menu.drop_images",
+    "translation": "Auto-strip Images"
+  },
+  {
+    "id": "menu.drop_images_tooltip",
+    "translation": "Strip images instead of rejecting when unsupported"
   }
 ]

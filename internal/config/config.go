@@ -33,6 +33,13 @@ var (
 	logMaxSizeMB         atomic.Int32
 	logCleanupInterval   atomic.Int32
 	debugEnabled         atomic.Bool
+	claudeInject         atomic.Bool
+	maxRetries           atomic.Int32
+	cbMaxFailures        atomic.Int32
+	cbResetTimeoutSecs   atomic.Int32
+	cooldownDurationSecs   atomic.Int32
+	telemetryEnabled        atomic.Bool
+	dropImagesWhenUnsupported atomic.Bool
 )
 
 func init() {
@@ -86,6 +93,42 @@ func init() {
 
 	// 调试模式配置
 	debugEnabled.Store(getEnv("DEBUG", "") == "true")
+
+	// Claude Inject 配置：注入 Claude Code 兼容的请求头
+	claudeInject.Store(getEnv("CLAUDE_INJECT", "") == "true")
+
+	// 请求重试配置
+	maxRetriesInt, err := strconv.Atoi(getEnv("MAX_RETRIES", "3"))
+	if err != nil || maxRetriesInt < 0 {
+		maxRetriesInt = 3
+	}
+	maxRetries.Store(int32(maxRetriesInt))
+
+	// 熔断器配置
+	cbMaxFailuresInt, err := strconv.Atoi(getEnv("CB_MAX_FAILURES", "5"))
+	if err != nil || cbMaxFailuresInt < 1 {
+		cbMaxFailuresInt = 5
+	}
+	cbMaxFailures.Store(int32(cbMaxFailuresInt))
+
+	cbResetTimeoutInt, err := strconv.Atoi(getEnv("CB_RESET_TIMEOUT_SECS", "30"))
+	if err != nil || cbResetTimeoutInt < 1 {
+		cbResetTimeoutInt = 30
+	}
+	cbResetTimeoutSecs.Store(int32(cbResetTimeoutInt))
+
+	// 凭证冷却时长配置
+	cooldownDurationInt, err := strconv.Atoi(getEnv("COOLDOWN_DURATION_SECS", "30"))
+	if err != nil || cooldownDurationInt < 1 {
+		cooldownDurationInt = 30
+	}
+	cooldownDurationSecs.Store(int32(cooldownDurationInt))
+
+	// 遥测上报开关
+	telemetryEnabled.Store(getEnv("TELEMETRY_ENABLED", "true") == "true")
+
+	// 图片自动剥离开关（默认开启，剥离比硬拒绝更友好）
+	dropImagesWhenUnsupported.Store(getEnv("DROP_IMAGES_WHEN_UNSUPPORTED", "true") == "true")
 }
 
 // ListenAddr 返回服务监听地址
@@ -137,6 +180,68 @@ func DebugEnabledAtomic() bool { return debugEnabled.Load() }
 
 // SetDebugEnabled 设置调试模式开关。
 func SetDebugEnabled(v bool) { debugEnabled.Store(v) }
+
+// ClaudeInjectAtomic 返回 Claude Code 兼容头注入是否启用。
+func ClaudeInjectAtomic() bool { return claudeInject.Load() }
+
+// SetClaudeInject 设置 Claude Code 兼容头注入开关。
+func SetClaudeInject(v bool) { claudeInject.Store(v) }
+
+// MaxRetriesAtomic 返回请求最大重试次数。
+func MaxRetriesAtomic() int { return int(maxRetries.Load()) }
+
+// SetMaxRetries 设置请求最大重试次数。
+func SetMaxRetries(v int) {
+	if v < 0 {
+		v = 3
+	}
+	maxRetries.Store(int32(v))
+}
+
+// CBMaxFailuresAtomic 返回熔断器最大连续失败次数。
+func CBMaxFailuresAtomic() int { return int(cbMaxFailures.Load()) }
+
+// SetCBMaxFailures 设置熔断器最大连续失败次数。
+func SetCBMaxFailures(v int) {
+	if v < 1 {
+		v = 5
+	}
+	cbMaxFailures.Store(int32(v))
+}
+
+// CBResetTimeoutSecsAtomic 返回熔断器重置超时时间（秒）。
+func CBResetTimeoutSecsAtomic() int { return int(cbResetTimeoutSecs.Load()) }
+
+// SetCBResetTimeoutSecs 设置熔断器重置超时时间（秒）。
+func SetCBResetTimeoutSecs(v int) {
+	if v < 1 {
+		v = 30
+	}
+	cbResetTimeoutSecs.Store(int32(v))
+}
+
+// CooldownDurationSecsAtomic 返回凭证冷却时长（秒）。
+func CooldownDurationSecsAtomic() int { return int(cooldownDurationSecs.Load()) }
+
+// SetCooldownDurationSecs 设置凭证冷却时长（秒）。
+func SetCooldownDurationSecs(v int) {
+	if v < 1 {
+		v = 30
+	}
+	cooldownDurationSecs.Store(int32(v))
+}
+
+// TelemetryEnabledAtomic 返回遥测上报是否启用。
+func TelemetryEnabledAtomic() bool { return telemetryEnabled.Load() }
+
+// SetTelemetryEnabled 设置遥测上报开关。
+func SetTelemetryEnabled(v bool) { telemetryEnabled.Store(v) }
+
+// DropImagesWhenUnsupportedAtomic 返回是否自动剥离不支持的图片内容。
+func DropImagesWhenUnsupportedAtomic() bool { return dropImagesWhenUnsupported.Load() }
+
+// SetDropImagesWhenUnsupported 设置图片自动剥离开关。
+func SetDropImagesWhenUnsupported(v bool) { dropImagesWhenUnsupported.Store(v) }
 
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

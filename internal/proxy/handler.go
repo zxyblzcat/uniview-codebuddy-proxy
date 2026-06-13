@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -60,6 +61,8 @@ func registerAPIRoutes(g *gin.RouterGroup) {
 	g.POST("/embeddings", handleEmbeddings)
 	g.POST("/messages", handleAnthropicMessages)
 	g.POST("/messages/count_tokens", handleCountTokens)
+	g.POST("/responses", handleResponses)
+	g.POST("/responses/compact", handleResponsesCompact)
 }
 
 // optionalAuthMiddleware 当 API_PASSWORD 已设置时要求认证，否则放行
@@ -130,10 +133,16 @@ func handleChatCompletions(c *gin.Context) {
 
 	// 检测 messages 中是否包含 image_url 类型的内容（上游不支持 vision 输入）
 	if hasImageURLContent(body) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request"},
-		})
-		return
+		if config.DropImagesWhenUnsupportedAtomic() {
+			if stripImagesFromBody(body) {
+				log.Printf("images: stripped image content from chat completions request, forwarding text-only")
+			}
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request"},
+			})
+			return
+		}
 	}
 
 	isStream := false
@@ -220,6 +229,13 @@ func handleChatCompletions(c *gin.Context) {
 	// 对话头透传
 	extraHeaders := buildConversationHeaders(c)
 
+	// Claude Inject: 透传客户端的 anthropic-beta 头到上游
+	if config.ClaudeInjectAtomic() {
+		if ab := c.GetHeader("anthropic-beta"); ab != "" {
+			extraHeaders["anthropic-beta"] = ab
+		}
+	}
+
 	if isStream {
 		// 流式响应：直接用 SSE 转发
 		var ttfb time.Duration
@@ -254,9 +270,16 @@ func handleChatCompletions(c *gin.Context) {
 			return
 		}
 		if result.StatusCode != 200 {
-			c.JSON(result.StatusCode, gin.H{
-				"error": gin.H{"message": result.ErrorText, "type": "upstream_error"},
-			})
+			// 检测上下文窗口超限，返回 invalid_request_error
+			if isContextLimitError(result.ErrorText) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": gin.H{"message": "request too large: " + result.ErrorText, "type": "invalid_request_error"},
+				})
+			} else {
+				c.JSON(result.StatusCode, gin.H{
+					"error": gin.H{"message": result.ErrorText, "type": "upstream_error"},
+				})
+			}
 			return
 		}
 
@@ -366,7 +389,7 @@ func handleEmbeddings(c *gin.Context) {
 	extraHeaders := buildConversationHeaders(c)
 	extraHeaders["Accept"] = "application/json"
 
-	resp, err := doUpstreamRequest(c.Request.Context(), config.EmbeddingURL, payload, model, bearer, "embedding", extraHeaders)
+	resp, err := doUpstreamRequestWithRetry(c.Request.Context(), config.EmbeddingURL, payload, model, bearer, "embedding", extraHeaders)
 	if err != nil {
 		if ue, ok := err.(*upstreamError); ok {
 			c.JSON(ue.StatusCode, gin.H{
@@ -435,8 +458,8 @@ func handleHeadV1(c *gin.Context) {
 }
 
 // handleCountTokens POST /v1/messages/count_tokens — Anthropic token counting 兼容端点
-// 上游不提供真实的 token 计数 API，使用消息内容长度估算
-// 返回 0 会导致 Claude Code autocompact 永不触发
+// 上游不提供真实的 token 计数 API，使用消息内容字符数估算
+// 返回 0 会导致 Claude Code autocompact 永不触发，因此必须提供合理的估算值
 func handleCountTokens(c *gin.Context) {
 	var body map[string]interface{}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -448,14 +471,111 @@ func handleCountTokens(c *gin.Context) {
 		return
 	}
 
-	// 不再使用本地估算，返回 0
-	// 真实的 token 计数由上游 glm-5.1 tokenizer 提供，
-	// 在实际的 /v1/messages 请求响应中通过 usage.input_tokens 返回
+	// 估算 input_tokens：遍历 system + messages 中的文本内容，按字符数粗估
+	// 经验值：英文约 4 字符/token，中文约 1.5 字符/token，取保守值 ~3 字符/token
+	totalChars := countContentChars(body)
+	estimatedTokens := totalChars / 3
+	if estimatedTokens < 1 {
+		estimatedTokens = 1
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"input_tokens":                0,
+		"input_tokens":                estimatedTokens,
 		"cache_creation_input_tokens": 0,
 		"cache_read_input_tokens":     0,
 	})
+}
+
+// countContentChars 统计请求体中所有文本内容的字符数
+// 遍历 system 和 messages 中的文本，用于估算 token 数量
+func countContentChars(body map[string]interface{}) int {
+	total := 0
+
+	// 统计 system 字段
+	if sys := body["system"]; sys != nil {
+		total += countCharsFromValue(sys)
+	}
+
+	// 统计 messages 中的文本
+	if messages, ok := body["messages"].([]interface{}); ok {
+		for _, msg := range messages {
+			m, _ := msg.(map[string]interface{})
+			if m == nil {
+				continue
+			}
+			if content, ok := m["content"]; ok {
+				total += countCharsFromValue(content)
+			}
+		}
+	}
+
+	// 统计 tools 中的描述文本
+	if tools, ok := body["tools"].([]interface{}); ok {
+		for _, tool := range tools {
+			t, _ := tool.(map[string]interface{})
+			if t == nil {
+				continue
+			}
+			if desc, ok := t["description"].(string); ok {
+				total += len([]rune(desc))
+			}
+		}
+	}
+
+	return total
+}
+
+// countCharsFromValue 从 content 字段提取字符数
+// content 可能是字符串或内容块数组
+// 统计所有有意义的文本内容：text 块、tool_use 的 input、tool_result 的 content、thinking 的 thinking
+func countCharsFromValue(content interface{}) int {
+	switch c := content.(type) {
+	case string:
+		return len([]rune(c))
+	case []interface{}:
+		total := 0
+		for _, item := range c {
+			part, _ := item.(map[string]interface{})
+			if part == nil {
+				continue
+			}
+			typ, _ := part["type"].(string)
+			switch typ {
+			case "text":
+				if text, ok := part["text"].(string); ok {
+					total += len([]rune(text))
+				}
+			case "tool_use":
+				// tool_use 的 input 是 JSON 对象字符串，按字符数估算
+				if input, ok := part["input"]; ok {
+					if inputStr, ok := input.(string); ok {
+						total += len([]rune(inputStr))
+					} else {
+						// input 是对象，序列化后估算
+						if b, err := json.Marshal(input); err == nil {
+							total += len([]rune(string(b)))
+						}
+					}
+				}
+			case "tool_result":
+				// tool_result 的 content 可能是字符串或内容块数组
+				if rc, ok := part["content"]; ok {
+					total += countCharsFromValue(rc)
+				}
+			case "thinking":
+				if thinking, ok := part["thinking"].(string); ok {
+					total += len([]rune(thinking))
+				}
+			default:
+				// 其他类型（如 image），尝试提取 text 字段
+				if text, ok := part["text"].(string); ok {
+					total += len([]rune(text))
+				}
+			}
+		}
+		return total
+	}
+	return 0
 }
 
 // handleAnthropicMessages POST /v1/messages — Anthropic Messages API 兼容端点
@@ -490,8 +610,14 @@ func handleAnthropicMessages(c *gin.Context) {
 
 	// 检测是否包含 image_url（上游不支持 vision 输入）
 	if hasImageURLContent(body) {
-		anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "上游 API 不支持图片输入（image_url），请移除图片后重试")
-		return
+		if config.DropImagesWhenUnsupportedAtomic() {
+			if stripImagesFromBody(body) {
+				log.Printf("images: stripped image content from anthropic request, forwarding text-only")
+			}
+		} else {
+			anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "上游 API 不支持图片输入（image_url），请移除图片后重试")
+			return
+		}
 	}
 
 	model := "glm-5.1"
@@ -578,6 +704,13 @@ func handleAnthropicMessages(c *gin.Context) {
 	// 对话头透传
 	anthropicExtraHeaders := buildConversationHeaders(c)
 
+	// Claude Inject: 透传客户端的 anthropic-beta 头到上游
+	if config.ClaudeInjectAtomic() {
+		if ab := c.GetHeader("anthropic-beta"); ab != "" {
+			anthropicExtraHeaders["anthropic-beta"] = ab
+		}
+	}
+
 	if isStream {
 		var ttfb time.Duration
 		if debugEnabled {
@@ -622,7 +755,12 @@ func handleAnthropicMessages(c *gin.Context) {
 			return
 		}
 		if result.StatusCode != 200 {
-			anthropicErrorResponse(c, result.StatusCode, "api_error", result.ErrorText)
+			// 检测上下文窗口超限，返回 invalid_request_error 让 Claude Code 触发自动压缩
+			if isContextLimitError(result.ErrorText) {
+				anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "request too large: "+result.ErrorText)
+			} else {
+				anthropicErrorResponse(c, result.StatusCode, "api_error", result.ErrorText)
+			}
 			return
 		}
 		if debugEnabled {
@@ -714,6 +852,82 @@ func hasImageInContent(content interface{}) bool {
 			}
 		}
 	}
+	return false
+}
+
+// stripImagesFromBody 剥离 body 中 messages 和 system 里的图片内容，保留文本
+// 返回是否进行了剥离（用于日志）
+func stripImagesFromBody(body map[string]interface{}) bool {
+	stripped := false
+
+	// 剥离 messages 中的图片
+	if messages, ok := body["messages"].([]interface{}); ok {
+		for _, msg := range messages {
+			m, _ := msg.(map[string]interface{})
+			if m == nil {
+				continue
+			}
+			if stripImagesFromContent(m, "content") {
+				stripped = true
+			}
+		}
+	}
+
+	// 剥离 system 中的图片（Anthropic 格式）
+	if _, ok := body["system"]; ok {
+		if stripImagesFromContent(body, "system") {
+			stripped = true
+		}
+	}
+
+	return stripped
+}
+
+// stripImagesFromContent 剥离指定字段中的图片内容
+func stripImagesFromContent(parent map[string]interface{}, key string) bool {
+	content, exists := parent[key]
+	if !exists {
+		return false
+	}
+
+	switch c := content.(type) {
+	case []interface{}:
+		var filtered []interface{}
+		for _, item := range c {
+			part, _ := item.(map[string]interface{})
+			if part == nil {
+				filtered = append(filtered, item)
+				continue
+			}
+			typ, _ := part["type"].(string)
+			// 跳过 OpenAI image_url 和 Anthropic image 格式
+			if typ == "image_url" {
+				continue
+			}
+			if typ == "image" {
+				if src, _ := part["source"].(map[string]interface{}); src != nil {
+					if srcType, _ := src["type"].(string); srcType == "base64" || srcType == "url" {
+						continue
+					}
+				}
+			}
+			// 递归剥离 tool_result 嵌套 content 中的图片
+			if typ == "tool_result" {
+				stripImagesFromContent(part, "content")
+			}
+			filtered = append(filtered, item)
+		}
+		if len(filtered) != len(c) {
+			// 如果全部被剥离，保留空文本块避免空 content（空字符串会导致 API 报错）
+			if len(filtered) == 0 {
+				parent[key] = []interface{}{map[string]interface{}{"type": "text", "text": ""}}
+			} else {
+				parent[key] = filtered
+			}
+			return true
+		}
+	}
+
 	return false
 }
 

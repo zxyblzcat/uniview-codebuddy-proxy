@@ -138,5 +138,21 @@
   {
     "id": "log.token_reload_timeout",
     "translation": "等待令牌重新加载超时"
+  },
+  {
+    "id": "menu.telemetry",
+    "translation": "用量上报"
+  },
+  {
+    "id": "menu.telemetry_tooltip",
+    "translation": "切换遥测用量上报"
+  },
+  {
+    "id": "menu.drop_images",
+    "translation": "自动剥离图片"
+  },
+  {
+    "id": "menu.drop_images_tooltip",
+    "translation": "检测到图片时自动剥离而非拒绝"
   }
 ]

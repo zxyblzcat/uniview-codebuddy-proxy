@@ -11,3 +11,4 @@ uniview-codebuddy-proxy-*
 .idea/
 PLAN.md
 .claude
+.codegraph/
