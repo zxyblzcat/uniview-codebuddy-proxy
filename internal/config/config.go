@@ -39,7 +39,6 @@ var (
 	cbResetTimeoutSecs   atomic.Int32
 	cooldownDurationSecs   atomic.Int32
 	telemetryEnabled        atomic.Bool
-	dropImagesWhenUnsupported atomic.Bool
 	imageUnderstanding      atomic.Bool
 	imageUnderstandingModel atomic.Value // string
 )
@@ -128,9 +127,6 @@ func init() {
 
 	// 遥测上报开关
 	telemetryEnabled.Store(getEnv("TELEMETRY_ENABLED", "true") == "true")
-
-	// 图片自动剥离开关（默认开启，剥离比硬拒绝更友好）
-	dropImagesWhenUnsupported.Store(getEnv("DROP_IMAGES_WHEN_UNSUPPORTED", "true") == "true")
 
 	// 自动图片解析开关（默认开启，用 Vision 模型解析图片内容为文本描述）
 	imageUnderstanding.Store(getEnv("IMAGE_UNDERSTANDING", "true") == "true")
@@ -244,12 +240,6 @@ func TelemetryEnabledAtomic() bool { return telemetryEnabled.Load() }
 
 // SetTelemetryEnabled 设置遥测上报开关。
 func SetTelemetryEnabled(v bool) { telemetryEnabled.Store(v) }
-
-// DropImagesWhenUnsupportedAtomic 返回是否自动剥离不支持的图片内容。
-func DropImagesWhenUnsupportedAtomic() bool { return dropImagesWhenUnsupported.Load() }
-
-// SetDropImagesWhenUnsupported 设置图片自动剥离开关。
-func SetDropImagesWhenUnsupported(v bool) { dropImagesWhenUnsupported.Store(v) }
 
 // ImageUnderstandingAtomic 返回是否启用自动图片解析（Vision 模型）。
 func ImageUnderstandingAtomic() bool { return imageUnderstanding.Load() }

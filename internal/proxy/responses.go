@@ -476,21 +476,6 @@ func handleResponses(c *gin.Context) {
 						}
 					}
 					log.Printf("images: auto-parsed image content in responses request, forwarding text-only")
-				} else if config.DropImagesWhenUnsupportedAtomic() {
-					stripImagesFromBody(bodyForCheck)
-					// 解包回 input 格式
-					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
-						var newInput json.RawMessage
-						if len(msgs) == 1 {
-							newInput, _ = json.Marshal(msgs[0])
-						} else {
-							newInput, _ = json.Marshal(msgs)
-						}
-						if newInput != nil {
-							req.Input = newInput
-						}
-					}
-					log.Printf("images: stripped image content from responses request, forwarding text-only")
 				} else {
 					c.JSON(http.StatusBadRequest, gin.H{
 						"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request_error"},
@@ -614,17 +599,6 @@ func handleResponsesCompact(c *gin.Context) {
 						}
 					}
 					log.Printf("images: auto-parsed image content in responses compact request, forwarding text-only")
-				} else if config.DropImagesWhenUnsupportedAtomic() {
-					stripImagesFromBody(bodyForCheck)
-					// 解包回 input 格式并回写 body
-					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
-						if len(msgs) == 1 {
-							body["input"] = msgs[0]
-						} else {
-							body["input"] = msgs
-						}
-					}
-					log.Printf("images: stripped image content from responses compact request, forwarding text-only")
 				} else {
 					c.JSON(http.StatusBadRequest, gin.H{
 						"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request_error"},

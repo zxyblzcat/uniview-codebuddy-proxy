@@ -55,8 +55,7 @@ func handleGetConfig(c *gin.Context) {
 		"cb_reset_timeout_secs":  config.CBResetTimeoutSecsAtomic(),
 		"cooldown_duration_secs": config.CooldownDurationSecsAtomic(),
 		"telemetry_enabled":            config.TelemetryEnabledAtomic(),
-		"drop_images_when_unsupported": config.DropImagesWhenUnsupportedAtomic(),
-		"auto_image_parsing":        config.ImageUnderstandingAtomic(),
+				"auto_image_parsing":        config.ImageUnderstandingAtomic(),
 		"auto_image_parsing_model":  config.ImageUnderstandingModelAtomic(),
 	})
 }
@@ -97,9 +96,6 @@ func handlePutConfig(c *gin.Context) {
 	}
 	if v, ok := body["telemetry_enabled"].(bool); ok {
 		config.SetTelemetryEnabled(v)
-	}
- if v, ok := body["drop_images_when_unsupported"].(bool); ok {
-		config.SetDropImagesWhenUnsupported(v)
 	}
 	if v, ok := body["auto_image_parsing"].(bool); ok {
 		config.SetImageUnderstanding(v)

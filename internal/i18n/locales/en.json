@@ -148,14 +148,6 @@
     "translation": "Toggle telemetry reporting"
   },
   {
-    "id": "menu.drop_images",
-    "translation": "Auto-strip Images"
-  },
-  {
-    "id": "menu.drop_images_tooltip",
-    "translation": "Strip images instead of rejecting when unsupported"
-  },
-  {
     "id": "menu.image_understanding",
     "translation": "Auto Image Parsing"
   },

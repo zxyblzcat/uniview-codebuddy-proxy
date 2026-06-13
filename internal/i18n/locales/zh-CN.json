@@ -148,14 +148,6 @@
     "translation": "切换遥测用量上报"
   },
   {
-    "id": "menu.drop_images",
-    "translation": "自动剥离图片"
-  },
-  {
-    "id": "menu.drop_images_tooltip",
-    "translation": "检测到图片时自动剥离而非拒绝"
-  },
-  {
     "id": "menu.image_understanding",
     "translation": "自动图片解析"
   },

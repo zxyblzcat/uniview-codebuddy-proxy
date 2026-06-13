@@ -137,10 +137,6 @@ func handleChatCompletions(c *gin.Context) {
 			if understandImages(body) {
 				log.Printf("images: auto-parsed image content in chat completions request, forwarding text-only")
 			}
-		} else if config.DropImagesWhenUnsupportedAtomic() {
-			if stripImagesFromBody(body) {
-				log.Printf("images: stripped image content from chat completions request, forwarding text-only")
-			}
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request"},
@@ -618,10 +614,6 @@ func handleAnthropicMessages(c *gin.Context) {
 			if understandImages(body) {
 				log.Printf("images: auto-parsed image content in anthropic request, forwarding text-only")
 			}
-		} else if config.DropImagesWhenUnsupportedAtomic() {
-			if stripImagesFromBody(body) {
-				log.Printf("images: stripped image content from anthropic request, forwarding text-only")
-			}
 		} else {
 			anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "上游 API 不支持图片输入（image_url），请移除图片后重试")
 			return
@@ -860,82 +852,6 @@ func hasImageInContent(content interface{}) bool {
 			}
 		}
 	}
-	return false
-}
-
-// stripImagesFromBody 剥离 body 中 messages 和 system 里的图片内容，保留文本
-// 返回是否进行了剥离（用于日志）
-func stripImagesFromBody(body map[string]interface{}) bool {
-	stripped := false
-
-	// 剥离 messages 中的图片
-	if messages, ok := body["messages"].([]interface{}); ok {
-		for _, msg := range messages {
-			m, _ := msg.(map[string]interface{})
-			if m == nil {
-				continue
-			}
-			if stripImagesFromContent(m, "content") {
-				stripped = true
-			}
-		}
-	}
-
-	// 剥离 system 中的图片（Anthropic 格式）
-	if _, ok := body["system"]; ok {
-		if stripImagesFromContent(body, "system") {
-			stripped = true
-		}
-	}
-
-	return stripped
-}
-
-// stripImagesFromContent 剥离指定字段中的图片内容
-func stripImagesFromContent(parent map[string]interface{}, key string) bool {
-	content, exists := parent[key]
-	if !exists {
-		return false
-	}
-
-	switch c := content.(type) {
-	case []interface{}:
-		var filtered []interface{}
-		for _, item := range c {
-			part, _ := item.(map[string]interface{})
-			if part == nil {
-				filtered = append(filtered, item)
-				continue
-			}
-			typ, _ := part["type"].(string)
-			// 跳过 OpenAI image_url 和 Anthropic image 格式
-			if typ == "image_url" {
-				continue
-			}
-			if typ == "image" {
-				if src, _ := part["source"].(map[string]interface{}); src != nil {
-					if srcType, _ := src["type"].(string); srcType == "base64" || srcType == "url" {
-						continue
-					}
-				}
-			}
-			// 递归剥离 tool_result 嵌套 content 中的图片
-			if typ == "tool_result" {
-				stripImagesFromContent(part, "content")
-			}
-			filtered = append(filtered, item)
-		}
-		if len(filtered) != len(c) {
-			// 如果全部被剥离，保留空文本块避免空 content（空字符串会导致 API 报错）
-			if len(filtered) == 0 {
-				parent[key] = []interface{}{map[string]interface{}{"type": "text", "text": ""}}
-			} else {
-				parent[key] = filtered
-			}
-			return true
-		}
-	}
-
 	return false
 }
 
