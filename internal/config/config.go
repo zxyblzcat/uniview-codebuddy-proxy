@@ -1,9 +1,11 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync/atomic"
 
@@ -133,6 +135,9 @@ func init() {
 
 	// 自动图片解析模型（默认 glm-4.6v，需为支持 Vision 的模型）
 	imageUnderstandingModel.Store(getEnv("IMAGE_UNDERSTANDING_MODEL", "glm-4.6v"))
+
+	// 从 ~/.codebuddy-proxy/config.json 加载持久化状态（覆盖 env 默认值）
+	loadPersistedConfig()
 }
 
 // ListenAddr 返回服务监听地址
@@ -238,14 +243,14 @@ func SetCooldownDurationSecs(v int) {
 // TelemetryEnabledAtomic 返回遥测上报是否启用。
 func TelemetryEnabledAtomic() bool { return telemetryEnabled.Load() }
 
-// SetTelemetryEnabled 设置遥测上报开关。
-func SetTelemetryEnabled(v bool) { telemetryEnabled.Store(v) }
+// SetTelemetryEnabled 设置遥测上报开关并持久化。
+func SetTelemetryEnabled(v bool) { telemetryEnabled.Store(v); savePersistedConfig() }
 
 // ImageUnderstandingAtomic 返回是否启用自动图片解析（Vision 模型）。
 func ImageUnderstandingAtomic() bool { return imageUnderstanding.Load() }
 
-// SetImageUnderstanding 设置自动图片解析开关。
-func SetImageUnderstanding(v bool) { imageUnderstanding.Store(v) }
+// SetImageUnderstanding 设置自动图片解析开关并持久化。
+func SetImageUnderstanding(v bool) { imageUnderstanding.Store(v); savePersistedConfig() }
 
 // ImageUnderstandingModelAtomic 返回自动图片解析使用的模型名称。
 func ImageUnderstandingModelAtomic() string {
@@ -255,12 +260,13 @@ func ImageUnderstandingModelAtomic() string {
 	return "glm-4.6v"
 }
 
-// SetImageUnderstandingModel 设置自动图片解析模型名称。
+// SetImageUnderstandingModel 设置自动图片解析模型名称并持久化。
 func SetImageUnderstandingModel(v string) {
 	if v == "" {
 		v = "glm-4.6v"
 	}
 	imageUnderstandingModel.Store(v)
+	savePersistedConfig()
 }
 
 func getEnv(key, fallback string) string {
@@ -268,4 +274,72 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// persistConfigPath 返回持久化配置文件路径
+func persistConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".codebuddy-proxy", "config.json")
+}
+
+// loadPersistedConfig 从 config.json 加载持久化配置，覆盖 env 默认值
+func loadPersistedConfig() {
+	path := persistConfigPath()
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return // 文件不存在，使用默认值
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return
+	}
+	if v, ok := cfg["telemetry_enabled"].(bool); ok {
+		telemetryEnabled.Store(v)
+	}
+	if v, ok := cfg["image_understanding"].(bool); ok {
+		imageUnderstanding.Store(v)
+	}
+	if v, ok := cfg["image_understanding_model"].(string); ok {
+		imageUnderstandingModel.Store(v)
+	}
+}
+
+// savePersistedConfig 将可持久化的配置写入 config.json
+func savePersistedConfig() {
+	path := persistConfigPath()
+	if path == "" {
+		return
+	}
+
+	// 先读取现有配置（保留 locale 等其他字段）
+	var cfg map[string]interface{}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		json.Unmarshal(data, &cfg)
+	}
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+
+	cfg["telemetry_enabled"] = telemetryEnabled.Load()
+	cfg["image_understanding"] = imageUnderstanding.Load()
+	cfg["image_understanding_model"] = ImageUnderstandingModelAtomic()
+
+	dir := filepath.Dir(path)
+	os.MkdirAll(dir, 0700)
+
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		log.Printf("Warning: failed to marshal config: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, out, 0600); err != nil {
+		log.Printf("Warning: failed to save config: %v", err)
+	}
 }
