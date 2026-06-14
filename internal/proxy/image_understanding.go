@@ -9,11 +9,11 @@ import (
 
 	"uniview-codebuddy-proxy/internal/auth"
 	"uniview-codebuddy-proxy/internal/config"
-	"uniview-codebuddy-proxy/internal/telemetry"
 )
 
 // understandImages 遍历 body 中的 messages 和 system 字段，
-// 对每个图片块调用 Vision 模型（glm-4.6v）自动解析为文本描述，用文本块替换图片块。
+// 对每个图片块调用 Vision 模型（如 glm-4.6v）理解图片内容，用文本描述替换图片块。
+// 替换后请求中不再包含图片，可以用任意模型（如 glm-5.1）发送。
 // 返回是否进行了替换。
 func understandImages(body map[string]interface{}) bool {
 	replaced := false
@@ -67,19 +67,16 @@ func replaceImagesWithDescriptions(parent map[string]interface{}, key string) bo
 			if typ == "image_url" {
 				desc, err := understandImage(part)
 				if err != nil {
-					log.Printf("images: failed to auto-parse image_url block: %v", err)
-					// 理解失败，保留占位文本（不丢失图片存在的信息）
+					log.Printf("images: failed to understand image_url block: %v", err)
 					result = append(result, map[string]interface{}{
 						"type": "text",
 						"text": "[图片内容解析失败，原始图片已移除]",
 					})
-					telemetry.ReportImageUnderstandingFailure("image_url", err.Error())
 				} else {
 					result = append(result, map[string]interface{}{
 						"type": "text",
 						"text": fmt.Sprintf("[图片描述] %s", desc),
 					})
-					telemetry.ReportImageUnderstandingSuccess("image_url")
 				}
 				replaced = true
 				continue
@@ -91,18 +88,16 @@ func replaceImagesWithDescriptions(parent map[string]interface{}, key string) bo
 					if srcType, _ := src["type"].(string); srcType == "base64" || srcType == "url" {
 						desc, err := understandImage(part)
 						if err != nil {
-							log.Printf("images: failed to auto-parse image block: %v", err)
+							log.Printf("images: failed to understand image block: %v", err)
 							result = append(result, map[string]interface{}{
 								"type": "text",
 								"text": "[图片内容解析失败，原始图片已移除]",
 							})
-							telemetry.ReportImageUnderstandingFailure("image", err.Error())
 						} else {
 							result = append(result, map[string]interface{}{
 								"type": "text",
 								"text": fmt.Sprintf("[图片描述] %s", desc),
 							})
-							telemetry.ReportImageUnderstandingSuccess("image")
 						}
 						replaced = true
 						continue
@@ -121,7 +116,6 @@ func replaceImagesWithDescriptions(parent map[string]interface{}, key string) bo
 		}
 
 		if replaced {
-			// 如果全部被替换后结果为空，保留空文本占位
 			if len(result) == 0 {
 				parent[key] = []interface{}{map[string]interface{}{"type": "text", "text": ""}}
 			} else {
@@ -135,8 +129,7 @@ func replaceImagesWithDescriptions(parent map[string]interface{}, key string) bo
 }
 
 // understandImage 调用 Vision 模型（默认 glm-4.6v）理解单张图片，返回文本描述。
-// imageBlock 支持 OpenAI 格式 (type: "image_url") 和 Anthropic 格式 (type: "image")。
-// 因为主模型（如 glm-5.1）不支持图片输入，所以通过专门的 Vision 模型来理解图片。
+// 用 stream: true + CollectUpstreamChunks 收集响应（与正常请求一致）。
 func understandImage(imageBlock map[string]interface{}) (string, error) {
 	imageURL, err := extractImageData(imageBlock)
 	if err != nil {
@@ -145,16 +138,13 @@ func understandImage(imageBlock map[string]interface{}) (string, error) {
 
 	// 检查图片大小（base64 data URL 过大时可能导致超时）
 	if strings.HasPrefix(imageURL, "data:") {
-		// 粗略估算：base64 编码后大小约为原始数据的 4/3
-		// 超过 10MB 的 base64 图片直接拒绝（约 7.5MB 原始数据）
 		if len(imageURL) > 10*1024*1024 {
 			return "", fmt.Errorf("image too large (%d bytes base64, limit 10MB)", len(imageURL))
 		}
 	}
 
 	// 构造 Vision 模型请求
-	// 使用 glm-4.6v 等支持 Vision 的模型，而非主请求模型（如 glm-5.1 不支持图片）
-	model := config.ImageUnderstandingModelAtomic()
+	model := config.VisionModelAtomic()
 	payload := map[string]interface{}{
 		"model": model,
 		"messages": []interface{}{
@@ -172,22 +162,19 @@ func understandImage(imageBlock map[string]interface{}) (string, error) {
 				},
 			},
 		},
-		"stream":     false,
+		"stream":     true, // 与正常请求一致，用 stream 模式
 		"max_tokens": 1024,
 	}
 
-	// 获取 Bearer token
 	bearer := auth.GetBearerToken()
 	if bearer == "" {
 		return "", fmt.Errorf("no bearer token available")
 	}
 
-	// 调用上游 API（带超时：base64 大图可能较慢，给 60s）
+	// 带超时：base64 大图可能较慢
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// 使用 "craft" intent，与正常对话请求一致
-	// 上游根据 model 字段路由到 glm-4.6v，不依赖 intent 区分
 	result, err := CollectUpstreamChunks(ctx, payload, bearer, nil)
 	if err != nil {
 		return "", fmt.Errorf("vision model request failed: %w", err)
@@ -197,7 +184,6 @@ func understandImage(imageBlock map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("vision model returned status %d: %s", result.StatusCode, result.ErrorText)
 	}
 
-	// 拼接所有内容片段
 	var sb strings.Builder
 	for i, part := range result.ContentParts {
 		if i > 0 {
@@ -211,7 +197,7 @@ func understandImage(imageBlock map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("vision model returned empty description")
 	}
 
-	log.Printf("images: auto-parsed image using %s (%d tokens in, %d tokens out)",
+	log.Printf("images: understood image using %s (%d tokens in, %d tokens out)",
 		model, result.PromptTokens, result.CompletionTokens)
 
 	return description, nil

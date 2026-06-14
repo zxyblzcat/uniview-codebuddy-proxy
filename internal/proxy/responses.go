@@ -442,7 +442,7 @@ func handleResponses(c *gin.Context) {
 		return
 	}
 
-	// 检测图片输入
+	// 检测图片输入，如果开启自动图片解析，调用 Vision 模型理解图片并替换为文本描述
 	if req.Input != nil {
 		var bodyForCheck map[string]interface{}
 
@@ -461,26 +461,21 @@ func handleResponses(c *gin.Context) {
 			}
 
 			if bodyForCheck != nil && hasImageURLContent(bodyForCheck) {
-				if config.ImageUnderstandingAtomic() {
-					understandImages(bodyForCheck)
-					// 解包回 input 格式
-					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
-						var newInput json.RawMessage
-						if len(msgs) == 1 {
-							newInput, _ = json.Marshal(msgs[0])
-						} else {
-							newInput, _ = json.Marshal(msgs)
-						}
-						if newInput != nil {
-							req.Input = newInput
-						}
-					}
-					log.Printf("images: auto-parsed image content in responses request, forwarding text-only")
-				} else {
+				if !config.ImageUnderstandingAtomic() {
 					c.JSON(http.StatusBadRequest, gin.H{
 						"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request_error"},
 					})
 					return
+				}
+				// 开启自动图片解析：调用 Vision 模型理解图片，替换为文本描述
+				log.Printf("images: responses request contains images, auto-parsing with vision model...")
+				if understandImages(bodyForCheck) {
+					log.Printf("images: all images replaced with text descriptions")
+					// 将替换后的 input 写回 req，以便后续 buildChatCompletionsPayload 使用
+					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
+						updatedInput, _ := json.Marshal(msgs)
+						req.Input = updatedInput
+					}
 				}
 			}
 		}
@@ -566,18 +561,7 @@ func handleResponsesCompact(c *gin.Context) {
 		return
 	}
 
-	model := "glm-5.1"
-	if v, ok := body["model"].(string); ok {
-		model = v
-	}
-
-	// 生成追踪 ID 并上报请求事件
-	conversationID := "conv-" + randomHex(16)
-	telemetryRequestID := "req-" + randomHex(16)
-	traceID := randomHex(16)
-	telemetry.ReportResponsesRequest(conversationID, telemetryRequestID, model, model, traceID, 0)
-
-	// 检测并剥离 input 中的图片内容（与 handleResponses 保持一致）
+	// 检测 input 中的图片内容，如果开启自动图片解析，调用 Vision 模型理解图片并替换为文本描述
 	if inputRaw, ok := body["input"]; ok && inputRaw != nil {
 		// 纯字符串输入不含图片，跳过
 		if _, ok := inputRaw.(string); !ok {
@@ -588,26 +572,33 @@ func handleResponsesCompact(c *gin.Context) {
 				bodyForCheck = map[string]interface{}{"messages": []interface{}{inputMap}}
 			}
 			if bodyForCheck != nil && hasImageURLContent(bodyForCheck) {
-				if config.ImageUnderstandingAtomic() {
-					understandImages(bodyForCheck)
-					// 解包回 input 格式并回写 body
-					if msgs, ok := bodyForCheck["messages"].([]interface{}); ok {
-						if len(msgs) == 1 {
-							body["input"] = msgs[0]
-						} else {
-							body["input"] = msgs
-						}
-					}
-					log.Printf("images: auto-parsed image content in responses compact request, forwarding text-only")
-				} else {
+				if !config.ImageUnderstandingAtomic() {
 					c.JSON(http.StatusBadRequest, gin.H{
 						"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request_error"},
 					})
 					return
 				}
+				// 开启自动图片解析：调用 Vision 模型理解图片，替换为文本描述
+				log.Printf("images: responses compact request contains images, auto-parsing with vision model...")
+				if understandImages(bodyForCheck) {
+					log.Printf("images: all images replaced with text descriptions")
+					// 将替换后的 input 写回 body
+					body["input"] = bodyForCheck["messages"]
+				}
 			}
 		}
 	}
+
+	model := "glm-5.1"
+	if v, ok := body["model"].(string); ok {
+		model = v
+	}
+
+	// 生成追踪 ID 并上报请求事件
+	conversationID := "conv-" + randomHex(16)
+	telemetryRequestID := "req-" + randomHex(16)
+	traceID := randomHex(16)
+	telemetry.ReportResponsesRequest(conversationID, telemetryRequestID, model, model, traceID, 0)
 
 	// compact 请求中，Claude Code 发送 input 字段（而非 messages）
 	// 需要通过 convertResponsesInputToMessages 转换为 Chat Completions messages 格式

@@ -42,7 +42,7 @@ var (
 	cooldownDurationSecs   atomic.Int32
 	telemetryEnabled        atomic.Bool
 	imageUnderstanding      atomic.Bool
-	imageUnderstandingModel atomic.Value // string
+	visionModel atomic.Value // string
 )
 
 func init() {
@@ -134,7 +134,7 @@ func init() {
 	imageUnderstanding.Store(getEnv("IMAGE_UNDERSTANDING", "true") == "true")
 
 	// 自动图片解析模型（默认 glm-4.6v，需为支持 Vision 的模型）
-	imageUnderstandingModel.Store(getEnv("IMAGE_UNDERSTANDING_MODEL", "glm-4.6v"))
+	visionModel.Store(getEnv("VISION_MODEL", getEnv("IMAGE_UNDERSTANDING_MODEL", "glm-4.6v")))
 
 	// 从 ~/.codebuddy-proxy/config.json 加载持久化状态（覆盖 env 默认值）
 	loadPersistedConfig()
@@ -252,20 +252,20 @@ func ImageUnderstandingAtomic() bool { return imageUnderstanding.Load() }
 // SetImageUnderstanding 设置自动图片解析开关并持久化。
 func SetImageUnderstanding(v bool) { imageUnderstanding.Store(v); savePersistedConfig() }
 
-// ImageUnderstandingModelAtomic 返回自动图片解析使用的模型名称。
-func ImageUnderstandingModelAtomic() string {
-	if v, ok := imageUnderstandingModel.Load().(string); ok {
+// VisionModelAtomic 返回当请求包含图片时切换使用的 Vision 模型名称。
+func VisionModelAtomic() string {
+	if v, ok := visionModel.Load().(string); ok {
 		return v
 	}
 	return "glm-4.6v"
 }
 
-// SetImageUnderstandingModel 设置自动图片解析模型名称并持久化。
-func SetImageUnderstandingModel(v string) {
+// SetVisionModel 设置 Vision 模型名称并持久化。
+func SetVisionModel(v string) {
 	if v == "" {
 		v = "glm-4.6v"
 	}
-	imageUnderstandingModel.Store(v)
+	visionModel.Store(v)
 	savePersistedConfig()
 }
 
@@ -305,8 +305,8 @@ func loadPersistedConfig() {
 	if v, ok := cfg["image_understanding"].(bool); ok {
 		imageUnderstanding.Store(v)
 	}
-	if v, ok := cfg["image_understanding_model"].(string); ok {
-		imageUnderstandingModel.Store(v)
+	if v, ok := cfg["vision_model"].(string); ok {
+		visionModel.Store(v)
 	}
 }
 
@@ -329,7 +329,7 @@ func savePersistedConfig() {
 
 	cfg["telemetry_enabled"] = telemetryEnabled.Load()
 	cfg["image_understanding"] = imageUnderstanding.Load()
-	cfg["image_understanding_model"] = ImageUnderstandingModelAtomic()
+	cfg["vision_model"] = VisionModelAtomic()
 
 	dir := filepath.Dir(path)
 	os.MkdirAll(dir, 0700)

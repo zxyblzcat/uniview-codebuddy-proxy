@@ -11,17 +11,17 @@ func TestPersistedConfigSaveAndLoad(t *testing.T) {
 	// 保存原始值
 	origTelemetry := TelemetryEnabledAtomic()
 	origImageUnderstanding := ImageUnderstandingAtomic()
-	origModel := ImageUnderstandingModelAtomic()
+	origModel := VisionModelAtomic()
 	defer func() {
 		SetTelemetryEnabled(origTelemetry)
 		SetImageUnderstanding(origImageUnderstanding)
-		SetImageUnderstandingModel(origModel)
+		SetVisionModel(origModel)
 	}()
 
 	// 设置新值
 	SetTelemetryEnabled(false)
 	SetImageUnderstanding(false)
-	SetImageUnderstandingModel("test-model-v1")
+	SetVisionModel("test-model-v1")
 
 	// 验证 config.json 被写入
 	path := persistConfigPath()
@@ -41,15 +41,15 @@ func TestPersistedConfigSaveAndLoad(t *testing.T) {
 	if cfg["image_understanding"] != false {
 		t.Errorf("image_understanding should be false, got %v", cfg["image_understanding"])
 	}
-	if cfg["image_understanding_model"] != "test-model-v1" {
-		t.Errorf("image_understanding_model should be test-model-v1, got %v", cfg["image_understanding_model"])
+	if cfg["vision_model"] != "test-model-v1" {
+		t.Errorf("vision_model should be test-model-v1, got %v", cfg["vision_model"])
 	}
 
 	// 模拟重启：手动调用 loadPersistedConfig 验证能读回
 	// 先重置为默认值
 	telemetryEnabled.Store(true)
 	imageUnderstanding.Store(true)
-	imageUnderstandingModel.Store("glm-4.6v")
+	visionModel.Store("glm-4.6v")
 
 	// 加载持久化配置
 	loadPersistedConfig()
@@ -61,14 +61,14 @@ func TestPersistedConfigSaveAndLoad(t *testing.T) {
 	if ImageUnderstandingAtomic() != false {
 		t.Errorf("after loadPersistedConfig, image_understanding should be false, got %v", ImageUnderstandingAtomic())
 	}
-	if ImageUnderstandingModelAtomic() != "test-model-v1" {
-		t.Errorf("after loadPersistedConfig, model should be test-model-v1, got %v", ImageUnderstandingModelAtomic())
+	if VisionModelAtomic() != "test-model-v1" {
+		t.Errorf("after loadPersistedConfig, model should be test-model-v1, got %v", VisionModelAtomic())
 	}
 
 	// 恢复原始值（同时清理 config.json）
 	SetTelemetryEnabled(true)
 	SetImageUnderstanding(true)
-	SetImageUnderstandingModel("glm-4.6v")
+	SetVisionModel("glm-4.6v")
 }
 
 func TestPersistedConfigPreservesOtherFields(t *testing.T) {

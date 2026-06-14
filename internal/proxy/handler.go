@@ -131,17 +131,20 @@ func handleChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// 检测 messages 中是否包含 image_url 类型的内容（上游不支持 vision 输入）
+	// 检测是否包含图片内容
+	// 如果开启自动图片解析，调用 Vision 模型理解图片并替换为文本描述
+	// 如果未开启，返回 400 拒绝
 	if hasImageURLContent(body) {
-		if config.ImageUnderstandingAtomic() {
-			if understandImages(body) {
-				log.Printf("images: auto-parsed image content in chat completions request, forwarding text-only")
-			}
-		} else {
+		if !config.ImageUnderstandingAtomic() {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": gin.H{"message": "上游 API 不支持图片输入（image_url），请移除图片后重试", "type": "invalid_request"},
 			})
 			return
+		}
+		// 开启自动图片解析：调用 Vision 模型理解图片，替换为文本描述
+		log.Printf("images: request contains images, auto-parsing with vision model...")
+		if understandImages(body) {
+			log.Printf("images: all images replaced with text descriptions")
 		}
 	}
 
@@ -149,6 +152,8 @@ func handleChatCompletions(c *gin.Context) {
 	if v, ok := body["stream"].(bool); ok {
 		isStream = v
 	}
+
+	// 提取模型名（图片已替换为文本，无需切换模型）
 	model := "glm-5.1"
 	if v, ok := body["model"].(string); ok {
 		model = v
@@ -608,18 +613,22 @@ func handleAnthropicMessages(c *gin.Context) {
 		return
 	}
 
-	// 检测是否包含 image_url（上游不支持 vision 输入）
+	// 检测是否包含图片内容
+	// 如果开启自动图片解析，调用 Vision 模型理解图片并替换为文本描述
+	// 如果未开启，返回 400 拒绝
 	if hasImageURLContent(body) {
-		if config.ImageUnderstandingAtomic() {
-			if understandImages(body) {
-				log.Printf("images: auto-parsed image content in anthropic request, forwarding text-only")
-			}
-		} else {
+		if !config.ImageUnderstandingAtomic() {
 			anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "上游 API 不支持图片输入（image_url），请移除图片后重试")
 			return
 		}
+		// 开启自动图片解析：调用 Vision 模型理解图片，替换为文本描述
+		log.Printf("images: anthropic request contains images, auto-parsing with vision model...")
+		if understandImages(body) {
+			log.Printf("images: all images replaced with text descriptions")
+		}
 	}
 
+	// 提取模型名（图片已替换为文本，无需切换模型）
 	model := "glm-5.1"
 	if v, ok := body["model"].(string); ok {
 		model = v
@@ -793,9 +802,10 @@ func fmtDur(d time.Duration) string {
 	return fmt.Sprintf("%.2fs", d.Seconds())
 }
 
-// hasImageURLContent 检测 messages 和 system 中是否包含图片类型的内容
+// hasImageURLContent 检测 messages 中是否包含图片类型的内容。
+// Claude Code 的 Anthropic Messages API 每次请求带完整对话历史，
+// 只要历史中有图片就必须用支持图片的 vision_model，否则上游会报错。
 // 同时检测 OpenAI 格式 (type: "image_url") 和 Anthropic 格式 (source.type: "base64")
-// 注意：Anthropic API 允许 system 字段为数组形式的内容块，其中可能包含图片
 func hasImageURLContent(body map[string]interface{}) bool {
 	// 检查 messages 中的图片内容
 	messages, _ := body["messages"].([]interface{})

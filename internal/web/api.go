@@ -56,7 +56,7 @@ func handleGetConfig(c *gin.Context) {
 		"cooldown_duration_secs": config.CooldownDurationSecsAtomic(),
 		"telemetry_enabled":            config.TelemetryEnabledAtomic(),
 				"auto_image_parsing":        config.ImageUnderstandingAtomic(),
-		"auto_image_parsing_model":  config.ImageUnderstandingModelAtomic(),
+		"vision_model":  config.VisionModelAtomic(),
 	})
 }
 
@@ -100,8 +100,8 @@ func handlePutConfig(c *gin.Context) {
 	if v, ok := body["auto_image_parsing"].(bool); ok {
 		config.SetImageUnderstanding(v)
 	}
-	if v, ok := body["auto_image_parsing_model"].(string); ok {
-		config.SetImageUnderstandingModel(v)
+	if v, ok := body["vision_model"].(string); ok {
+		config.SetVisionModel(v)
 	}
 	// 熔断器重置
 	if v, ok := body["cb_reset"].(bool); ok && v {

@@ -81,8 +81,6 @@ func TestTelemetryEnabledSwitchConvenience(t *testing.T) {
 	ReportResponsesResponse("conv-2", "req-2", "glm-5.1", "glm-5.1", "trace-2", 100, 80)
 	ReportUpstreamRetry("glm-5.1", 429, 1, 3, 500)
 	ReportUpstreamFailure("glm-5.1", 500, 3, 3, "timeout")
-	ReportImageUnderstandingSuccess("image_url")
-	ReportImageUnderstandingFailure("image", "timeout")
 
 	defaultReporter.mu.Lock()
 	afterLen := len(defaultReporter.events)

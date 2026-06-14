@@ -173,31 +173,6 @@ func ReportUpstreamFailure(model string, statusCode int, attempt int, maxRetries
 	})
 }
 
-// ReportImageUnderstandingRequest 便捷方法：上报自动图片解析请求事件
-func ReportImageUnderstandingRequest(imageType string) {
-	Report(EventImageUnderstandingReq, map[string]interface{}{
-		"imageType": imageType,
-		"model":     config.ImageUnderstandingModelAtomic(),
-	})
-}
-
-// ReportImageUnderstandingSuccess 便捷方法：上报自动图片解析成功事件
-func ReportImageUnderstandingSuccess(imageType string) {
-	Report(EventImageUnderstandingOk, map[string]interface{}{
-		"imageType": imageType,
-		"model":     config.ImageUnderstandingModelAtomic(),
-	})
-}
-
-// ReportImageUnderstandingFailure 便捷方法：上报自动图片解析失败事件
-func ReportImageUnderstandingFailure(imageType string, errMsg string) {
-	Report(EventImageUnderstandingFail, map[string]interface{}{
-		"imageType": imageType,
-		"model":     config.ImageUnderstandingModelAtomic(),
-		"errMsg":    errMsg,
-	})
-}
-
 // Shutdown 停止 Reporter，发送剩余事件
 func Shutdown() {
 	if defaultReporter == nil {

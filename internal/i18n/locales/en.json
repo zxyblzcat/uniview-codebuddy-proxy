@@ -1,158 +1,158 @@
 [
-  {
-    "id": "menu.status_tooltip",
-    "translation": "Service Status"
-  },
-  {
-    "id": "menu.login",
-    "translation": "Login"
-  },
-  {
-    "id": "menu.login_tooltip",
-    "translation": "Start OAuth2 device authorization flow"
-  },
-  {
-    "id": "menu.logout",
-    "translation": "Logout"
-  },
-  {
-    "id": "menu.logout_tooltip",
-    "translation": "Logout"
-  },
-  {
-    "id": "menu.view_logs",
-    "translation": "View Logs"
-  },
-  {
-    "id": "menu.view_logs_tooltip",
-    "translation": "View logs in browser"
-  },
-  {
-    "id": "menu.admin_panel",
-    "translation": "Admin Panel"
-  },
-  {
-    "id": "menu.admin_panel_tooltip",
-    "translation": "Open Web admin interface"
-  },
-  {
-    "id": "menu.restart",
-    "translation": "Restart Proxy"
-  },
-  {
-    "id": "menu.restart_tooltip",
-    "translation": "Restart HTTP server"
-  },
-  {
-    "id": "menu.autostart",
-    "translation": "Auto-start"
-  },
-  {
-    "id": "menu.autostart_tooltip",
-    "translation": "Toggle auto-start on boot"
-  },
-  {
-    "id": "menu.quit",
-    "translation": "Quit"
-  },
-  {
-    "id": "menu.quit_tooltip",
-    "translation": "Quit UniviewCodeBuddyProxy"
-  },
-  {
-    "id": "status.running",
-    "translation": "Running"
-  },
-  {
-    "id": "status.not_authenticated",
-    "translation": "Not Authenticated"
-  },
-  {
-    "id": "status.restarting",
-    "translation": "Restarting..."
-  },
-  {
-    "id": "status.restart_failed",
-    "translation": "Restart Failed"
-  },
-  {
-    "id": "status.startup_failed",
-    "translation": "Startup Failed"
-  },
-  {
-    "id": "status.autostart_enabled",
-    "translation": "Auto-start enabled"
-  },
-  {
-    "id": "status.autostart_disabled",
-    "translation": "Auto-start disabled"
-  },
-  {
-    "id": "status.autostart_failed",
-    "translation": "Auto-start setting failed"
-  },
-  {
-    "id": "banner.url",
-    "translation": "  URL: http://localhost:{{.port}}"
-  },
-  {
-    "id": "banner.auth",
-    "translation": "  Auth: http://localhost:{{.port}}/auth/start"
-  },
-  {
-    "id": "banner.logs",
-    "translation": "  Logs: http://localhost:{{.port}}/admin/logs"
-  },
-  {
-    "id": "banner.admin",
-    "translation": "  Admin: http://localhost:{{.port}}/admin"
-  },
-  {
-    "id": "banner.no_token",
-    "translation": "No token. Use tray menu to login."
-  },
-  {
-    "id": "banner.token_loaded",
-    "translation": "Token loaded from cache"
-  },
-  {
-    "id": "auth.open_browser",
-    "translation": "  Please open the following URL in your browser to login:"
-  },
-  {
-    "id": "log.token_expired",
-    "translation": "Token expired, clearing cache and triggering auto-login"
-  },
-  {
-    "id": "log.auto_relogin_browser",
-    "translation": "Auto-relogin: please complete login in browser..."
-  },
-  {
-    "id": "log.auto_relogin_timeout",
-    "translation": "Auto-relogin timed out after 3 minutes"
-  },
-  {
-    "id": "log.token_cleared",
-    "translation": "Token cleared (logout)"
-  },
-  {
-    "id": "log.token_reload_timeout",
-    "translation": "Timed out waiting for token reload"
-  },
-  {
-    "id": "menu.telemetry",
-    "translation": "Telemetry"
-  },
-  {
-    "id": "menu.telemetry_tooltip",
-    "translation": "Toggle telemetry reporting"
-  },
-  {
-    "id": "menu.image_understanding",
-    "translation": "Auto Image Parsing"
-  },
-  {
-    "id": "menu.image_understanding_tooltip",
-    "translation": "Automatically parse images via Vision model into text"
-  }
+    {
+        "id": "menu.status_tooltip",
+        "translation": "Service Status"
+    },
+    {
+        "id": "menu.login",
+        "translation": "Login"
+    },
+    {
+        "id": "menu.login_tooltip",
+        "translation": "Start OAuth2 device authorization flow"
+    },
+    {
+        "id": "menu.logout",
+        "translation": "Logout"
+    },
+    {
+        "id": "menu.logout_tooltip",
+        "translation": "Logout"
+    },
+    {
+        "id": "menu.view_logs",
+        "translation": "View Logs"
+    },
+    {
+        "id": "menu.view_logs_tooltip",
+        "translation": "View logs in browser"
+    },
+    {
+        "id": "menu.admin_panel",
+        "translation": "Admin Panel"
+    },
+    {
+        "id": "menu.admin_panel_tooltip",
+        "translation": "Open Web admin interface"
+    },
+    {
+        "id": "menu.restart",
+        "translation": "Restart Proxy"
+    },
+    {
+        "id": "menu.restart_tooltip",
+        "translation": "Restart HTTP server"
+    },
+    {
+        "id": "menu.autostart",
+        "translation": "Auto-start"
+    },
+    {
+        "id": "menu.autostart_tooltip",
+        "translation": "Toggle auto-start on boot"
+    },
+    {
+        "id": "menu.quit",
+        "translation": "Quit"
+    },
+    {
+        "id": "menu.quit_tooltip",
+        "translation": "Quit UniviewCodeBuddyProxy"
+    },
+    {
+        "id": "status.running",
+        "translation": "Running"
+    },
+    {
+        "id": "status.not_authenticated",
+        "translation": "Not Authenticated"
+    },
+    {
+        "id": "status.restarting",
+        "translation": "Restarting..."
+    },
+    {
+        "id": "status.restart_failed",
+        "translation": "Restart Failed"
+    },
+    {
+        "id": "status.startup_failed",
+        "translation": "Startup Failed"
+    },
+    {
+        "id": "status.autostart_enabled",
+        "translation": "Auto-start enabled"
+    },
+    {
+        "id": "status.autostart_disabled",
+        "translation": "Auto-start disabled"
+    },
+    {
+        "id": "status.autostart_failed",
+        "translation": "Auto-start setting failed"
+    },
+    {
+        "id": "banner.url",
+        "translation": "  URL: http://localhost:{{.port}}"
+    },
+    {
+        "id": "banner.auth",
+        "translation": "  Auth: http://localhost:{{.port}}/auth/start"
+    },
+    {
+        "id": "banner.logs",
+        "translation": "  Logs: http://localhost:{{.port}}/admin/logs"
+    },
+    {
+        "id": "banner.admin",
+        "translation": "  Admin: http://localhost:{{.port}}/admin"
+    },
+    {
+        "id": "banner.no_token",
+        "translation": "No token. Use tray menu to login."
+    },
+    {
+        "id": "banner.token_loaded",
+        "translation": "Token loaded from cache"
+    },
+    {
+        "id": "auth.open_browser",
+        "translation": "  Please open the following URL in your browser to login:"
+    },
+    {
+        "id": "log.token_expired",
+        "translation": "Token expired, clearing cache and triggering auto-login"
+    },
+    {
+        "id": "log.auto_relogin_browser",
+        "translation": "Auto-relogin: please complete login in browser..."
+    },
+    {
+        "id": "log.auto_relogin_timeout",
+        "translation": "Auto-relogin timed out after 3 minutes"
+    },
+    {
+        "id": "log.token_cleared",
+        "translation": "Token cleared (logout)"
+    },
+    {
+        "id": "log.token_reload_timeout",
+        "translation": "Timed out waiting for token reload"
+    },
+    {
+        "id": "menu.telemetry",
+        "translation": "Telemetry"
+    },
+    {
+        "id": "menu.telemetry_tooltip",
+        "translation": "Toggle telemetry reporting"
+    },
+    {
+        "id": "menu.image_understanding",
+        "translation": "Auto Image Parsing"
+    },
+    {
+        "id": "menu.image_understanding_tooltip",
+        "translation": "Automatically parse images with Vision model and replace with text descriptions"
+    }
 ]
