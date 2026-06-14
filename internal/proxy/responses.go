@@ -318,8 +318,8 @@ func buildChatCompletionsPayload(req *ResponsesRequest) map[string]interface{} {
 		}
 	}
 
-	// 强制请求上游在流式响应中返回 usage 信息
-	payload["stream_options"] = map[string]interface{}{"include_usage": true}
+	// 确保上游在流式响应中返回 usage 信息（合并客户端传值，保证 include_usage: true）
+	mergeStreamOptions(payload)
 
 	return payload
 }
@@ -373,7 +373,7 @@ func buildResponsesAPIResponse(result *CollectedResult, model string, req *Respo
 			"cached_tokens": result.CachedTokens,
 		},
 		OutputTokensDetails: map[string]interface{}{
-			"reasoning_tokens": 0,
+			"reasoning_tokens": result.ReasoningTokens,
 		},
 	}
 
@@ -630,8 +630,8 @@ func handleResponsesCompact(c *gin.Context) {
 		"max_tokens": 4096,
 	}
 
-	// 强制请求上游返回 usage 信息
-	payload["stream_options"] = map[string]interface{}{"include_usage": true}
+	// 确保上游返回 usage 信息（合并客户端传值，保证 include_usage: true）
+	mergeStreamOptions(payload)
 
 	ensureMinMessages(payload)
 

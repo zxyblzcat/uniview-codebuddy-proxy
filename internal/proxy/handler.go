@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"uniview-codebuddy-proxy/internal/auth"
@@ -22,8 +21,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// activeRequests 跟踪当前正在处理的并发请求数
-var activeRequests atomic.Int64
 
 // cacheWriter 用于捕获 gin 响应体以便缓存
 type cacheWriter struct {
@@ -54,6 +51,8 @@ func registerAPIRoutes(g *gin.RouterGroup) {
 	if config.APIPassword != "" {
 		g.Use(auth.APIPasswordMiddleware())
 	}
+	// 并发控制中间件：限制同时处理的代理请求数
+	g.Use(ConcurrencyMiddleware())
 	g.POST("/chat/completions", handleChatCompletions)
 	g.GET("/models", handleModels)
 	g.GET("/models/:id", HandleModelByID)
@@ -176,8 +175,8 @@ func handleChatCompletions(c *gin.Context) {
 		payload["tool_choice"] = sanitizeToolChoiceOpenai(v)
 	}
 
-	// 强制请求上游在流式响应中返回 usage 信息（即使客户端传了也覆盖）
-	payload["stream_options"] = map[string]interface{}{"include_usage": true}
+	// 确保上游在流式响应中返回 usage 信息（合并客户端传值，保证 include_usage: true）
+	mergeStreamOptions(payload)
 
 	// 确保至少 2 条消息
 	ensureMinMessages(payload)
@@ -224,8 +223,6 @@ func handleChatCompletions(c *gin.Context) {
 	if debugEnabled {
 		debugStartTime = time.Now()
 		debugRequestID = "dbg-" + randomHex(8)
-		activeRequests.Add(1)
-		defer activeRequests.Add(-1)
 	}
 
 	// 上报 chat_request_send 事件
@@ -260,7 +257,7 @@ func handleChatCompletions(c *gin.Context) {
 				proxyOverhead = 0
 			}
 			log.Printf("[DEBUG] request_id=%s format=openai model=%s stream=true upstream_ttfb=%s upstream_streaming=%s proxy_overhead=%s total=%s active_requests=%d goroutines=%d",
-				debugRequestID, model, fmtDur(ttfb), fmtDur(streamingDuration), fmtDur(proxyOverhead), fmtDur(total), activeRequests.Load(), runtime.NumGoroutine())
+				debugRequestID, model, fmtDur(ttfb), fmtDur(streamingDuration), fmtDur(proxyOverhead), fmtDur(total), ActiveRequestCount(), runtime.NumGoroutine())
 		}
 	} else {
 		// 非流式响应：收集所有 chunk 后组装
@@ -296,7 +293,7 @@ func handleChatCompletions(c *gin.Context) {
 				proxyOverhead = 0
 			}
 			log.Printf("[DEBUG] request_id=%s format=openai model=%s stream=false upstream_ttfb=%s upstream_streaming=0s proxy_overhead=%s total=%s active_requests=%d goroutines=%d",
-				debugRequestID, model, fmtDur(upstreamDuration), fmtDur(proxyOverhead), fmtDur(total), activeRequests.Load(), runtime.NumGoroutine())
+				debugRequestID, model, fmtDur(upstreamDuration), fmtDur(proxyOverhead), fmtDur(total), ActiveRequestCount(), runtime.NumGoroutine())
 		}
 
 		// 上报 chat_message_response 事件
@@ -330,6 +327,9 @@ func handleChatCompletions(c *gin.Context) {
 				"total_tokens":      result.PromptTokens + result.CompletionTokens,
 				"prompt_tokens_details": gin.H{
 					"cached_tokens": result.CachedTokens,
+				},
+				"completion_tokens_details": gin.H{
+					"reasoning_tokens": result.ReasoningTokens,
 				},
 			},
 		})
@@ -672,9 +672,9 @@ func handleAnthropicMessages(c *gin.Context) {
 	// 上游模型（如 deepseek-r1）如果自身支持 reasoning，会自动返回 reasoning_content，
 	// 代理在流式转换中已将其映射为 Anthropic 的 thinking content block
 
-	// 强制请求上游在流式响应中返回 usage 信息（即使客户端传了也覆盖）
+	// 确保上游在流式响应中返回 usage 信息（合并客户端传值，保证 include_usage: true）
 	// input_tokens 在 message_start 事件中返回，Claude Code 依赖此值判断上下文占用率
-	payload["stream_options"] = map[string]interface{}{"include_usage": true}
+	mergeStreamOptions(payload)
 
 	// 确保至少 2 条消息
 	ensureMinMessages(payload)
@@ -703,8 +703,6 @@ func handleAnthropicMessages(c *gin.Context) {
 	if debugEnabled {
 		debugStartTime = time.Now()
 		debugRequestID = "dbg-" + randomHex(8)
-		activeRequests.Add(1)
-		defer activeRequests.Add(-1)
 	}
 
 	// 上报 chat_request_send 事件
@@ -738,7 +736,7 @@ func handleAnthropicMessages(c *gin.Context) {
 				proxyOverhead = 0
 			}
 			log.Printf("[DEBUG] request_id=%s format=anthropic model=%s stream=true upstream_ttfb=%s upstream_streaming=%s proxy_overhead=%s total=%s active_requests=%d goroutines=%d",
-				debugRequestID, model, fmtDur(ttfb), fmtDur(streamingDuration), fmtDur(proxyOverhead), fmtDur(total), activeRequests.Load(), runtime.NumGoroutine())
+				debugRequestID, model, fmtDur(ttfb), fmtDur(streamingDuration), fmtDur(proxyOverhead), fmtDur(total), ActiveRequestCount(), runtime.NumGoroutine())
 		}
 	} else {
 		// 计算缓存 key（lookup 和 store 共用，避免重复计算）
@@ -780,7 +778,7 @@ func handleAnthropicMessages(c *gin.Context) {
 				proxyOverhead = 0
 			}
 			log.Printf("[DEBUG] request_id=%s format=anthropic model=%s stream=false upstream_ttfb=%s upstream_streaming=0s proxy_overhead=%s total=%s active_requests=%d goroutines=%d",
-				debugRequestID, model, fmtDur(upstreamDuration), fmtDur(proxyOverhead), fmtDur(total), activeRequests.Load(), runtime.NumGoroutine())
+				debugRequestID, model, fmtDur(upstreamDuration), fmtDur(proxyOverhead), fmtDur(total), ActiveRequestCount(), runtime.NumGoroutine())
 		}
 		// 上报 chat_message_response 事件
 		telemetry.ReportChatResponse(anthropicConversationID, anthropicRequestID, model, model, anthropicTraceID, result.PromptTokens, result.CompletionTokens)

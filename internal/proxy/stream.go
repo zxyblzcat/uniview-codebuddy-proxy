@@ -100,7 +100,18 @@ var httpClient = &http.Client{
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   10,
 		IdleConnTimeout:       90 * time.Second,
+		MaxConnsPerHost:       config.UpstreamMaxConnsPerHostAtomic(),
 	},
+}
+
+// mergeStreamOptions 合并客户端的 stream_options，确保 include_usage: true
+// 我们需要上游返回 usage 数据用于遥测，因此即使客户端没传也要注入
+func mergeStreamOptions(payload map[string]interface{}) {
+	if so, ok := payload["stream_options"].(map[string]interface{}); ok {
+		so["include_usage"] = true
+	} else {
+		payload["stream_options"] = map[string]interface{}{"include_usage": true}
+	}
 }
 
 func wrapWithIdleTimeout(body io.ReadCloser) io.ReadCloser {
@@ -246,7 +257,7 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 	flusher, canFlush := w.(http.Flusher)
 
 	var writeErr error
-	var promptTokens, completionTokens int
+	var promptTokens, completionTokens, reasoningTokens int // reasoning_tokens from completion_tokens_details
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -279,6 +290,9 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 		if done {
 			// 流结束，上报 chat_message_response 事件
 			telemetry.ReportChatResponse(conversationID, telemetryRequestID, model, model, traceID, promptTokens, completionTokens)
+			if reasoningTokens > 0 {
+				log.Printf("stream: model=%s prompt_tokens=%d completion_tokens=%d reasoning_tokens=%d", model, promptTokens, completionTokens, reasoningTokens)
+			}
 			_, writeErr = fmt.Fprintf(w, "data: [DONE]\n\n")
 			if canFlush {
 				flusher.Flush()
@@ -298,6 +312,11 @@ func StreamChatCompletions(ctx context.Context, payload map[string]interface{}, 
 			}
 			if ct, ok := u["completion_tokens"].(float64); ok {
 				completionTokens = int(ct)
+			}
+			if details, ok := u["completion_tokens_details"].(map[string]interface{}); ok {
+				if rt, ok := details["reasoning_tokens"].(float64); ok {
+					reasoningTokens = int(rt)
+				}
 			}
 		}
 
@@ -422,6 +441,14 @@ func CollectUpstreamChunks(ctx context.Context, payload map[string]interface{}, 
 				if ct, ok := details["cached_tokens"].(float64); ok && int(ct) > 0 {
 					result.CachedTokens = int(ct)
 				}
+				if cct, ok := details["cache_creation_tokens"].(float64); ok && int(cct) > 0 {
+					result.CacheCreationTokens = int(cct)
+				}
+			}
+			if details, ok := u["completion_tokens_details"].(map[string]interface{}); ok {
+				if rt, ok := details["reasoning_tokens"].(float64); ok && int(rt) > 0 {
+					result.ReasoningTokens = int(rt)
+				}
 			}
 		}
 	}
@@ -449,6 +476,8 @@ type CollectedResult struct {
 	PromptTokens     int
 	CompletionTokens int
 	CachedTokens     int
+	ReasoningTokens  int // completion_tokens_details.reasoning_tokens
+	CacheCreationTokens int // prompt_tokens_details 中的 cache_creation_tokens（Anthropic 格式用）
 }
 
 type ToolCall struct {

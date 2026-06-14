@@ -366,7 +366,7 @@ func convertOpenAIToAnthropicResponse(result *CollectedResult, model string, pay
 		"usage": map[string]interface{}{
 			"input_tokens":                inputTokens,
 			"output_tokens":               result.CompletionTokens,
-			"cache_creation_input_tokens": 0,
+			"cache_creation_input_tokens": result.CacheCreationTokens,
 			"cache_read_input_tokens":     result.CachedTokens,
 		},
 	})

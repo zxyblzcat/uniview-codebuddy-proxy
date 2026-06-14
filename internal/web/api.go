@@ -12,6 +12,7 @@ import (
 	"uniview-codebuddy-proxy/internal/config"
 	"uniview-codebuddy-proxy/internal/i18n"
 	"uniview-codebuddy-proxy/internal/logbuf"
+	"uniview-codebuddy-proxy/internal/proxy"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/text/language"
@@ -57,6 +58,9 @@ func handleGetConfig(c *gin.Context) {
 		"telemetry_enabled":            config.TelemetryEnabledAtomic(),
 				"auto_image_parsing":        config.ImageUnderstandingAtomic(),
 		"vision_model":  config.VisionModelAtomic(),
+			"max_concurrent_requests":     config.MaxConcurrentReqsAtomic(),
+			"active_requests":             proxy.ActiveRequestCount(),
+			"upstream_max_conns_per_host": config.UpstreamMaxConnsPerHostAtomic(),
 	})
 }
 
@@ -102,6 +106,12 @@ func handlePutConfig(c *gin.Context) {
 	}
 	if v, ok := body["vision_model"].(string); ok {
 		config.SetVisionModel(v)
+	}
+	if v, ok := body["max_concurrent_requests"].(float64); ok {
+		proxy.UpdateConcurrencyLimit(int(v))
+	}
+	if v, ok := body["upstream_max_conns_per_host"].(float64); ok {
+		config.SetUpstreamMaxConnsPerHost(int(v))
 	}
 	// 熔断器重置
 	if v, ok := body["cb_reset"].(bool); ok && v {

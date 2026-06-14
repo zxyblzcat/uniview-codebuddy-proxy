@@ -43,6 +43,8 @@ var (
 	telemetryEnabled        atomic.Bool
 	imageUnderstanding      atomic.Bool
 	visionModel atomic.Value // string
+	maxConcurrentReqs       atomic.Int32
+	upstreamMaxConnsPerHost atomic.Int32
 )
 
 func init() {
@@ -135,6 +137,20 @@ func init() {
 
 	// 自动图片解析模型（默认 glm-4.6v，需为支持 Vision 的模型）
 	visionModel.Store(getEnv("VISION_MODEL", getEnv("IMAGE_UNDERSTANDING_MODEL", "glm-4.6v")))
+
+	// 并发请求上限（默认 20，0 表示不限制）
+	maxConcurrentInt, err := strconv.Atoi(getEnv("MAX_CONCURRENT_REQUESTS", "20"))
+	if err != nil || maxConcurrentInt < 0 {
+		maxConcurrentInt = 20
+	}
+	maxConcurrentReqs.Store(int32(maxConcurrentInt))
+
+	// 上游每个 host 最大活跃连接数（默认 50，0 表示不限制）
+	upstreamMaxConnsInt, err := strconv.Atoi(getEnv("UPSTREAM_MAX_CONNS_PER_HOST", "50"))
+	if err != nil || upstreamMaxConnsInt < 0 {
+		upstreamMaxConnsInt = 50
+	}
+	upstreamMaxConnsPerHost.Store(int32(upstreamMaxConnsInt))
 
 	// 从 ~/.codebuddy-proxy/config.json 加载持久化状态（覆盖 env 默认值）
 	loadPersistedConfig()
@@ -267,6 +283,28 @@ func SetVisionModel(v string) {
 	}
 	visionModel.Store(v)
 	savePersistedConfig()
+}
+
+// MaxConcurrentReqsAtomic 返回并发请求上限（0 表示不限制）。
+func MaxConcurrentReqsAtomic() int { return int(maxConcurrentReqs.Load()) }
+
+// SetMaxConcurrentReqs 设置并发请求上限。
+func SetMaxConcurrentReqs(v int) {
+	if v < 0 {
+		v = 0
+	}
+	maxConcurrentReqs.Store(int32(v))
+}
+
+// UpstreamMaxConnsPerHostAtomic 返回上游每个 host 最大活跃连接数（0 表示不限制）。
+func UpstreamMaxConnsPerHostAtomic() int { return int(upstreamMaxConnsPerHost.Load()) }
+
+// SetUpstreamMaxConnsPerHost 设置上游每个 host 最大活跃连接数。
+func SetUpstreamMaxConnsPerHost(v int) {
+	if v < 0 {
+		v = 0
+	}
+	upstreamMaxConnsPerHost.Store(int32(v))
 }
 
 func getEnv(key, fallback string) string {
