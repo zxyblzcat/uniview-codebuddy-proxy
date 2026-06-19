@@ -14,6 +14,12 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <!-- Use in-process XamlCompiler (CompileXaml task) instead of out-of-process
+         XamlCompiler.exe (.NET Framework 4.7.2). The .exe crashes on CI with exit
+         code 1 and no output. The in-process task runs in .NET 8 MSBuild and uses
+         net6.0 DLLs from the WindowsAppSDK package, which avoids the .NET Framework
+         crash entirely. -->
+    <UseXamlCompilerExecutable>false</UseXamlCompilerExecutable>
   </PropertyGroup>
 
   <ItemGroup>
