@@ -1,22 +1,45 @@
 <Project>
   <!--
-    Remove ASP.NET Core reference assemblies before XamlCompiler runs.
+    Remove ASP.NET Core and Core DLL reference assemblies before XamlCompiler runs.
     XamlCompiler.exe is a .NET Framework 4.7.2 out-of-process executable that crashes
-    when presented with .NET 6/8 reference assemblies from transitive FrameworkReferences.
-    This target strips them from ReferencePath before XAML compilation.
+    when it tries to load .NET 6/8 assemblies. This includes:
+    - ASP.NET Core refs from Core project's FrameworkReference (138 DLLs)
+    - Core DLL itself (which triggers .NET Framework to try resolving its .NET 8 deps)
 
-    IMPORTANT: Do NOT remove Core DLL from ReferencePath here — C# compilation also
-    uses ReferencePath and needs Core types. Instead, we exclude Core from the
-    XamlCompiler-specific input by overriding the XamlReferences item group.
+    C# compilation uses a separate ReferencePath and runs in a different phase,
+    so removing these from ReferencePath before XamlCompiler doesn't affect
+    the final C# compilation (CoreCompile runs later and re-resolves references).
   -->
-  <Target Name="_RemoveAspNetCoreRefsBeforeXamlCompiler"
+  <Target Name="_RemoveProblematicRefsBeforeXamlCompiler"
           BeforeTargets="XamlMarkupCompilePass1;_XamlBuildExecTask;MarkupCompilePass1"
           DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
     <ItemGroup>
       <!-- Remove ASP.NET Core refs from Core project's FrameworkReference -->
       <_AspNetCoreRefs Include="@(ReferencePath)" Condition="$([System.String]::new('%(FullPath)').Contains('Microsoft.AspNetCore'))" />
       <ReferencePath Remove="@(_AspNetCoreRefs)" />
+
+      <!-- Remove Core DLL — XamlCompiler.exe crashes when loading it because
+           .NET Framework 4.7.2 tries to resolve its .NET 8 dependencies -->
+      <_CoreDllRefs Include="@(ReferencePath)" Condition="$([System.String]::new('%(FullPath)').Contains('UniviewCodeBuddyProxy.Core'))" />
+      <ReferencePath Remove="@(_CoreDllRefs)" />
     </ItemGroup>
-    <Message Importance="high" Text="[_RemoveAspNetCoreRefsBeforeXamlCompiler] Removed @(_AspNetCoreRefs->Count()) ASP.NET Core refs. Remaining ReferencePath: @(ReferencePath->Count())" />
+    <Message Importance="high" Text="[_RemoveProblematicRefsBeforeXamlCompiler] Removed @(_AspNetCoreRefs->Count()) ASP.NET Core + @(_CoreDllRefs->Count()) Core refs. Remaining ReferencePath: @(ReferencePath->Count())" />
+  </Target>
+
+  <!--
+    Re-add Core DLL reference after XAML compilation, before C# compilation.
+    This is needed because the C# compiler needs to resolve Services namespace types.
+    The XamlPreCompile step already ran and generated the XAML code-behind files.
+  -->
+  <Target Name="_RestoreCoreDllReferenceForCSharp"
+          AfterTargets="XamlMarkupCompilePass1;MarkupCompilePass1"
+          BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_CoreDllPath>..\UniviewCodeBuddyProxy.Core\bin\$(Platform)\$(Configuration)\net8.0\UniviewCodeBuddyProxy.Core.dll</_CoreDllPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <ReferencePath Include="$(_CoreDllPath)" />
+    </ItemGroup>
+    <Message Importance="high" Text="[_RestoreCoreDllReferenceForCSharp] Restored Core DLL reference: $(_CoreDllPath)" />
   </Target>
 </Project>
