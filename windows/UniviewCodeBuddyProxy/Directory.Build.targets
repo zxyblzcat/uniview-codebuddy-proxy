@@ -1,10 +1,10 @@
 <Project>
   <!--
     Remove ASP.NET Core reference assemblies before XamlCompiler runs.
-    XamlCompiler.exe is a .NET Framework 4.7.2 process that crashes when
-    presented with 200+ ASP.NET Core reference assemblies from a transitive
-    FrameworkReference. This target strips them from the ReferencePath item
-    group that feeds into input.json.
+    Even with MSBuild's in-process CompileXaml task, including ASP.NET Core
+    reference assemblies from the Core project's FrameworkReference can cause
+    issues. This target strips them from the ReferencePath item group that
+    feeds into XAML compilation.
   -->
   <Target Name="_RemoveAspNetCoreRefsBeforeXamlCompiler"
           BeforeTargets="XamlMarkupCompilePass1;_XamlBuildExecTask;MarkupCompilePass1"

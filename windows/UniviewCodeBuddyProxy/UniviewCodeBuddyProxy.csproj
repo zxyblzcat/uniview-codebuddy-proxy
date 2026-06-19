@@ -23,42 +23,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Core proxy library — build it but don't reference its output assembly.
-         We add it as a Reference in a later target with a condition.
-    -->
-    <ProjectReference Include="..\UniviewCodeBuddyProxy.Core\UniviewCodeBuddyProxy.Core.csproj">
-      <PrivateAssets>all</PrivateAssets>
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-    </ProjectReference>
+    <!-- Core proxy library — normal project reference.
+         MSBuild's in-process CompileXaml task can handle Core DLL properly
+         (unlike the out-of-process XamlCompiler.exe which crashed on .NET 6/8 refs).
+         ASP.NET Core FrameworkReference from Core is excluded via Directory.Build.targets. -->
+    <ProjectReference Include="..\UniviewCodeBuddyProxy.Core\UniviewCodeBuddyProxy.Core.csproj" />
   </ItemGroup>
-
-  <!-- After Core builds, add its output as a direct Reference for C# compilation.
-       For XamlCompiler, we exclude it to prevent assembly load failures.
-       XamlCompiler doesn't need Core types because no XAML uses x:Bind to Core types directly. -->
-  <Target Name="_AddCoreDllReferenceForCSharp" AfterTargets="ResolveProjectReferences" DependsOnTargets="ResolveProjectReferences">
-    <PropertyGroup>
-      <_CoreDllPath>..\UniviewCodeBuddyProxy.Core\bin\$(Platform)\$(Configuration)\net8.0\UniviewCodeBuddyProxy.Core.dll</_CoreDllPath>
-    </PropertyGroup>
-    <ItemGroup>
-      <Reference Include="$(_CoreDllPath)">
-        <Private>true</Private>
-        <HintPath>$(_CoreDllPath)</HintPath>
-      </Reference>
-    </ItemGroup>
-    <Message Importance="high" Text="[_AddCoreDllReferenceForCSharp] Added Core DLL reference: $(_CoreDllPath)" />
-  </Target>
-
-  <!-- Remove Core DLL from ReferencePath before XamlCompiler to prevent assembly load failures.
-       When XamlCompiler loads Core.dll, .NET Framework tries to resolve its ASP.NET Core
-       dependencies, which aren't available, causing a crash. XAML doesn't directly bind
-       to Core types — all bindings go through ViewModels which are in the main project. -->
-  <Target Name="_RemoveCoreDllBeforeXamlCompiler" BeforeTargets="XamlMarkupCompilePass1;_XamlBuildExecTask;MarkupCompilePass1">
-    <ItemGroup>
-      <_CoreDllRefs Include="@(ReferencePath)" Condition="$([System.String]::new('%(FullPath)').Contains('UniviewCodeBuddyProxy.Core'))" />
-      <ReferencePath Remove="@(_CoreDllRefs)" />
-    </ItemGroup>
-    <Message Importance="high" Text="[_RemoveCoreDllBeforeXamlCompiler] Removed @(_CoreDllRefs->Count()) Core DLL refs. Remaining ReferencePath: @(ReferencePath->Count())" />
-  </Target>
 
   <ItemGroup>
     <!-- App manifest for unpackaged deployment -->
