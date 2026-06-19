@@ -475,7 +475,7 @@ public sealed class ResponsesStreamTranslator
             ["created_at"] = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ["model"] = _requestedModel,
             ["status"] = status,
-            ["output"] = outputItems ?? new List<object>(),
+            ["output"] = outputItems ?? new List<Dictionary<string, object>>(),
             ["usage"] = new Dictionary<string, int>
             {
                 ["input_tokens"] = _promptTokens,

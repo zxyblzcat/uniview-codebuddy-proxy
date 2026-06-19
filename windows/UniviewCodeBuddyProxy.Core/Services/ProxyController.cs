@@ -1018,7 +1018,7 @@ public sealed class ProxyController
             _ => "end_turn",
         };
 
-        return new Dictionary<string, object?>
+        return new Dictionary<string, object>
         {
             ["id"] = $"msg_{Guid.NewGuid():N}"[..28],
             ["type"] = "message",
@@ -1026,7 +1026,7 @@ public sealed class ProxyController
             ["content"] = content,
             ["model"] = result.Model,
             ["stop_reason"] = stopReason,
-            ["stop_sequence"] = null,
+            ["stop_sequence"] = (string?)null,
             ["usage"] = new Dictionary<string, int>
             {
                 ["input_tokens"] = result.PromptTokens,

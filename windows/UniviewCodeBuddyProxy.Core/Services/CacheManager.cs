@@ -53,34 +53,33 @@ public sealed class CacheManager
     /// </summary>
     public static string BuildKey(string model, object? messages, object? tools, double temperature, int maxTokens)
     {
-        using var sha = SHA256.Create();
-        var builder = new IncrementalHash(sha);
+        var builder = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
         var modelBytes = Encoding.UTF8.GetBytes(model);
-        sha.TransformBlock(modelBytes, 0, modelBytes.Length, null, 0);
+        builder.AppendData(modelBytes);
 
         if (messages != null)
         {
             var json = JsonSerializer.Serialize(messages);
             var bytes = Encoding.UTF8.GetBytes(json);
-            sha.TransformBlock(bytes, 0, bytes.Length, null, 0);
+            builder.AppendData(bytes);
         }
 
         if (tools != null)
         {
             var json = JsonSerializer.Serialize(tools);
             var bytes = Encoding.UTF8.GetBytes(json);
-            sha.TransformBlock(bytes, 0, bytes.Length, null, 0);
+            builder.AppendData(bytes);
         }
 
         var tempBytes = Encoding.UTF8.GetBytes(temperature.ToString("R"));
-        sha.TransformBlock(tempBytes, 0, tempBytes.Length, null, 0);
+        builder.AppendData(tempBytes);
 
         var maxBytes = Encoding.UTF8.GetBytes(maxTokens.ToString());
-        sha.TransformBlock(maxBytes, 0, maxBytes.Length, null, 0);
+        builder.AppendData(maxBytes);
 
-        sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-        return Convert.ToHexString(sha.Hash!).ToLowerInvariant();
+        var hash = builder.GetHashAndReset();
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     // ═══ Get/Set ═══
