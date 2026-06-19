@@ -71,27 +71,19 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
-      - name: Setup crash diagnostics
-        shell: pwsh
-        run: |
-          # Install ProcDump for crash dump capture
-          choco install procdump -y
-          # Accept Sysinternals EULA via registry
-          New-ItemProperty -Path "HKCU:\Software\Sysinternals\ProcDump" -Name "EulaAccepted" -Value 1 -PropertyType DWORD -Force | Out-Null
-          Write-Host "ProcDump installed and EULA accepted"
-
       - name: Build Core library
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy.Core/UniviewCodeBuddyProxy.Core.csproj -c Debug -p:Platform=x64
 
-      - name: Build WinUI app (Debug) with crash diagnostics
+      - name: Build WinUI app (Debug)
         working-directory: windows
         shell: pwsh
         run: |
-          # Set ProcDump as the AeDebug post-mortem debugger to capture .NET Framework crashes
-          New-Item -Path "C:\xamlcrash" -ItemType Directory -Force | Out-Null
-          procdump64.exe -ma -i C:\xamlcrash 2>&1 | Write-Host
-          Write-Host "ProcDump registered as post-mortem debugger"
+          # Enable .NET Framework assembly binding logging (FusionLog)
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Fusion" -Name "ForceLog" -Value 1 -Type DWORD -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Fusion" -Name "LogFailures" -Value 1 -Type DWORD -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Fusion" -Name "LogPath" -Value "C:\fusionlog" -Type String -ErrorAction SilentlyContinue
+          New-Item -Path "C:\fusionlog" -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
           # Run the build
           dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 2>&1 | Tee-Object -FilePath build-output.log
@@ -100,68 +92,80 @@ jobs:
           if ($buildExit -ne 0) {
             Write-Host "=== Build FAILED ==="
 
-            # Check for crash dump
-            if (Test-Path "C:\xamlcrash") {
-              $dumps = Get-ChildItem "C:\xamlcrash" -Filter "*.dmp"
-              if ($dumps.Count -gt 0) {
-                Write-Host "=== Crash dump files ==="
-                $dumps | ForEach-Object { Write-Host "  $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)" }
-              } else {
-                Write-Host "No crash dumps found in C:\xamlcrash"
-              }
-            }
-
-            # Check XamlCompiler input.json for diagnostics
+            # Dump the full input.json
             $objDir = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0"
             if (Test-Path "$objDir/input.json") {
-              $inputJson = Get-Content "$objDir/input.json" -Raw | ConvertFrom-Json
-              Write-Host "=== input.json info ==="
-              Write-Host "  XAML pages: $($inputJson.XamlPages.Count)"
-              Write-Host "  Reference assemblies: $($inputJson.ReferenceAssemblies.Count)"
-              Write-Host "  IsPass1: $($inputJson.IsPass1)"
-              $inputJson.XamlPages | ForEach-Object { Write-Host "  Page: $($_.Source)" }
+              Write-Host "=== FULL input.json ==="
+              Get-Content "$objDir/input.json" | Write-Host
+            }
+            if (Test-Path "$objDir/output.json") {
+              Write-Host "=== FULL output.json ==="
+              Get-Content "$objDir/output.json" | Write-Host
+            } else {
+              Write-Host "output.json NOT FOUND"
             }
 
-            # Check Windows Event Log
-            Write-Host "=== .NET Runtime errors ==="
+            # Check FusionLog
+            if (Test-Path "C:\fusionlog") {
+              $fusionLogs = Get-ChildItem "C:\fusionlog" -ErrorAction SilentlyContinue
+              if ($fusionLogs.Count -gt 0) {
+                Write-Host "=== FusionLog entries (first 5) ==="
+                $fusionLogs | Select-Object -First 5 | ForEach-Object {
+                  Write-Host "--- $($_.Name) ---"
+                  Get-Content $_.FullName | Select-Object -First 30 | Write-Host
+                }
+              } else {
+                Write-Host "No FusionLog entries"
+              }
+            }
+
+            # Check .NET Runtime errors
+            Write-Host "=== .NET Runtime Event Log ==="
             try {
-              Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
+              Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Level=2} -MaxEvents 3 -ErrorAction SilentlyContinue | ForEach-Object {
                 Write-Host "$($_.TimeCreated): $($_.Message)"
               }
             } catch { Write-Host "(none)" }
 
-            Write-Host "=== Application Error events ==="
-            try {
-              Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
-                Write-Host "$($_.TimeCreated): $($_.Message)"
-              }
-            } catch { Write-Host "(none)" }
-
-            # Try running XamlCompiler.exe directly for more info
+            # Try running XamlCompiler directly with .NET Framework exception logging
             $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.7.*" -Directory | Select-Object -First 1).FullName
             $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
-            $inputJsonPath = Join-Path (Resolve-Path $objDir) "input.json"
-            $outputJsonPath = Join-Path (Resolve-Path $objDir) "output.json"
+            if (Test-Path $xamlCompiler) {
+              # Create a XamlCompiler.exe.config to enable runtime tracing
+              $configContent = @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <system.diagnostics>
+              <switches>
+                <add name="TraceSwitch" value="4" />
+              </switches>
+              <trace autoflush="true">
+                <listeners>
+                  <add name="textWriterTraceListener" type="System.Diagnostics.TextWriterTraceListener" initializeData="xamlcompiler-trace.log" />
+                </listeners>
+              </trace>
+            </system.diagnostics>
+          </configuration>
+"@
+              Set-Content -Path "$xamlCompiler.config" -Value $configContent -Encoding UTF8
+              Write-Host "Created XamlCompiler.exe.config with tracing enabled"
 
-            if ((Test-Path $xamlCompiler) -and (Test-Path $inputJsonPath)) {
-              Write-Host "=== Direct XamlCompiler.exe run ==="
+              $inputJsonPath = Join-Path (Resolve-Path $objDir) "input.json"
+              $outputJsonPath = Join-Path (Resolve-Path $objDir) "output.json"
+
               try {
                 $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJsonPath`"", "`"$outputJsonPath`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xc-stderr.txt" -RedirectStandardOutput "xc-stdout.txt"
-                Write-Host "Exit code: $($proc.ExitCode)"
-                if (Test-Path "xc-stdout.txt") { Get-Content "xc-stdout.txt" | Write-Host }
-                if (Test-Path "xc-stderr.txt") { Get-Content "xc-stderr.txt" | Write-Host }
+                Write-Host "XamlCompiler direct exit code: $($proc.ExitCode)"
+                if (Test-Path "xc-stdout.txt") { Write-Host "=== stdout ==="; Get-Content "xc-stdout.txt" | Write-Host }
+                if (Test-Path "xc-stderr.txt") { Write-Host "=== stderr ==="; Get-Content "xc-stderr.txt" | Write-Host }
+                if (Test-Path "xamlcompiler-trace.log") { Write-Host "=== trace ==="; Get-Content "xamlcompiler-trace.log" | Write-Host }
               } catch {
-                Write-Host "Failed: $_"
+                Write-Host "Failed to run XamlCompiler: $_"
               }
             }
 
-            # Unregister ProcDump as AeDebug
-            procdump64.exe -u 2>&1 | Out-Null
             exit $buildExit
           }
-
-          # Unregister ProcDump as AeDebug
-          procdump64.exe -u 2>&1 | Out-Null
 
       - name: Build WinUI app (Release)
         working-directory: windows
