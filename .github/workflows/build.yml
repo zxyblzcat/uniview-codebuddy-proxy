@@ -74,13 +74,17 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
+      - name: Restore NuGet packages
+        working-directory: windows
+        run: msbuild UniviewCodeBuddyProxy.sln /t:Restore /p:Platform=x64
+
       - name: Build WinUI app (Debug)
         working-directory: windows
-        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Debug /p:Platform=x64 /restore
+        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Debug /p:Platform=x64 /m
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Release /p:Platform=x64
+        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Release /p:Platform=x64 /m
 
       - name: Publish WinUI app
         working-directory: windows

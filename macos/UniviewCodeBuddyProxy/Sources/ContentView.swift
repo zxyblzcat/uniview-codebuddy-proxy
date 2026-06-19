@@ -113,9 +113,6 @@ struct ContentView: View {
     // MARK: - 顶部状态栏（从窗口顶部透明过渡到不透明）
 
     @ViewBuilder
-    // MARK: - 顶部状态栏（从窗口顶部透明过渡到不透明）
-
-    @ViewBuilder
     private func topStatusBar(colors: ThemeColors) -> some View {
         VStack(spacing: 0) {
             // 状态栏内容区
@@ -168,6 +165,5 @@ struct ContentView: View {
                 )
             )
         }
-    }
     }
 }
