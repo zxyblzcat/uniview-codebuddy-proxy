@@ -74,9 +74,26 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
-      - name: Build WinUI app (Release)
+      - name: Build WinUI app (Release, diagnostic)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
+        run: |
+          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64 -v diag 2>&1 | Out-File -FilePath build-diag.log -Encoding utf8
+          $lastExit = $LASTEXITCODE
+          Write-Host "Build exit code: $lastExit"
+          if ($lastExit -ne 0) {
+            Write-Host "=== XamlCompiler input.json ==="
+            $inputJson = "UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0/input.json"
+            if (Test-Path $inputJson) { Get-Content $inputJson } else { Write-Host "input.json not found" }
+            Write-Host "=== XamlCompiler output.json ==="
+            $outputJson = "UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0/output.json"
+            if (Test-Path $outputJson) { Get-Content $outputJson } else { Write-Host "output.json not found" }
+            Write-Host "=== XamlCompiler error log ==="
+            $errLog = "UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0/XamlSaveStateFile.xml"
+            if (Test-Path $errLog) { Get-Content $errLog } else { Write-Host "XamlSaveStateFile.xml not found" }
+            Write-Host "=== Last 200 lines of build log ==="
+            Get-Content build-diag.log -Tail 200
+            exit $lastExit
+          }
 
       - name: Publish WinUI app
         working-directory: windows
