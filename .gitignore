@@ -27,6 +27,9 @@ publish/
 *.suo
 *.cache
 
+# ── Build output ──
+dist/
+
 # ── Tooling ──
 .claude/
 .codegraph/

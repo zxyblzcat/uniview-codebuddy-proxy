@@ -11,102 +11,46 @@ enum AppearanceMode: String, CaseIterable {
 }
 
 // ═══════════════════════════════════════════════
-// 种子令牌 — 所有色彩派生的基础
-// ═══════════════════════════════════════════════
-
-enum ThemePreset: String, CaseIterable {
-    case deep = "深邃"
-    case bright = "明亮"
-    case midnight = "午夜"
-    case sunset = "日落"
-}
-
-struct SeedTokens {
-    let bg: Color
-    let fg: Color
-    let primary: Color
-    let accent: Color
-    let surface: Color
-    let radius: CGFloat
-
-    static let deep = SeedTokens(
-        bg: Color(hex: "0B0F19"),
-        fg: Color(hex: "E8ECF4"),
-        primary: Color(hex: "5B9CF6"),
-        accent: Color(hex: "34D4AA"),
-        surface: Color(hex: "131926"),
-        radius: 20
-    )
-
-    static let bright = SeedTokens(
-        bg: Color(hex: "F5F7FA"),
-        fg: Color(hex: "1A1D26"),
-        primary: Color(hex: "5B9CF6"),
-        accent: Color(hex: "34D4AA"),
-        surface: Color(hex: "FFFFFF"),
-        radius: 20
-    )
-
-    static let midnight = SeedTokens(
-        bg: Color(hex: "050709"),
-        fg: Color(hex: "E8ECF4"),
-        primary: Color(hex: "6366F1"),
-        accent: Color(hex: "34D4AA"),
-        surface: Color(hex: "0A0C10"),
-        radius: 20
-    )
-
-    static let sunset = SeedTokens(
-        bg: Color(hex: "0F1119"),
-        fg: Color(hex: "E8ECF4"),
-        primary: Color(hex: "F97316"),
-        accent: Color(hex: "34D4AA"),
-        surface: Color(hex: "161820"),
-        radius: 20
-    )
-
-    static func forPreset(_ preset: ThemePreset) -> SeedTokens {
-        switch preset {
-        case .deep: return .deep
-        case .bright: return .bright
-        case .midnight: return .midnight
-        case .sunset: return .sunset
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════
-// 语义色彩 — 从种子令牌 + 外观模式派生
+// 语义色彩 — 由外观模式（深色/浅色）驱动
 // ═══════════════════════════════════════════════
 
 struct ThemeColors {
-    // 种子
-    let seed: SeedTokens
     let isDark: Bool
 
-    init(seed: SeedTokens, isDark: Bool = true) {
-        self.seed = seed
+    init(isDark: Bool = true) {
         self.isDark = isDark
     }
 
-    // 文本层级
-    var text: Color { seed.fg }
-    var textSecondary: Color { seed.fg.opacity(0.6) }
-    var textMuted: Color { seed.fg.opacity(0.35) }
+    // ── 基础色 ──
 
-    // 主色
-    var primary: Color { seed.primary }
-    var primaryHover: Color {
-        // 基于主色变暗，而非硬编码
-        isDark ? seed.primary.opacity(0.85) : seed.primary.opacity(0.8)
-    }
-    var primarySubtle: Color { seed.primary.opacity(0.14) }
+    /// 主背景色
+    var bg: Color { isDark ? Color(hex: "0B0F19") : Color(hex: "F5F7FA") }
+    /// 前景色（主文本）
+    var fg: Color { isDark ? Color(hex: "E8ECF4") : Color(hex: "1A1D26") }
+    /// 主色
+    var primary: Color { Color(hex: "5B9CF6") }
+    /// 强调色
+    var accent: Color { Color(hex: "34D4AA") }
+    /// 表面色（卡片/次级背景）
+    var surface: Color { isDark ? Color(hex: "131926") : Color(hex: "FFFFFF") }
 
-    // 强调色
-    var accent: Color { seed.accent }
-    var accentSubtle: Color { seed.accent.opacity(0.14) }
+    // ── 文本层级 ──
 
-    // 功能色
+    var text: Color { fg }
+    var textSecondary: Color { fg.opacity(0.6) }
+    var textMuted: Color { fg.opacity(0.35) }
+
+    // ── 主色变体 ──
+
+    var primaryHover: Color { isDark ? primary.opacity(0.85) : primary.opacity(0.8) }
+    var primarySubtle: Color { primary.opacity(0.14) }
+
+    // ── 强调色变体 ──
+
+    var accentSubtle: Color { accent.opacity(0.14) }
+
+    // ── 功能色 ──
+
     static let success = Color(hex: "4ADE80")
     static let successSubtle = Color(hex: "4ADE80").opacity(0.12)
     static let warning = Color(hex: "FBBF24")
@@ -120,28 +64,34 @@ struct ThemeColors {
     static let purple = Color(hex: "A78BFA")
     static let purpleSubtle = Color(hex: "A78BFA").opacity(0.10)
 
-    // 玻璃材质 — 自适应深色/浅色
+    // ── 玻璃材质 — 自适应深色/浅色 ──
+
     var glassBg: Color { isDark ? Color.white.opacity(0.055) : Color.black.opacity(0.04) }
     var glassBgHeavy: Color { isDark ? Color.white.opacity(0.09) : Color.black.opacity(0.06) }
     var glassBgTabbar: Color { isDark ? Color(hex: "101420").opacity(0.72) : Color.white.opacity(0.72) }
     var glassBorder: Color { isDark ? Color.white.opacity(0.09) : Color.black.opacity(0.10) }
     var glassBorderLight: Color { isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.15) }
 
-    // 高光线渐变 — 自适应
+    // ── 高光线渐变 — 自适应 ──
+
     var highlightGradient: [Color] {
         isDark ? [.white.opacity(0.08), .clear] : [.white.opacity(0.7), .clear]
     }
 
-    // 悬浮背景
+    // ── 悬浮背景 ──
+
     var hoverBg: Color { isDark ? Color.white.opacity(0.02) : Color.black.opacity(0.03) }
 
-    // 圆角
-    var radiusSM: CGFloat { seed.radius * 0.5 }
-    var radiusMD: CGFloat { seed.radius }
-    var radiusLG: CGFloat { seed.radius * 1.4 }
+    // ── 圆角 ──
+
+    static let radius: CGFloat = 20
+    var radiusSM: CGFloat { Self.radius * 0.5 }
+    var radiusMD: CGFloat { Self.radius }
+    var radiusLG: CGFloat { Self.radius * 1.4 }
     static let radiusPill: CGFloat = 999
 
-    // 阴影 — 自适应深色/浅色
+    // ── 阴影 — 自适应深色/浅色 ──
+
     var shadowGlassColor: Color { isDark ? .black.opacity(0.3) : .black.opacity(0.08) }
     var shadowGlassRadius: CGFloat { isDark ? 32 : 20 }
     var shadowGlassY: CGFloat { isDark ? 8 : 4 }
@@ -159,10 +109,12 @@ struct ThemeColors {
     var shadowGlassSM: Shadow { Shadow(color: shadowGlassSMColor, radius: shadowGlassSMRadius, y: shadowGlassSMY) }
     var shadowTabbar: Shadow { Shadow(color: shadowTabbarColor, radius: shadowTabbarRadius, y: shadowTabbarY) }
 
-    // 动画
+    // ── 动画 ──
+
     static let easeHarmony = Animation.spring(response: 0.35, dampingFraction: 0.75)
 
-    // 字体
+    // ── 字体 ──
+
     static let fontMono = "SF Mono"
     static let tabbarHeight: CGFloat = 72
 }
@@ -172,12 +124,6 @@ struct ThemeColors {
 // ═══════════════════════════════════════════════
 
 class ThemeManager: ObservableObject {
-    @Published var preset: ThemePreset {
-        didSet {
-            rebuildColors()
-            UserDefaults.standard.set(preset.rawValue, forKey: "themePreset")
-        }
-    }
     @Published var appearanceMode: AppearanceMode {
         didSet {
             rebuildColors()
@@ -212,20 +158,13 @@ class ThemeManager: ObservableObject {
     }
 
     init() {
-        let savedPreset = UserDefaults.standard.string(forKey: "themePreset") ?? "深邃"
-        let preset = ThemePreset(rawValue: savedPreset) ?? .deep
-
         let savedAppearance = UserDefaults.standard.string(forKey: "appearanceMode") ?? "跟随系统"
         let appearance = AppearanceMode(rawValue: savedAppearance) ?? .system
 
-        self.preset = preset
         self.appearanceMode = appearance
         // 初始化时假设深色（系统外观由 ContentView 的 onChange 推送）
         self.systemColorScheme = .dark
-        self.colors = ThemeColors(
-            seed: SeedTokens.forPreset(preset),
-            isDark: appearance == .dark || (appearance == .system) // system 默认深色
-        )
+        self.colors = ThemeColors(isDark: appearance == .dark || (appearance == .system))
     }
 
     /// 系统外观变化时调用
@@ -237,10 +176,7 @@ class ThemeManager: ObservableObject {
     }
 
     private func rebuildColors() {
-        colors = ThemeColors(
-            seed: SeedTokens.forPreset(preset),
-            isDark: isDark
-        )
+        colors = ThemeColors(isDark: isDark)
     }
 }
 

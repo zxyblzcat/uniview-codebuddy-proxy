@@ -12,7 +12,7 @@ namespace UniviewCodeBuddyProxy.Helpers;
 
 /// <summary>
 /// Controls whether the app uses dark or light appearance,
-/// or follows the OS setting. Orthogonal to ThemePreset.
+/// or follows the OS setting.
 /// </summary>
 public enum AppearanceMode
 {
@@ -22,116 +22,51 @@ public enum AppearanceMode
 }
 
 // ═══════════════════════════════════════════════
-// Seed Tokens — foundation for all color derivation
+// Semantic Colors — derived from appearance mode
 // ═══════════════════════════════════════════════
 
 /// <summary>
-/// Theme preset name, matching macOS ThemePreset.
-/// </summary>
-public enum ThemePreset
-{
-    Deep,      // 深邃
-    Bright,    // 明亮
-    Midnight,  // 午夜
-    Sunset     // 日落
-}
-
-/// <summary>
-/// Seed tokens from which all semantic colors are derived.
-/// </summary>
-public sealed class SeedTokens
-{
-    public Color Bg { get; init; }
-    public Color Fg { get; init; }
-    public Color Primary { get; init; }
-    public Color Accent { get; init; }
-    public Color Surface { get; init; }
-    public double Radius { get; init; }
-
-    public static SeedTokens Deep { get; } = new()
-    {
-        Bg = ColorHelper.FromHex("#0B0F19"),
-        Fg = ColorHelper.FromHex("#E8ECF4"),
-        Primary = ColorHelper.FromHex("#5B9CF6"),
-        Accent = ColorHelper.FromHex("#34D4AA"),
-        Surface = ColorHelper.FromHex("#131926"),
-        Radius = 20
-    };
-
-    public static SeedTokens Bright { get; } = new()
-    {
-        Bg = ColorHelper.FromHex("#F5F7FA"),
-        Fg = ColorHelper.FromHex("#1A1D26"),
-        Primary = ColorHelper.FromHex("#5B9CF6"),
-        Accent = ColorHelper.FromHex("#34D4AA"),
-        Surface = ColorHelper.FromHex("#FFFFFF"),
-        Radius = 20
-    };
-
-    public static SeedTokens Midnight { get; } = new()
-    {
-        Bg = ColorHelper.FromHex("#050709"),
-        Fg = ColorHelper.FromHex("#E8ECF4"),
-        Primary = ColorHelper.FromHex("#6366F1"),
-        Accent = ColorHelper.FromHex("#34D4AA"),
-        Surface = ColorHelper.FromHex("#0A0C10"),
-        Radius = 20
-    };
-
-    public static SeedTokens Sunset { get; } = new()
-    {
-        Bg = ColorHelper.FromHex("#0F1119"),
-        Fg = ColorHelper.FromHex("#E8ECF4"),
-        Primary = ColorHelper.FromHex("#F97316"),
-        Accent = ColorHelper.FromHex("#34D4AA"),
-        Surface = ColorHelper.FromHex("#161820"),
-        Radius = 20
-    };
-
-    public static SeedTokens ForPreset(ThemePreset preset) => preset switch
-    {
-        ThemePreset.Deep => Deep,
-        ThemePreset.Bright => Bright,
-        ThemePreset.Midnight => Midnight,
-        ThemePreset.Sunset => Sunset,
-        _ => Deep
-    };
-}
-
-// ═══════════════════════════════════════════════
-// Semantic Colors — derived from seed tokens + appearance
-// ═══════════════════════════════════════════════
-
-/// <summary>
-/// Semantic theme colors derived from seed tokens and appearance mode,
-/// matching macOS ThemeColors.
+/// Semantic theme colors driven by appearance mode (dark/light).
 /// </summary>
 public sealed class ThemeColors
 {
-    public SeedTokens Seed { get; }
     public bool IsDark { get; }
 
-    public ThemeColors(SeedTokens seed, bool isDark = true)
+    public ThemeColors(bool isDark = true)
     {
-        Seed = seed;
         IsDark = isDark;
     }
 
-    // Text hierarchy
-    public Color Text => Seed.Fg;
-    public Color TextSecondary => Seed.Fg.WithOpacity(0.6);
-    public Color TextMuted => Seed.Fg.WithOpacity(0.35);
+    // ── Base colors ──
 
-    // Primary
-    public Color Primary => Seed.Primary;
-    public Color PrimaryHover => IsDark ? Seed.Primary.WithOpacity(0.85) : Seed.Primary.WithOpacity(0.8);
-    public Color PrimarySubtle => Seed.Primary.WithOpacity(0.14);
+    /// <summary>Primary background</summary>
+    public Color Bg => IsDark ? ColorHelper.FromHex("#0B0F19") : ColorHelper.FromHex("#F5F7FA");
+    /// <summary>Foreground (main text)</summary>
+    public Color Fg => IsDark ? ColorHelper.FromHex("#E8ECF4") : ColorHelper.FromHex("#1A1D26");
+    /// <summary>Brand primary</summary>
+    public Color Primary => ColorHelper.FromHex("#5B9CF6");
+    /// <summary>Accent color</summary>
+    public Color Accent => ColorHelper.FromHex("#34D4AA");
+    /// <summary>Surface (card/secondary background)</summary>
+    public Color Surface => IsDark ? ColorHelper.FromHex("#131926") : ColorHelper.FromHex("#FFFFFF");
 
-    // Accent
-    public Color Accent => Seed.Accent;
-    public Color AccentSubtle => Seed.Accent.WithOpacity(0.14);
+    // ── Text hierarchy ──
 
-    // Functional colors (static — not derived from seed)
+    public Color Text => Fg;
+    public Color TextSecondary => Fg.WithOpacity(0.6);
+    public Color TextMuted => Fg.WithOpacity(0.35);
+
+    // ── Primary variants ──
+
+    public Color PrimaryHover => IsDark ? Primary.WithOpacity(0.85) : Primary.WithOpacity(0.8);
+    public Color PrimarySubtle => Primary.WithOpacity(0.14);
+
+    // ── Accent variants ──
+
+    public Color AccentSubtle => Accent.WithOpacity(0.14);
+
+    // ── Functional colors (static) ──
+
     public static Color Success => ColorHelper.FromHex("#4ADE80");
     public static Color SuccessSubtle => ColorHelper.FromHex("#4ADE80").WithOpacity(0.12);
     public static Color Warning => ColorHelper.FromHex("#FBBF24");
@@ -145,27 +80,33 @@ public sealed class ThemeColors
     public static Color Purple => ColorHelper.FromHex("#A78BFA");
     public static Color PurpleSubtle => ColorHelper.FromHex("#A78BFA").WithOpacity(0.10);
 
-    // Glass material — adaptive for dark/light
+    // ── Glass material — adaptive ──
+
     public Color GlassBg => IsDark ? Colors.White.WithOpacity(0.055) : Colors.Black.WithOpacity(0.04);
     public Color GlassBgHeavy => IsDark ? Colors.White.WithOpacity(0.09) : Colors.Black.WithOpacity(0.06);
     public Color GlassBgTabbar => IsDark ? ColorHelper.FromHex("#101420").WithOpacity(0.72) : Colors.White.WithOpacity(0.72);
     public Color GlassBorder => IsDark ? Colors.White.WithOpacity(0.09) : Colors.Black.WithOpacity(0.10);
     public Color GlassBorderLight => IsDark ? Colors.White.WithOpacity(0.15) : Colors.Black.WithOpacity(0.15);
 
-    // Highlight gradient — adaptive
+    // ── Highlight gradient — adaptive ──
+
     public Color HighlightGradientStart => IsDark ? Colors.White.WithOpacity(0.08) : Colors.White.WithOpacity(0.7);
     public Color HighlightGradientEnd => Colors.Transparent;
 
-    // Hover background
+    // ── Hover background ──
+
     public Color HoverBg => IsDark ? Colors.White.WithOpacity(0.02) : Colors.Black.WithOpacity(0.03);
 
-    // Corner radii (scaled from seed radius)
-    public double RadiusSM => Seed.Radius * 0.5;
-    public double RadiusMD => Seed.Radius;
-    public double RadiusLG => Seed.Radius * 1.4;
+    // ── Corner radii ──
+
+    public static double Radius => 20;
+    public double RadiusSM => Radius * 0.5;
+    public double RadiusMD => Radius;
+    public double RadiusLG => Radius * 1.4;
     public static double RadiusPill => 999;
 
-    // Shadows — adaptive for dark/light
+    // ── Shadows — adaptive ──
+
     public ThemeShadow ShadowGlass => IsDark
         ? new(Colors.Black.WithOpacity(0.3), 32, 8)
         : new(Colors.Black.WithOpacity(0.08), 20, 4);
@@ -176,11 +117,13 @@ public sealed class ThemeColors
         ? new(Colors.Black.WithOpacity(0.4), 40, -4)
         : new(Colors.Black.WithOpacity(0.10), 20, -2);
 
-    // Animation
+    // ── Animation ──
+
     public static double EaseHarmonyResponse => 0.35;
     public static double EaseHarmonyDamping => 0.75;
 
-    // Font
+    // ── Font ──
+
     public static string FontMono => "Cascadia Code";
     public static double TabbarHeight => 72;
 }
@@ -190,37 +133,20 @@ public sealed class ThemeColors
 // ═══════════════════════════════════════════════
 
 /// <summary>
-/// Manages theme preset switching, appearance mode, and persistence.
+/// Manages appearance mode and persistence.
 /// Persists to the Windows Registry (HKCU\Software\UniviewCodeBuddyProxy).
 /// </summary>
 public sealed class ThemeManager : INotifyPropertyChanged
 {
-    private ThemePreset _preset;
     private AppearanceMode _appearanceMode;
     private ThemeColors _colors;
     private bool _systemIsDark = true;
 
     public ThemeManager()
     {
-        var savedPreset = LoadSavedPreset();
         var savedAppearance = LoadSavedAppearanceMode();
-        _preset = savedPreset;
         _appearanceMode = savedAppearance;
-        _colors = new ThemeColors(SeedTokens.ForPreset(savedPreset), IsDark);
-    }
-
-    public ThemePreset Preset
-    {
-        get => _preset;
-        set
-        {
-            if (_preset == value) return;
-            _preset = value;
-            RebuildColors();
-            SavePreset(value);
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(Colors));
-        }
+        _colors = new ThemeColors(IsDark);
     }
 
     public AppearanceMode AppearanceMode
@@ -265,11 +191,6 @@ public sealed class ThemeManager : INotifyPropertyChanged
     };
 
     /// <summary>
-    /// Returns the primary color for a given theme preset (for theme preview swatches).
-    /// </summary>
-    public Color GetPreviewColor(ThemePreset preset) => SeedTokens.ForPreset(preset).Primary;
-
-    /// <summary>
     /// Called when the system theme changes (via UISettings.ColorValuesChanged).
     /// </summary>
     public void UpdateSystemTheme(bool systemIsDark)
@@ -286,7 +207,7 @@ public sealed class ThemeManager : INotifyPropertyChanged
 
     private void RebuildColors()
     {
-        _colors = new ThemeColors(SeedTokens.ForPreset(_preset), IsDark);
+        _colors = new ThemeColors(IsDark);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -295,43 +216,7 @@ public sealed class ThemeManager : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     private const string RegistryKey = @"Software\UniviewCodeBuddyProxy";
-    private const string PresetValue = "ThemePreset";
     private const string AppearanceValue = "AppearanceMode";
-
-    private static ThemePreset LoadSavedPreset()
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RegistryKey);
-            var saved = key?.GetValue(PresetValue) as string;
-
-            return saved switch
-            {
-                nameof(ThemePreset.Deep) => ThemePreset.Deep,
-                nameof(ThemePreset.Bright) => ThemePreset.Bright,
-                nameof(ThemePreset.Midnight) => ThemePreset.Midnight,
-                nameof(ThemePreset.Sunset) => ThemePreset.Sunset,
-                _ => ThemePreset.Deep
-            };
-        }
-        catch
-        {
-            return ThemePreset.Deep;
-        }
-    }
-
-    private static void SavePreset(ThemePreset preset)
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RegistryKey);
-            key?.SetValue(PresetValue, preset.ToString());
-        }
-        catch
-        {
-            // Silently ignore if registry write fails
-        }
-    }
 
     private static AppearanceMode LoadSavedAppearanceMode()
     {
@@ -419,6 +304,14 @@ public static class ColorHelper
     }
 
     /// <summary>
+    /// Converts a Color to a hex string like "#RRGGBB".
+    /// </summary>
+    public static string ToHex(Color color)
+    {
+        return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+    }
+
+    /// <summary>
     /// Returns a new Color with the specified opacity (0.0–1.0).
     /// </summary>
     public static Color WithOpacity(this Color color, double opacity)
@@ -428,14 +321,6 @@ public static class ColorHelper
             color.R,
             color.G,
             color.B);
-    }
-
-    /// <summary>
-    /// Converts a Color to a hex string like "#RRGGBB".
-    /// </summary>
-    public static string ToHex(Color color)
-    {
-        return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
     }
 
     /// <summary>

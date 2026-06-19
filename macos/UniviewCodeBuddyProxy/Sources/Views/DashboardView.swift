@@ -53,7 +53,7 @@ struct DashboardView: View {
             }
             .padding(24)
         }
-        .background(c.seed.bg)
+        .background(c.bg)
     }
 
     // MARK: - KPI Section
@@ -239,7 +239,7 @@ struct DashboardView: View {
                                         .padding(.vertical, 5)
                                         .background(
                                             RoundedRectangle(cornerRadius: 8)
-                                                .fill(c.seed.surface.opacity(0.92))
+                                                .fill(c.surface.opacity(0.92))
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: 8)
                                                         .stroke(c.glassBorder, lineWidth: 1)
@@ -441,7 +441,7 @@ struct DashboardView: View {
             case .tokenRefresh:   return ThemeColors.success
             case .clientConnect:  return ThemeColors.info
             case .rateLimit:      return ThemeColors.warning
-            case .modelUpdate:    return SeedTokens.deep.accent
+            case .modelUpdate:    return Color(hex: "34D4AA")
             case .authLogin:      return ThemeColors.success
             case .proxyRequest:   return ThemeColors.info
             case .circuitBreaker: return ThemeColors.warning

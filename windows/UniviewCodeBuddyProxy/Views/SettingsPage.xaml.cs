@@ -29,23 +29,6 @@ public sealed partial class SettingsPage : Page
         };
     }
 
-    // ── Theme preset selection ──
-
-    private void OnThemePresetChanged(object sender, RoutedEventArgs e)
-    {
-        if (sender is RadioButton rb && rb.Tag is string tag)
-        {
-            ViewModel.SelectedTheme = tag switch
-            {
-                "Deep" => ThemePreset.Deep,
-                "Bright" => ThemePreset.Bright,
-                "Midnight" => ThemePreset.Midnight,
-                "Sunset" => ThemePreset.Sunset,
-                _ => ThemePreset.Deep
-            };
-        }
-    }
-
     // ── Appearance mode selection ──
 
     private void OnAppearanceModeChanged(object sender, RoutedEventArgs e)

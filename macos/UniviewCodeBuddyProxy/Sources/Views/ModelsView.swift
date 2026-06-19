@@ -73,7 +73,7 @@ struct ModelsView: View {
                 .padding(24)
             }
         }
-        .background(c.seed.bg)
+        .background(c.bg)
         .popover(isPresented: $showDetail) {
             if let model = selectedModel {
                 modelDetailPopover(model: model)
@@ -126,7 +126,7 @@ struct ModelsView: View {
                     } label: {
                         Text(provider)
                             .font(.system(size: 12, weight: selectedProvider == provider ? .semibold : .regular))
-                            .foregroundColor(selectedProvider == provider ? c.seed.bg : c.textSecondary)
+                            .foregroundColor(selectedProvider == provider ? c.bg : c.textSecondary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
                             .background(
@@ -245,7 +245,7 @@ struct ModelsView: View {
         }
         .padding(20)
         .frame(width: 300)
-        .background(c.seed.bg)
+        .background(c.bg)
     }
 
     private func detailRow(label: String, value: String) -> some View {

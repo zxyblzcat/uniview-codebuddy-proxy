@@ -79,7 +79,7 @@ public sealed partial class MainWindow : Window
         }
 
         // Update gradient background layers
-        BgBaseBrush.Color = colors.Seed.Bg;
+        BgBaseBrush.Color = colors.Bg;
         PrimaryGlowStop.Color = colors.Primary.WithOpacity(0.08);
         AccentGlowStop.Color = colors.Accent.WithOpacity(0.05);
         DepthGlowStop.Color = colors.Primary.WithOpacity(0.04);
@@ -88,9 +88,9 @@ public sealed partial class MainWindow : Window
         var acrylicBrush = new AcrylicBrush
         {
             BackgroundSource = AcrylicBackgroundSource.HostBackdrop,
-            TintColor = colors.Seed.Bg,
+            TintColor = colors.Bg,
             TintOpacity = 0.78,
-            FallbackColor = colors.Seed.Bg,
+            FallbackColor = colors.Bg,
         };
         ContentArea.Background = acrylicBrush;
 

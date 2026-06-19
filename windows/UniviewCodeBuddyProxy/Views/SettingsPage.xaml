@@ -211,55 +211,6 @@
             <!-- ═══ Appearance Section ═══ -->
             <controls:GlassCard Header="外观" Icon="">
                 <StackPanel Spacing="0">
-                    <!-- Theme presets -->
-                    <controls:SettingItem Label="主题预设">
-                        <controls:SettingItem.ContentSlot>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <RadioButton GroupName="ThemePreset"
-                                             Tag="Deep" IsChecked="True"
-                                             Checked="OnThemePresetChanged"
-                                             CornerRadius="12" Padding="8,4">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <Ellipse Width="16" Height="16" Fill="#5B9CF6"/>
-                                        <TextBlock Text="深邃" FontSize="10"
-                                                   VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </RadioButton>
-                                <RadioButton GroupName="ThemePreset"
-                                             Tag="Bright"
-                                             Checked="OnThemePresetChanged"
-                                             CornerRadius="12" Padding="8,4">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <Ellipse Width="16" Height="16" Fill="#5B9CF6"
-                                                 Stroke="#999" StrokeThickness="1"/>
-                                        <TextBlock Text="明亮" FontSize="10"
-                                                   VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </RadioButton>
-                                <RadioButton GroupName="ThemePreset"
-                                             Tag="Midnight"
-                                             Checked="OnThemePresetChanged"
-                                             CornerRadius="12" Padding="8,4">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <Ellipse Width="16" Height="16" Fill="#6366F1"/>
-                                        <TextBlock Text="午夜" FontSize="10"
-                                                   VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </RadioButton>
-                                <RadioButton GroupName="ThemePreset"
-                                             Tag="Sunset"
-                                             Checked="OnThemePresetChanged"
-                                             CornerRadius="12" Padding="8,4">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <Ellipse Width="16" Height="16" Fill="#F97316"/>
-                                        <TextBlock Text="日落" FontSize="10"
-                                                   VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </RadioButton>
-                            </StackPanel>
-                        </controls:SettingItem.ContentSlot>
-                    </controls:SettingItem>
-
                     <!-- Appearance mode -->
                     <controls:SettingItem Label="外观模式">
                         <controls:SettingItem.ContentSlot>

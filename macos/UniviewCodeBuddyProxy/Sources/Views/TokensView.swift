@@ -46,7 +46,7 @@ struct TokensView: View {
                 }
             }
         }
-        .background(c.seed.bg)
+        .background(c.bg)
         .sheet(isPresented: $showAddTokenSheet) {
             addTokenSheet
         }
@@ -89,7 +89,7 @@ struct TokensView: View {
                     Text("浏览器登录")
                         .font(.system(size: 12, weight: .medium))
                 }
-                .foregroundColor(c.seed.bg)
+                .foregroundColor(c.bg)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(c.primary)
@@ -148,7 +148,7 @@ struct TokensView: View {
                 } label: {
                     Text("浏览器登录")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(c.seed.bg)
+                        .foregroundColor(c.bg)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
                         .background(c.primary)
@@ -316,7 +316,7 @@ struct TokensView: View {
                     addManualToken()
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(c.seed.bg)
+                .foregroundColor(c.bg)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
                 .background(c.primary)
@@ -326,7 +326,7 @@ struct TokensView: View {
         }
         .padding(24)
         .frame(width: 400)
-        .background(c.seed.bg)
+        .background(c.bg)
     }
 
     // MARK: - Actions

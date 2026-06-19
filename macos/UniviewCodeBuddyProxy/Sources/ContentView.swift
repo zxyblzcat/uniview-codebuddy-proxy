@@ -69,7 +69,7 @@ struct ContentView: View {
     private func backgroundGradient(colors: ThemeColors) -> some View {
         ZStack {
             // 第一层：基底填充
-            colors.seed.bg
+            colors.bg
                 .ignoresSafeArea()
 
             // 第二层：中心主光晕
@@ -121,8 +121,8 @@ struct ContentView: View {
                 .background(
                     LinearGradient(
                         colors: [
-                            colors.seed.bg.opacity(0),
-                            colors.seed.bg.opacity(0.2),
+                            colors.bg.opacity(0),
+                            colors.bg.opacity(0.2),
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -171,8 +171,8 @@ struct ContentView: View {
                 // 状态栏区域：从半透明到不透明
                 LinearGradient(
                     colors: [
-                        colors.seed.bg.opacity(0.4),
-                        colors.seed.bg.opacity(0.7),
+                        colors.bg.opacity(0.4),
+                        colors.bg.opacity(0.7),
                     ],
                     startPoint: .top,
                     endPoint: .bottom

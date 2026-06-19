@@ -67,7 +67,7 @@ struct LogsView: View {
             .padding(.top, 12)
         }
         .frame(maxWidth: 1200)
-        .background(c.seed.bg)
+        .background(c.bg)
         .alert("清除日志", isPresented: $showClearConfirm) {
             Button("取消", role: .cancel) {}
             Button("清除", role: .destructive) {

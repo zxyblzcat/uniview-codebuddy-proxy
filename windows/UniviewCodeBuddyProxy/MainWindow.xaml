@@ -69,7 +69,7 @@
             x:Name="StatusBar"
             Grid.Row="0"
             Padding="16,8"
-            Background="{x:Bind ThemeManager.Colors.Seed.Surface, Mode=OneWay}"
+            Background="{x:Bind ThemeManager.Colors.Surface, Mode=OneWay}"
             BorderBrush="{x:Bind ThemeManager.Colors.GlassBorder, Mode=OneWay}"
             BorderThickness="0,0,0,1">
             <Grid>

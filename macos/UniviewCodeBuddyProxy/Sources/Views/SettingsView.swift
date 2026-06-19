@@ -277,40 +277,6 @@ struct SettingsView: View {
                     groupLabel(configManager.localizedString("外观"))
                     settingsGroup {
                         settingRow(
-                            icon: "paintpalette",
-                            iconColor: ThemeColors.purple,
-                            title: configManager.localizedString("主题预设"),
-                            description: "切换界面主题配色方案"
-                        ) {
-                            HStack(spacing: 8) {
-                                ForEach(ThemePreset.allCases, id: \.self) { preset in
-                                    Button {
-                                        themeManager.preset = preset
-                                    } label: {
-                                        VStack(spacing: 4) {
-                                            Circle()
-                                                .fill(themeSeedPreviewColor(preset))
-                                                .frame(width: 20, height: 20)
-                                                .overlay(
-                                                    Circle()
-                                                        .stroke(
-                                                            themeManager.preset == preset ? c.primary : c.glassBorder,
-                                                            lineWidth: themeManager.preset == preset ? 2 : 1
-                                                        )
-                                                )
-                                            Text(preset.rawValue)
-                                                .font(.system(size: 10))
-                                                .foregroundColor(
-                                                    themeManager.preset == preset ? c.text : c.textMuted
-                                                )
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-
-                        settingRow(
                             icon: "circle.lefthalf.filled",
                             iconColor: ThemeColors.info,
                             title: configManager.localizedString("外观模式"),
@@ -411,7 +377,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 24)
             }
         }
-        .background(c.seed.bg)
+        .background(c.bg)
     }
 
     // MARK: - 服务器信息横幅
@@ -590,17 +556,6 @@ struct SettingsView: View {
             }
         } catch {
             // 静默处理
-        }
-    }
-
-    // MARK: - 主题预览色
-
-    private func themeSeedPreviewColor(_ preset: ThemePreset) -> Color {
-        switch preset {
-        case .deep:     return SeedTokens.deep.primary
-        case .bright:   return SeedTokens.bright.primary
-        case .midnight: return SeedTokens.midnight.primary
-        case .sunset:   return SeedTokens.sunset.primary
         }
     }
 }

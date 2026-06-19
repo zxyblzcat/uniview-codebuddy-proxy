@@ -22,8 +22,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
         // Forward ConfigManager property changes
         _config.PropertyChanged += (_, e) => OnPropertyChanged(e.PropertyName);
-
-        ThemePresets = [ThemePreset.Deep, ThemePreset.Bright, ThemePreset.Midnight, ThemePreset.Sunset];
     }
 
     // ── Network ──
@@ -132,22 +130,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     // ── Appearance ──
 
-    public ObservableCollection<ThemePreset> ThemePresets { get; }
-
-    public ThemePreset SelectedTheme
-    {
-        get => _theme.Preset;
-        set
-        {
-            if (_theme.Preset != value)
-            {
-                _theme.Preset = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(ThemePreviewColor));
-            }
-        }
-    }
-
     public AppearanceMode SelectedAppearance
     {
         get => _theme.AppearanceMode;
@@ -162,8 +144,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     }
 
     public ThemeColors Colors => _theme.Colors;
-
-    public Helpers.Color ThemePreviewColor => _theme.GetPreviewColor(SelectedTheme);
 
     public string Locale
     {

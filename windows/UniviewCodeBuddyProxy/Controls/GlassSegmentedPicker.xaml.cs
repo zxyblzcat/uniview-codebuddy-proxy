@@ -118,7 +118,7 @@ public sealed partial class GlassSegmentedPicker : UserControl
                 ? new SolidColorBrush(colors.Primary)
                 : new SolidColorBrush(Colors.Transparent);
             btn.Foreground = isSelected
-                ? new SolidColorBrush(colors.Seed.Bg)
+                ? new SolidColorBrush(colors.Bg)
                 : new SolidColorBrush(colors.TextSecondary);
         }
     }

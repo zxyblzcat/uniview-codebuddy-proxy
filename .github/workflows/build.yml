@@ -13,7 +13,7 @@ concurrency:
 jobs:
   build-macos:
     name: Build macOS
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,11 +69,11 @@ jobs:
 
       - name: Restore workloads
         working-directory: windows
-        run: dotnet workload restore
+        run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
       - name: Build WinUI app
         working-directory: windows
-        run: dotnet build -c Release -p:Platform=x64
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
 
       - name: Publish WinUI app
         working-directory: windows
