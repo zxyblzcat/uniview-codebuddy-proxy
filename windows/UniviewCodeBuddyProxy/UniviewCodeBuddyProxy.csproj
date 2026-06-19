@@ -14,11 +14,6 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
-    <!-- Use in-process CompileXaml task even with dotnet build (MSBuildRuntimeType=Core).
-         The default (UseXamlCompilerExecutable=true) launches the net472 XamlCompiler.exe
-         out-of-process, which crashes when loading .NET 6/8 reference assemblies.
-         The net6.0 in-process task handles .NET 8 refs correctly. -->
-    <UseXamlCompilerExecutable>false</UseXamlCompilerExecutable>
   </PropertyGroup>
 
   <ItemGroup>

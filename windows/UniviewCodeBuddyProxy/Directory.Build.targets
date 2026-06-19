@@ -1,8 +1,18 @@
 <Project>
   <!--
+    Force UseXamlCompilerExecutable=false AFTER the WindowsAppSDK's interop.targets
+    sets it to true for dotnet build (MSBuildRuntimeType=Core). The net472
+    XamlCompiler.exe crashes when loading .NET 6/8 reference assemblies.
+    The net6.0 in-process CompileXaml task handles them correctly.
+  -->
+  <PropertyGroup>
+    <UseXamlCompilerExecutable>false</UseXamlCompilerExecutable>
+  </PropertyGroup>
+
+  <!--
     Remove ASP.NET Core reference assemblies before XamlCompiler runs.
-    The .NET Framework 4.7.2 XamlCompiler.exe (even in-process net6.0 task) can have
-    issues with ASP.NET Core transitive refs from the Core project.
+    Even the in-process net6.0 CompileXaml task can have issues with
+    ASP.NET Core transitive refs from the Core project.
   -->
   <Target Name="_RemoveAspNetCoreRefsBeforeXamlCompiler"
           BeforeTargets="XamlMarkupCompilePass1;_XamlBuildExecTask;MarkupCompilePass1"
