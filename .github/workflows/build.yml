@@ -91,7 +91,7 @@ jobs:
           Write-Host "WASDK tools dir: $($wasdkTools.FullName)"
 
           # Find System.Security.Permissions.dll in NuGet cache
-          $sspDll = Get-ChildItem "C:\Users\runneradmin\.nuget\packages\system.security.permissions\7.*\lib\net6.0\System.Security.Permissions.dll" | Select-Object -First 1
+          $sspDll = Get-ChildItem "C:\Users\runneradmin\.nuget\packages\system.security.permissions\6.*\lib\net6.0\System.Security.Permissions.dll" | Select-Object -First 1
           if (-not $sspDll) {
             # Try other TFM paths
             $sspDll = Get-ChildItem "C:\Users\runneradmin\.nuget\packages\system.security.permissions\*\lib\*\System.Security.Permissions.dll" | Select-Object -First 1
