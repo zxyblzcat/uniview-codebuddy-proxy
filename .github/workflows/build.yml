@@ -71,28 +71,53 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
-      - name: Build WinUI app
+      - name: Build WinUI app (first pass, continue on error)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64 -fl -flp:logfile=build.log;verbosity=diagnostic
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
         continue-on-error: true
 
-      - name: Show XamlCompiler output
+      - name: Run XamlCompiler manually to capture errors
         if: always()
         shell: pwsh
         run: |
           $objDir = "windows/UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0"
-          if (Test-Path "$objDir/output.json") {
-            Write-Host "=== XamlCompiler output.json ==="
-            Get-Content "$objDir/output.json"
+          $inputJson = Join-Path $objDir "input.json"
+          $outputJson = Join-Path $objDir "output.json"
+
+          # Find XamlCompiler.exe
+          $sdkDir = Get-ChildItem "$env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk" -Directory | Sort-Object -Descending | Select-Object -First 1
+          $xamlCompiler = Join-Path $sdkDir.FullName "tools\net472\XamlCompiler.exe"
+
+          if (Test-Path $xamlCompiler -and (Test-Path $inputJson)) {
+            Write-Host "=== Running XamlCompiler manually ==="
+            Write-Host "Input: $inputJson"
+            Write-Host "Output: $outputJson"
+            Write-Host "XamlCompiler: $xamlCompiler"
+
+            $process = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJson`"", "`"$outputJson`"" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$objDir\xaml_stdout.txt" -RedirectStandardError "$objDir\xaml_stderr.txt"
+
+            Write-Host "Exit code: $($process.ExitCode)"
+
+            if (Test-Path "$objDir\xaml_stdout.txt") {
+              Write-Host "=== STDOUT ==="
+              Get-Content "$objDir\xaml_stdout.txt"
+            }
+            if (Test-Path "$objDir\xaml_stderr.txt") {
+              Write-Host "=== STDERR ==="
+              Get-Content "$objDir\xaml_stderr.txt"
+            }
+            if (Test-Path $outputJson) {
+              Write-Host "=== output.json ==="
+              Get-Content $outputJson
+            }
           } else {
-            Write-Host "No output.json found"
-          }
-          if (Test-Path "build.log") {
-            Write-Host "=== Build log (last 100 lines) ==="
-            Get-Content "build.log" | Select-Object -Last 100
+            Write-Host "XamlCompiler or input.json not found"
+            Write-Host "SDK dir: $(if ($sdkDir) { $sdkDir.FullName } else { 'not found' })"
+            Write-Host "input.json exists: $(Test-Path $inputJson)"
+            Write-Host "XamlCompiler exists: $(Test-Path $xamlCompiler)"
           }
 
-      - name: Fail if build failed
+      - name: Build WinUI app (final)
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
 

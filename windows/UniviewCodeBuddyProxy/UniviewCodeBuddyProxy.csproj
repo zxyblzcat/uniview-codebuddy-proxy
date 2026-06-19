@@ -24,9 +24,6 @@
     <!-- System tray -->
     <PackageReference Include="H.NotifyIcon" Version="2.*" />
 
-    <!-- Override transitive System.Drawing.Common v10 → v8 (XamlCompiler compat) -->
-    <PackageReference Include="System.Drawing.Common" Version="8.0.*" ExcludeAssets="all" />
-
     <!-- ASP.NET Core Minimal API (in-process HTTP server) -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
