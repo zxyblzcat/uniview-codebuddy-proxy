@@ -26,25 +26,15 @@
     <!-- Core proxy library (contains ASP.NET Core server code) -->
     <ProjectReference Include="..\UniviewCodeBuddyProxy.Core\UniviewCodeBuddyProxy.Core.csproj">
       <PrivateAssets>all</PrivateAssets>
-      <!-- Prevent FrameworkReference from flowing transitively -->
-      <ExcludeAssets>build</ExcludeAssets>
     </ProjectReference>
   </ItemGroup>
 
   <!-- Suppress transitive FrameworkReference from Core library — ASP.NET Core assemblies
-       must NOT reach XamlCompiler (a .NET Framework 4.7.2 process that crashes with 200+ extra refs) -->
+       must NOT reach XamlCompiler (a .NET Framework 4.7.2 process that crashes with 200+ extra refs).
+       See Directory.Build.targets for the actual removal logic. -->
   <ItemGroup>
     <FrameworkReference Remove="Microsoft.AspNetCore.App" />
   </ItemGroup>
-
-  <!-- Also remove any ASP.NET Core reference assemblies that snuck through -->
-  <Target Name="RemoveAspNetCoreRefsBeforeXaml" BeforeTargets="XamlMarkupCompilePass1">
-    <ItemGroup>
-      <ReferencePath Remove="@(ReferencePath)" Condition="$([System.String]::new('%(FullPath)').Contains('Microsoft.AspNetCore'))" />
-      <Reference Remove="@(Reference)" Condition="$([System.String]::new('%(Identity)').Contains('Microsoft.AspNetCore'))" />
-    </ItemGroup>
-    <Message Importance="high" Text="Removed ASP.NET Core reference assemblies before XamlCompiler. Remaining: @(ReferencePath->Count())" />
-  </Target>
 
   <ItemGroup>
     <!-- App manifest for unpackaged deployment -->
