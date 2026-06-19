@@ -119,6 +119,7 @@ jobs:
           </Application>
           "@ | Out-File -FilePath "MinimalTest/App.xaml" -Encoding utf8
           @"
+          using Microsoft.UI.Xaml;
           namespace MinimalTest;
           public partial class App : Application
           {
@@ -141,6 +142,7 @@ jobs:
           </Window>
           "@ | Out-File -FilePath "MinimalTest/MainWindow.xaml" -Encoding utf8
           @"
+          using Microsoft.UI.Xaml;
           namespace MinimalTest;
           public partial class MainWindow : Window
           {
@@ -159,6 +161,7 @@ jobs:
           </Page>
           "@ | Out-File -FilePath "MinimalTest/Views/TestPage.xaml" -Encoding utf8
           @"
+          using Microsoft.UI.Xaml.Controls;
           namespace MinimalTest.Views;
           public partial class TestPage : Page
           {
