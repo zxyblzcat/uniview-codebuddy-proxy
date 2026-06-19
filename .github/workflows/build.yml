@@ -126,12 +126,19 @@ jobs:
               $inputJson = Get-Content "$objDir/input.json" -Raw | ConvertFrom-Json
               $refAsm = $inputJson.ReferenceAssemblies
               Write-Host "Reference assemblies count: $($refAsm.Count)"
-              # Show first 20 and last 20
-              $refAsm[0..19] | ForEach-Object { Write-Host "  $_" }
-              if ($refAsm.Count -gt 40) { Write-Host "  ... ($($refAsm.Count - 40) more) ..." }
-              if ($refAsm.Count -gt 20) { $refAsm[($refAsm.Count-20)..($refAsm.Count-1)] | ForEach-Object { Write-Host "  $_" } }
+              # Show all ref assembly filenames (just the DLL name, not full path)
+              $refAsm | ForEach-Object {
+                $fp = $_.FullPath
+                if ($fp) { $name = [System.IO.Path]::GetFileName($fp) } else { $name = $_.ItemSpec }
+                Write-Host "  $name"
+              }
               Write-Host "=== input.json XAML pages ==="
               $inputJson.XamlPages | ForEach-Object { Write-Host "  $($_.Source)" }
+              Write-Host "=== input.json key fields ==="
+              Write-Host "  IsPass1: $($inputJson.IsPass1)"
+              Write-Host "  CompileMode: $($inputJson.CompileMode)"
+              Write-Host "  Language: $($inputJson.Language)"
+              Write-Host "  ProjectDir: $($inputJson.ProjectDir)"
             } else { Write-Host "input.json NOT FOUND" }
             Write-Host "=== output.json ==="
             if (Test-Path "$objDir/output.json") { Get-Content "$objDir/output.json" | Write-Host } else { Write-Host "NOT FOUND" }
