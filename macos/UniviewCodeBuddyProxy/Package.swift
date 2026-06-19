@@ -20,6 +20,9 @@ let package = Package(
             name: "UniviewCodeBuddyProxy",
             dependencies: [
                 .product(name: "Hummingbird", package: "hummingbird"),
+            ],
+            swiftSettings: [
+                .unsafeFlags(["-swift-version", "5"]),
             ]
         )
     ]

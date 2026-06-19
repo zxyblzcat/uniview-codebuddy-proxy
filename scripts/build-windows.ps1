@@ -28,7 +28,7 @@ Write-Host ""
 Write-Host "📦 Step 1/5: Restoring workloads..."
 Push-Location $WindowsDir
 try {
-    dotnet workload restore
+    dotnet workload restore $AppName\$AppName.csproj
     Write-Host "  ✅ Workloads restored"
 }
 finally {

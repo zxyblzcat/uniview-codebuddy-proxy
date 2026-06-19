@@ -18,7 +18,7 @@
 
   <ItemGroup>
     <!-- WinUI 3 / Windows App SDK -->
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.*" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.*" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
 
     <!-- System tray -->
