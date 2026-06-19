@@ -25,7 +25,7 @@ jobs:
             macos/UniviewCodeBuddyProxy/.build
             ~/Library/Caches/org.swift.swiftpm
           key: spm-${{ runner.os }}-${{ hashFiles('macos/UniviewCodeBuddyProxy/Package.resolved') }}
-          restore-keys: |
+          restore-links: |
             spm-${{ runner.os }}-
 
       - name: Build for arm64
@@ -75,16 +75,10 @@ jobs:
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy.Core/UniviewCodeBuddyProxy.Core.csproj -c Debug -p:Platform=x64
 
-      - name: Build WinUI app (Debug)
+      - name: Build WinUI app (Debug) with diagnostics
         working-directory: windows
         shell: pwsh
         run: |
-          # Enable .NET Framework assembly binding logging (FusionLog)
-          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Fusion" -Name "ForceLog" -Value 1 -Type DWORD -ErrorAction SilentlyContinue
-          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Fusion" -Name "LogFailures" -Value 1 -Type DWORD -ErrorAction SilentlyContinue
-          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Fusion" -Name "LogPath" -Value "C:\fusionlog" -Type String -ErrorAction SilentlyContinue
-          New-Item -Path "C:\fusionlog" -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
-
           # Run the build
           dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 2>&1 | Tee-Object -FilePath build-output.log
           $buildExit = $LASTEXITCODE
@@ -92,11 +86,12 @@ jobs:
           if ($buildExit -ne 0) {
             Write-Host "=== Build FAILED ==="
 
-            # Dump the full input.json
             $objDir = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0"
+
+            # Dump the full input.json
             if (Test-Path "$objDir/input.json") {
-              Write-Host "=== FULL input.json ==="
-              Get-Content "$objDir/input.json" | Write-Host
+              Write-Host "=== FULL input.json (first 200 lines) ==="
+              Get-Content "$objDir/input.json" -TotalCount 200 | Write-Host
             }
             if (Test-Path "$objDir/output.json") {
               Write-Host "=== FULL output.json ==="
@@ -105,64 +100,13 @@ jobs:
               Write-Host "output.json NOT FOUND"
             }
 
-            # Check FusionLog
-            if (Test-Path "C:\fusionlog") {
-              $fusionLogs = Get-ChildItem "C:\fusionlog" -ErrorAction SilentlyContinue
-              if ($fusionLogs.Count -gt 0) {
-                Write-Host "=== FusionLog entries (first 5) ==="
-                $fusionLogs | Select-Object -First 5 | ForEach-Object {
-                  Write-Host "--- $($_.Name) ---"
-                  Get-Content $_.FullName | Select-Object -First 30 | Write-Host
-                }
-              } else {
-                Write-Host "No FusionLog entries"
-              }
-            }
-
-            # Check .NET Runtime errors
+            # Check .NET Runtime event log
             Write-Host "=== .NET Runtime Event Log ==="
             try {
               Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Level=2} -MaxEvents 3 -ErrorAction SilentlyContinue | ForEach-Object {
                 Write-Host "$($_.TimeCreated): $($_.Message)"
               }
             } catch { Write-Host "(none)" }
-
-            # Try running XamlCompiler directly with .NET Framework exception logging
-            $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.7.*" -Directory | Select-Object -First 1).FullName
-            $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
-            if (Test-Path $xamlCompiler) {
-              # Create a XamlCompiler.exe.config to enable runtime tracing
-              $configContent = @"
-          <?xml version="1.0" encoding="utf-8"?>
-          <configuration>
-            <system.diagnostics>
-              <switches>
-                <add name="TraceSwitch" value="4" />
-              </switches>
-              <trace autoflush="true">
-                <listeners>
-                  <add name="textWriterTraceListener" type="System.Diagnostics.TextWriterTraceListener" initializeData="xamlcompiler-trace.log" />
-                </listeners>
-              </trace>
-            </system.diagnostics>
-          </configuration>
-"@
-              Set-Content -Path "$xamlCompiler.config" -Value $configContent -Encoding UTF8
-              Write-Host "Created XamlCompiler.exe.config with tracing enabled"
-
-              $inputJsonPath = Join-Path (Resolve-Path $objDir) "input.json"
-              $outputJsonPath = Join-Path (Resolve-Path $objDir) "output.json"
-
-              try {
-                $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJsonPath`"", "`"$outputJsonPath`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xc-stderr.txt" -RedirectStandardOutput "xc-stdout.txt"
-                Write-Host "XamlCompiler direct exit code: $($proc.ExitCode)"
-                if (Test-Path "xc-stdout.txt") { Write-Host "=== stdout ==="; Get-Content "xc-stdout.txt" | Write-Host }
-                if (Test-Path "xc-stderr.txt") { Write-Host "=== stderr ==="; Get-Content "xc-stderr.txt" | Write-Host }
-                if (Test-Path "xamlcompiler-trace.log") { Write-Host "=== trace ==="; Get-Content "xamlcompiler-trace.log" | Write-Host }
-              } catch {
-                Write-Host "Failed to run XamlCompiler: $_"
-              }
-            }
 
             exit $buildExit
           }
