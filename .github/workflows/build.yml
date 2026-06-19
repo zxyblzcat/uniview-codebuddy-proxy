@@ -116,21 +116,27 @@ jobs:
         working-directory: windows
         shell: pwsh
         run: |
-          # Try both Debug and Release obj directories
-          $configs = @("Debug", "Release")
-          foreach ($cfg in $configs) {
-            $objDir = "UniviewCodeBuddyProxy/obj/x64/$cfg/net8.0-windows10.0.19041.0"
-            if (Test-Path $objDir) {
-              Write-Host "=== Found obj dir for $cfg ==="
-              $diagFile = "xaml-diag-$cfg.txt"
-              "=== XamlCompiler input.json (first 200 lines) ===" | Out-File $diagFile -Encoding utf8
-              if (Test-Path "$objDir/input.json") { Get-Content "$objDir/input.json" -TotalCount 200 | Out-File $diagFile -Append -Encoding utf8 } else { "NOT FOUND" | Out-File $diagFile -Append -Encoding utf8 }
-              "=== XamlCompiler output.json ===" | Out-File $diagFile -Append -Encoding utf8
-              if (Test-Path "$objDir/output.json") { Get-Content "$objDir/output.json" | Out-File $diagFile -Append -Encoding utf8 } else { "NOT FOUND" | Out-File $diagFile -Append -Encoding utf8 }
-              "=== obj dir listing ===" | Out-File $diagFile -Append -Encoding utf8
-              Get-ChildItem "$objDir" -Recurse -Name | Select-Object -First 50 | Out-File $diagFile -Append -Encoding utf8
-              Get-Content $diagFile
-            }
+          $objDir = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0"
+          if (-not (Test-Path $objDir)) {
+            $objDir = "UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0"
+          }
+          if (Test-Path $objDir) {
+            Write-Host "=== input.json (reference assemblies count) ==="
+            if (Test-Path "$objDir/input.json") {
+              $inputJson = Get-Content "$objDir/input.json" -Raw | ConvertFrom-Json
+              $refAsm = $inputJson.ReferenceAssemblies
+              Write-Host "Reference assemblies count: $($refAsm.Count)"
+              # Show first 20 and last 20
+              $refAsm[0..19] | ForEach-Object { Write-Host "  $_" }
+              if ($refAsm.Count -gt 40) { Write-Host "  ... ($($refAsm.Count - 40) more) ..." }
+              if ($refAsm.Count -gt 20) { $refAsm[($refAsm.Count-20)..($refAsm.Count-1)] | ForEach-Object { Write-Host "  $_" } }
+              Write-Host "=== input.json XAML pages ==="
+              $inputJson.XamlPages | ForEach-Object { Write-Host "  $($_.Source)" }
+            } else { Write-Host "input.json NOT FOUND" }
+            Write-Host "=== output.json ==="
+            if (Test-Path "$objDir/output.json") { Get-Content "$objDir/output.json" | Write-Host } else { Write-Host "NOT FOUND" }
+          } else {
+            Write-Host "obj dir NOT FOUND"
           }
 
       - name: Upload diagnostics on failure
