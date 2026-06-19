@@ -54,15 +54,15 @@ public sealed class AnthropicStreamTranslator
             if (!_finished)
             {
                 _finished = true;
-                var events = CloseOpenBlocks();
-                events.Add(AnthropicSSE("message_delta", new Dictionary<string, object?>
+                var closeEvents = CloseOpenBlocks();
+                closeEvents.Add(AnthropicSSE("message_delta", new Dictionary<string, object?>
                 {
                     ["type"] = "message_delta",
                     ["delta"] = new Dictionary<string, object?> { ["stop_reason"] = "end_turn", ["stop_sequence"] = null },
                     ["usage"] = new Dictionary<string, int> { ["input_tokens"] = _inputTokens, ["output_tokens"] = _outputTokens },
                 }));
-                events.Add(AnthropicSSE("message_stop", new Dictionary<string, object> { ["type"] = "message_stop" }));
-                return events;
+                closeEvents.Add(AnthropicSSE("message_stop", new Dictionary<string, object?> { ["type"] = "message_stop" }));
+                return closeEvents;
             }
             return [];
         }
@@ -127,14 +127,14 @@ public sealed class AnthropicStreamTranslator
                     if (_thinkingBlockIdx == null)
                     {
                         _thinkingBlockIdx = _nextBlockIdx++;
-                        events.Add(AnthropicSSE("content_block_start", new Dictionary<string, object>
+                        events.Add(AnthropicSSE("content_block_start", new Dictionary<string, object?>
                         {
                             ["type"] = "content_block_start",
                             ["index"] = _thinkingBlockIdx.Value,
                             ["content_block"] = new Dictionary<string, string> { ["type"] = "thinking", ["thinking"] = "", ["signature"] = "" },
                         }));
                     }
-                    events.Add(AnthropicSSE("content_block_delta", new Dictionary<string, object>
+                    events.Add(AnthropicSSE("content_block_delta", new Dictionary<string, object?>
                     {
                         ["type"] = "content_block_delta",
                         ["index"] = _thinkingBlockIdx!.Value,
@@ -154,7 +154,7 @@ public sealed class AnthropicStreamTranslator
                     if (_thinkingBlockIdx.HasValue)
                     {
                         events.AddRange(EmitThinkingSignatureDelta(_thinkingBlockIdx.Value));
-                        events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object>
+                        events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object?>
                         {
                             ["type"] = "content_block_stop",
                             ["index"] = _thinkingBlockIdx.Value,
@@ -165,14 +165,14 @@ public sealed class AnthropicStreamTranslator
                     if (_textBlockIdx == null)
                     {
                         _textBlockIdx = _nextBlockIdx++;
-                        events.Add(AnthropicSSE("content_block_start", new Dictionary<string, object>
+                        events.Add(AnthropicSSE("content_block_start", new Dictionary<string, object?>
                         {
                             ["type"] = "content_block_start",
                             ["index"] = _textBlockIdx.Value,
                             ["content_block"] = new Dictionary<string, string> { ["type"] = "text", ["text"] = "" },
                         }));
                     }
-                    events.Add(AnthropicSSE("content_block_delta", new Dictionary<string, object>
+                    events.Add(AnthropicSSE("content_block_delta", new Dictionary<string, object?>
                     {
                         ["type"] = "content_block_delta",
                         ["index"] = _textBlockIdx!.Value,
@@ -203,7 +203,7 @@ public sealed class AnthropicStreamTranslator
                         if (_thinkingBlockIdx.HasValue)
                         {
                             events.AddRange(EmitThinkingSignatureDelta(_thinkingBlockIdx.Value));
-                            events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object>
+                            events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object?>
                             {
                                 ["type"] = "content_block_stop",
                                 ["index"] = _thinkingBlockIdx.Value,
@@ -212,7 +212,7 @@ public sealed class AnthropicStreamTranslator
                         }
                         if (_textBlockIdx.HasValue)
                         {
-                            events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object>
+                            events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object?>
                             {
                                 ["type"] = "content_block_stop",
                                 ["index"] = _textBlockIdx.Value,
@@ -230,16 +230,16 @@ public sealed class AnthropicStreamTranslator
                                 if (tcMap.TryGetProperty("function", out var fnEl) && fnEl.TryGetProperty("name", out var nameEl))
                                     fnName = nameEl.GetString() ?? "";
 
-                                events.Add(AnthropicSSE("content_block_start", new Dictionary<string, object>
+                                events.Add(AnthropicSSE("content_block_start", new Dictionary<string, object?>
                                 {
                                     ["type"] = "content_block_start",
                                     ["index"] = blockIdx,
-                                    ["content_block"] = new Dictionary<string, object>
+                                    ["content_block"] = new Dictionary<string, object?>
                                     {
                                         ["type"] = "tool_use",
                                         ["id"] = id,
                                         ["name"] = fnName,
-                                        ["input"] = new Dictionary<string, object>(),
+                                        ["input"] = new Dictionary<string, object?>(),
                                     },
                                 }));
                             }
@@ -253,7 +253,7 @@ public sealed class AnthropicStreamTranslator
                             var args = argsEl.GetString() ?? "";
                             if (!string.IsNullOrEmpty(args))
                             {
-                                events.Add(AnthropicSSE("content_block_delta", new Dictionary<string, object>
+                                events.Add(AnthropicSSE("content_block_delta", new Dictionary<string, object?>
                                 {
                                     ["type"] = "content_block_delta",
                                     ["index"] = blockIdx,
@@ -277,7 +277,7 @@ public sealed class AnthropicStreamTranslator
                     ["delta"] = new Dictionary<string, object?> { ["stop_reason"] = FinishReasonToStopReason(fr), ["stop_sequence"] = null },
                     ["usage"] = new Dictionary<string, int> { ["input_tokens"] = _inputTokens, ["output_tokens"] = _outputTokens },
                 }));
-                events.Add(AnthropicSSE("message_stop", new Dictionary<string, object> { ["type"] = "message_stop" }));
+                events.Add(AnthropicSSE("message_stop", new Dictionary<string, object?> { ["type"] = "message_stop" }));
             }
         }
 
@@ -299,7 +299,7 @@ public sealed class AnthropicStreamTranslator
             ["delta"] = new Dictionary<string, object?> { ["stop_reason"] = "stop_sequence", ["stop_sequence"] = "<stream_error>" },
             ["usage"] = new Dictionary<string, int> { ["input_tokens"] = _inputTokens, ["output_tokens"] = _outputTokens },
         }));
-        events.Add(AnthropicSSE("message_stop", new Dictionary<string, object> { ["type"] = "message_stop" }));
+        events.Add(AnthropicSSE("message_stop", new Dictionary<string, object?> { ["type"] = "message_stop" }));
         return events;
     }
 
@@ -333,7 +333,7 @@ public sealed class AnthropicStreamTranslator
         if (_thinkingBlockIdx.HasValue)
         {
             events.AddRange(EmitThinkingSignatureDelta(_thinkingBlockIdx.Value));
-            events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object>
+            events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object?>
             {
                 ["type"] = "content_block_stop",
                 ["index"] = _thinkingBlockIdx.Value,
@@ -344,7 +344,7 @@ public sealed class AnthropicStreamTranslator
         // 2. Close text block
         if (_textBlockIdx.HasValue)
         {
-            events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object>
+            events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object?>
             {
                 ["type"] = "content_block_stop",
                 ["index"] = _textBlockIdx.Value,
@@ -357,7 +357,7 @@ public sealed class AnthropicStreamTranslator
         {
             if (_toolBlocksStarted[tcIdx] && _toolBlockIdxMap.TryGetValue(tcIdx, out var blockIdx))
             {
-                events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object>
+                events.Add(AnthropicSSE("content_block_stop", new Dictionary<string, object?>
                 {
                     ["type"] = "content_block_stop",
                     ["index"] = blockIdx,
@@ -372,7 +372,7 @@ public sealed class AnthropicStreamTranslator
     {
         return
         [
-            AnthropicSSE("content_block_delta", new Dictionary<string, object>
+            AnthropicSSE("content_block_delta", new Dictionary<string, object?>
             {
                 ["type"] = "content_block_delta",
                 ["index"] = blockIdx,
