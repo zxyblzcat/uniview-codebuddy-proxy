@@ -59,9 +59,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Verify .NET SDK version
-        run: dotnet --version
-
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
@@ -74,132 +71,17 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
-      - name: Build WinUI app (Debug first)
+      - name: Build Core library
         working-directory: windows
-        shell: pwsh
-        run: |
-          # First, capture XamlCompiler's crash dump
-          $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.5.*" -Directory | Select-Object -First 1).FullName
-          $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
-          Write-Host "XamlCompiler path: $xamlCompiler"
-          Write-Host ".NET Framework version:"
-          Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -ErrorAction SilentlyContinue | Select-Object Release, Version | Format-List
+        run: dotnet build UniviewCodeBuddyProxy.Core/UniviewCodeBuddyProxy.Core.csproj -c Debug -p:Platform=x64
 
-          # Run build
-          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 2>&1 | Tee-Object -FilePath build-output.log
-          $buildExit = $LASTEXITCODE
-          if ($buildExit -ne 0) {
-            Write-Host "=== Build FAILED ==="
-            # Try running XamlCompiler directly with various debugging
-            $inputJson = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/input.json"
-            $outputJson = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/output.json"
-            if (Test-Path $inputJson) {
-              Write-Host "=== Running XamlCompiler directly ==="
-              # Try with FusLogVw-style assembly binding logging
-              $env:COMPLUS_LoaderOptimization = "1"
-              try {
-                $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJson`"", "`"$outputJson`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xamlcompiler-stderr.txt" -RedirectStandardOutput "xamlcompiler-stdout.txt"
-                Write-Host "Exit code: $($proc.ExitCode)"
-                Write-Host "=== stdout ==="
-                if (Test-Path "xamlcompiler-stdout.txt") { Get-Content "xamlcompiler-stdout.txt" } else { Write-Host "(empty)" }
-                Write-Host "=== stderr ==="
-                if (Test-Path "xamlcompiler-stderr.txt") { Get-Content "xamlcompiler-stderr.txt" } else { Write-Host "(empty)" }
-              } catch {
-                Write-Host "Failed to run XamlCompiler: $_"
-              }
-
-              # Check for .NET Runtime errors in event log
-              Write-Host "=== .NET Runtime Event Log errors ==="
-              try {
-                Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
-                  Write-Host "$($_.TimeCreated): $($_.Message)"
-                }
-              } catch { Write-Host "(no .NET Runtime errors)" }
-
-              Write-Host "=== Application Error events ==="
-              try {
-                Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
-                  Write-Host "$($_.TimeCreated): $($_.Message)"
-                }
-              } catch { Write-Host "(no Application Error events)" }
-            }
-            exit $buildExit
-          }
+      - name: Build WinUI app (Debug)
+        working-directory: windows
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        shell: pwsh
-        run: |
-          # Run build and capture output
-          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64 2>&1 | Tee-Object -FilePath build-output.log
-          $buildExit = $LASTEXITCODE
-          if ($buildExit -ne 0) {
-            Write-Host "=== Build FAILED ==="
-            # Try running XamlCompiler directly to capture its stderr
-            $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.5.*" -Directory | Select-Object -First 1).FullName
-            $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
-            $inputJson = "UniviewCodeBuddyProxy\obj\x64\Release\net8.0-windows10.0.19041.0\input.json"
-            $outputJson = "UniviewCodeBuddyProxy\obj\x64\Release\net8.0-windows10.0.19041.0\output.json"
-            if (Test-Path $xamlCompiler) {
-              Write-Host "=== Running XamlCompiler directly ==="
-              Write-Host "XamlCompiler: $xamlCompiler"
-              Write-Host ".NET Framework version:"
-              Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -ErrorAction SilentlyContinue | Select-Object Release, Version | Format-List
-              try {
-                $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJson`"", "`"$outputJson`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xamlcompiler-stderr.txt" -RedirectStandardOutput "xamlcompiler-stdout.txt"
-                Write-Host "Exit code: $($proc.ExitCode)"
-                Write-Host "=== stdout ==="
-                if (Test-Path "xamlcompiler-stdout.txt") { Get-Content "xamlcompiler-stdout.txt" } else { Write-Host "(empty)" }
-                Write-Host "=== stderr ==="
-                if (Test-Path "xamlcompiler-stderr.txt") { Get-Content "xamlcompiler-stderr.txt" } else { Write-Host "(empty)" }
-              } catch {
-                Write-Host "Failed to run XamlCompiler: $_"
-              }
-            }
-            exit $buildExit
-          }
-
-      - name: Capture XamlCompiler diagnostics on failure
-        if: failure()
-        working-directory: windows
-        shell: pwsh
-        run: |
-          $objDir = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0"
-          if (-not (Test-Path $objDir)) {
-            $objDir = "UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0"
-          }
-          if (Test-Path $objDir) {
-            Write-Host "=== input.json (reference assemblies count) ==="
-            if (Test-Path "$objDir/input.json") {
-              $inputJson = Get-Content "$objDir/input.json" -Raw | ConvertFrom-Json
-              $refAsm = $inputJson.ReferenceAssemblies
-              Write-Host "Reference assemblies count: $($refAsm.Count)"
-              # Show all ref assembly filenames (just the DLL name, not full path)
-              $refAsm | ForEach-Object {
-                $fp = $_.FullPath
-                if ($fp) { $name = [System.IO.Path]::GetFileName($fp) } else { $name = $_.ItemSpec }
-                Write-Host "  $name"
-              }
-              Write-Host "=== input.json XAML pages ==="
-              $inputJson.XamlPages | ForEach-Object { Write-Host "  $($_.Source)" }
-              Write-Host "=== input.json key fields ==="
-              Write-Host "  IsPass1: $($inputJson.IsPass1)"
-              Write-Host "  CompileMode: $($inputJson.CompileMode)"
-              Write-Host "  Language: $($inputJson.Language)"
-              Write-Host "  ProjectDir: $($inputJson.ProjectDir)"
-            } else { Write-Host "input.json NOT FOUND" }
-            Write-Host "=== output.json ==="
-            if (Test-Path "$objDir/output.json") { Get-Content "$objDir/output.json" | Write-Host } else { Write-Host "NOT FOUND" }
-          } else {
-            Write-Host "obj dir NOT FOUND"
-          }
-
-      - name: Upload diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xaml-diagnostics
-          path: windows/xaml-diag.txt
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
 
       - name: Publish WinUI app
         working-directory: windows
