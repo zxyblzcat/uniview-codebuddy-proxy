@@ -59,45 +59,21 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v1.1
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('windows/**/*.csproj') }}
-          restore-keys: |
-            nuget-${{ runner.os }}-
-
-      - name: Restore workloads
-        working-directory: windows
-        run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
-
-      - name: Restore NuGet packages
-        working-directory: windows
-        run: dotnet restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -p:Platform=x64
-
-      - name: Build Core library
-        working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy.Core/UniviewCodeBuddyProxy.Core.csproj -c Debug -p:Platform=x64
-
       - name: Build WinUI app (Debug)
         working-directory: windows
-        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Debug /p:Platform=x64
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Release /p:Platform=x64
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
 
       - name: Publish WinUI app
         working-directory: windows
         run: >
-          msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
-          /p:Configuration=Release /p:Platform=x64
-          /p:SelfContained=true /p:RuntimeIdentifier=win-x64
-          /p:PublishSingleFile=false /p:WindowsAppSDKSelfContained=true
-          /t:Publish
+          dotnet publish UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
+          -c Release -p:Platform=x64
+          -p:SelfContained=true -r win-x64
+          -p:WindowsAppSDKSelfContained=true
 
       - name: Verify publish output
         shell: pwsh

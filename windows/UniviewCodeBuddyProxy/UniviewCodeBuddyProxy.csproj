@@ -24,9 +24,9 @@
 
   <ItemGroup>
     <!-- Core proxy library — normal project reference.
-         MSBuild's in-process CompileXaml task can handle Core DLL properly
-         (unlike the out-of-process XamlCompiler.exe which crashed on .NET 6/8 refs).
-         ASP.NET Core FrameworkReference from Core is excluded via Directory.Build.targets. -->
+         ASP.NET Core FrameworkReference from Core is excluded via Directory.Build.targets
+         before XamlCompiler runs, preventing the .NET Framework 4.7.2 XamlCompiler.exe
+         from crashing on .NET 6/8 reference assemblies. -->
     <ProjectReference Include="..\UniviewCodeBuddyProxy.Core\UniviewCodeBuddyProxy.Core.csproj" />
   </ItemGroup>
 

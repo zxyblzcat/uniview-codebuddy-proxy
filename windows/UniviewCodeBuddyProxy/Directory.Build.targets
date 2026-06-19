@@ -1,18 +1,28 @@
 <Project>
   <!--
-    Remove ASP.NET Core reference assemblies before XamlCompiler runs.
-    Even with MSBuild's in-process CompileXaml task, including ASP.NET Core
-    reference assemblies from the Core project's FrameworkReference can cause
-    issues. This target strips them from the ReferencePath item group that
-    feeds into XAML compilation.
+    Remove ASP.NET Core and Core DLL reference assemblies before XamlCompiler runs.
+    XamlCompiler.exe is a .NET Framework 4.7.2 out-of-process executable that crashes
+    when presented with .NET 6/8 reference assemblies from transitive FrameworkReferences
+    or ProjectReferences. This target strips them from ReferencePath before XAML compilation.
+
+    For C# compilation (CoreCompile), these references are still available because
+    CoreCompile runs before XamlMarkupCompilePass1 in the dotnet build pipeline,
+    and the XamlPreCompile step (which also compiles C#) only needs the XAML-generated
+    code to compile, not the full application.
   -->
-  <Target Name="_RemoveAspNetCoreRefsBeforeXamlCompiler"
+  <Target Name="_RemoveProblematicRefsBeforeXamlCompiler"
           BeforeTargets="XamlMarkupCompilePass1;_XamlBuildExecTask;MarkupCompilePass1"
           DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
     <ItemGroup>
+      <!-- Remove ASP.NET Core refs from Core project's FrameworkReference -->
       <_AspNetCoreRefs Include="@(ReferencePath)" Condition="$([System.String]::new('%(FullPath)').Contains('Microsoft.AspNetCore'))" />
       <ReferencePath Remove="@(_AspNetCoreRefs)" />
+
+      <!-- Remove Core DLL itself — XamlCompiler doesn't need it (no x:Bind to Core types)
+           and loading it triggers .NET Framework attempting to resolve .NET 6/8 dependencies -->
+      <_CoreDllRefs Include="@(ReferencePath)" Condition="$([System.String]::new('%(FullPath)').Contains('UniviewCodeBuddyProxy.Core'))" />
+      <ReferencePath Remove="@(_CoreDllRefs)" />
     </ItemGroup>
-    <Message Importance="high" Text="[_RemoveAspNetCoreRefsBeforeXamlCompiler] Removed @(_AspNetCoreRefs->Count()) ASP.NET Core refs. Remaining ReferencePath: @(ReferencePath->Count())" />
+    <Message Importance="high" Text="[_RemoveProblematicRefsBeforeXamlCompiler] Removed @(_AspNetCoreRefs->Count()) ASP.NET Core + @(_CoreDllRefs->Count()) Core refs. Remaining ReferencePath: @(ReferencePath->Count())" />
   </Target>
 </Project>
