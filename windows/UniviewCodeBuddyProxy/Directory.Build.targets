@@ -1,25 +1,5 @@
 <Project>
   <!--
-    Override UseXamlCompilerExecutable AFTER NuGet package imports.
-    The WindowsAppSDK's interop.targets sets UseXamlCompilerExecutable=true
-    when MSBuildRuntimeType==Core (i.e., dotnet CLI), which launches
-    XamlCompiler.exe as a separate .NET Framework 4.7.2 process. This
-    process crashes on CI with exit code 1 and no output.
-
-    By setting UseXamlCompilerExecutable=false, we force the CompileXaml
-    task to run in-process within the .NET 8 MSBuild process, using the
-    net6.0 DLLs from the WindowsAppSDK package. This avoids the .NET
-    Framework crash entirely.
-
-    Directory.Build.targets is imported AFTER NuGet package targets,
-    so this property assignment takes precedence over the one in
-    Microsoft.UI.Xaml.Markup.Compiler.interop.targets.
-  -->
-  <PropertyGroup>
-    <UseXamlCompilerExecutable>false</UseXamlCompilerExecutable>
-  </PropertyGroup>
-
-  <!--
     Remove ASP.NET Core reference assemblies before XamlCompiler runs.
     XamlCompiler.exe is a .NET Framework 4.7.2 process that crashes when
     presented with 200+ ASP.NET Core reference assemblies from a transitive

@@ -18,11 +18,8 @@
 
   <ItemGroup>
     <!-- WinUI 3 / Windows App SDK -->
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250602001" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
-    <!-- Required by CompileXaml in-process task (net6.0 DLLs reference this but
-         it's not bundled with the WindowsAppSDK package or .NET 8 runtime) -->
-    <PackageReference Include="System.Security.Permissions" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup>
