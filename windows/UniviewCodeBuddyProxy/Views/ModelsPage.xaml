@@ -51,7 +51,7 @@
                   Padding="0">
             <GridView.ItemTemplate>
                 <DataTemplate>
-                    <controls:GlassCard CornerRadius="12">
+                    <controls:GlassCard CardCornerRadius="12">
                         <StackPanel Spacing="6" MinWidth="180">
                             <TextBlock Text="{Binding Name}"
                                        FontSize="14"

@@ -26,10 +26,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     // ── Network ──
 
-    public int Port
+    public double Port
     {
         get => _config.Port;
-        set => _config.Port = value;
+        set => _config.Port = (int)value;
     }
 
     public string ApiPassword
@@ -38,10 +38,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set => _config.ApiPassword = value;
     }
 
-    public int MaxConcurrentRequests
+    public double MaxConcurrentRequests
     {
         get => _config.MaxConcurrentRequests;
-        set => _config.MaxConcurrentRequests = value;
+        set => _config.MaxConcurrentRequests = (int)value;
     }
 
     // ── Cache ──
@@ -52,10 +52,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set => _config.CacheEnabled = value;
     }
 
-    public int CacheTTL
+    public double CacheTTL
     {
         get => _config.CacheTTL;
-        set => _config.CacheTTL = value;
+        set => _config.CacheTTL = (int)value;
     }
 
     // ── AI Features ──
@@ -82,28 +82,28 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     // ── Resilience ──
 
-    public int MaxRetries
+    public double MaxRetries
     {
         get => _config.MaxRetries;
-        set => _config.MaxRetries = value;
+        set => _config.MaxRetries = (int)value;
     }
 
-    public int CbMaxFailures
+    public double CbMaxFailures
     {
         get => _config.CbMaxFailures;
-        set => _config.CbMaxFailures = value;
+        set => _config.CbMaxFailures = (int)value;
     }
 
-    public int CbResetTimeoutSecs
+    public double CbResetTimeoutSecs
     {
         get => _config.CbResetTimeoutSecs;
-        set => _config.CbResetTimeoutSecs = value;
+        set => _config.CbResetTimeoutSecs = (int)value;
     }
 
-    public int CooldownDurationSecs
+    public double CooldownDurationSecs
     {
         get => _config.CooldownDurationSecs;
-        set => _config.CooldownDurationSecs = value;
+        set => _config.CooldownDurationSecs = (int)value;
     }
 
     // ── Telemetry ──
@@ -116,16 +116,16 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     // ── Logging ──
 
-    public int LogMaxSizeMB
+    public double LogMaxSizeMB
     {
         get => _config.LogMaxSizeMB;
-        set => _config.LogMaxSizeMB = value;
+        set => _config.LogMaxSizeMB = (int)value;
     }
 
-    public int LogCleanupInterval
+    public double LogCleanupInterval
     {
         get => _config.LogCleanupInterval;
-        set => _config.LogCleanupInterval = value;
+        set => _config.LogCleanupInterval = (int)value;
     }
 
     // ── Appearance ──
@@ -152,6 +152,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     }
 
     public ObservableCollection<string> LocaleOptions { get; } = ["zh-CN", "en"];
+
+    // ── Computed display text for slider labels ──
+
+    public string CacheTTLText => $"{(int)CacheTTL}s";
+    public string CbResetTimeoutSecsText => $"{(int)CbResetTimeoutSecs}s";
+    public string CooldownDurationSecsText => $"{(int)CooldownDurationSecs}s";
+    public string LogMaxSizeMBText => $"{(int)LogMaxSizeMB}MB";
 
     // ── About ──
 

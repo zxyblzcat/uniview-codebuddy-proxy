@@ -97,22 +97,22 @@ public sealed partial class GlassCard : UserControl
             : Visibility.Visible;
     }
 
-    // ── CornerRadius override ──
+    // ── CardCornerRadius override ──
 
-    public new static readonly DependencyProperty CornerRadiusProperty =
+    public static readonly DependencyProperty CardCornerRadiusProperty =
         DependencyProperty.Register(
-            nameof(CornerRadius),
+            nameof(CardCornerRadius),
             typeof(double),
             typeof(GlassCard),
-            new PropertyMetadata(20.0, OnCornerRadiusChanged));
+            new PropertyMetadata(20.0, OnCardCornerRadiusChanged));
 
-    public new double CornerRadius
+    public double CardCornerRadius
     {
-        get => (double)GetValue(CornerRadiusProperty);
-        set => SetValue(CornerRadiusProperty, value);
+        get => (double)GetValue(CardCornerRadiusProperty);
+        set => SetValue(CardCornerRadiusProperty, value);
     }
 
-    private static void OnCornerRadiusChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    private static void OnCardCornerRadiusChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var card = (GlassCard)d;
         var radius = (double)e.NewValue;

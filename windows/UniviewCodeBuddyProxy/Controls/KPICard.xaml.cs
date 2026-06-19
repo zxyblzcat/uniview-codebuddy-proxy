@@ -30,12 +30,12 @@ public sealed partial class KPICard : UserControl
     // ── Value ──
 
     public static readonly DependencyProperty ValueProperty =
-        DependencyProperty.Register(nameof(Value), typeof(string), typeof(KPICard),
-            new PropertyMetadata(string.Empty, (d, e) => ((KPICard)d).ValueText.Text = (string)e.NewValue));
+        DependencyProperty.Register(nameof(Value), typeof(object), typeof(KPICard),
+            new PropertyMetadata(null, (d, e) => ((KPICard)d).ValueText.Text = e.NewValue?.ToString() ?? string.Empty));
 
-    public string Value
+    public object Value
     {
-        get => (string)GetValue(ValueProperty);
+        get => GetValue(ValueProperty);
         set => SetValue(ValueProperty, value);
     }
 
@@ -106,19 +106,25 @@ public sealed partial class KPICard : UserControl
     // ── AccentColor ──
 
     public static readonly DependencyProperty AccentColorProperty =
-        DependencyProperty.Register(nameof(AccentColor), typeof(Color), typeof(KPICard),
-            new PropertyMetadata(Microsoft.UI.Colors.Transparent, OnAccentColorChanged));
+        DependencyProperty.Register(nameof(AccentColor), typeof(Brush), typeof(KPICard),
+            new PropertyMetadata(null, OnAccentColorChanged));
 
-    public Color AccentColor
+    public Brush AccentColor
     {
-        get => (Color)GetValue(AccentColorProperty);
+        get => (Brush)GetValue(AccentColorProperty);
         set => SetValue(AccentColorProperty, value);
     }
 
     private static void OnAccentColorChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var card = (KPICard)d;
-        var color = (Color)e.NewValue;
+        var brush = e.NewValue as SolidColorBrush;
+        if (brush == null)
+        {
+            card.AccentLine.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            return;
+        }
+        var color = brush.Color;
         var gradient = new LinearGradientBrush
         {
             StartPoint = new Point(0, 0.5),

@@ -49,19 +49,19 @@ public sealed partial class GlassButton : UserControl
             : Visibility.Visible;
     }
 
-    // ── ButtonStyle (Primary / Secondary) ──
+    // ── Variant (Primary / Secondary) ──
 
-    public static readonly DependencyProperty ButtonStyleProperty =
-        DependencyProperty.Register(nameof(ButtonStyle), typeof(GlassButtonStyle), typeof(GlassButton),
-            new PropertyMetadata(GlassButtonStyle.Primary, OnButtonStyleChanged));
+    public static readonly DependencyProperty VariantProperty =
+        DependencyProperty.Register(nameof(Variant), typeof(GlassButtonStyle), typeof(GlassButton),
+            new PropertyMetadata(GlassButtonStyle.Primary, OnVariantChanged));
 
-    public new GlassButtonStyle ButtonStyle
+    public GlassButtonStyle Variant
     {
-        get => (GlassButtonStyle)GetValue(ButtonStyleProperty);
-        set => SetValue(ButtonStyleProperty, value);
+        get => (GlassButtonStyle)GetValue(VariantProperty);
+        set => SetValue(VariantProperty, value);
     }
 
-    private static void OnButtonStyleChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    private static void OnVariantChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var btn = (GlassButton)d;
         var style = (GlassButtonStyle)e.NewValue;

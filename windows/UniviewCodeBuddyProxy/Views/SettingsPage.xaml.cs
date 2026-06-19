@@ -21,6 +21,12 @@ public sealed partial class SettingsPage : Page
         ViewModel = new SettingsViewModel(app.ConfigManager, app.ThemeManager);
         this.InitializeComponent();
 
+        // Set initial password without triggering save
+        if (ApiPasswordBox != null)
+        {
+            ApiPasswordBox.Password = ViewModel.ApiPassword;
+        }
+
         UpdateCleanupLabel();
         ViewModel.PropertyChanged += (_, e) =>
         {
@@ -55,6 +61,16 @@ public sealed partial class SettingsPage : Page
         }
     }
 
+    // ── API Password ──
+
+    private void OnApiPasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is PasswordBox pb)
+        {
+            ViewModel.ApiPassword = pb.Password;
+        }
+    }
+
     // ── Reset to defaults ──
 
     private async void OnResetToDefaults(object sender, RoutedEventArgs e)
@@ -82,7 +98,7 @@ public sealed partial class SettingsPage : Page
     {
         if (CleanupLabel != null)
         {
-            CleanupLabel.Text = SettingsViewModel.FormatInterval(ViewModel.LogCleanupInterval);
+            CleanupLabel.Text = SettingsViewModel.FormatInterval((int)ViewModel.LogCleanupInterval);
         }
     }
 }

@@ -32,14 +32,14 @@
             <controls:GlassButton Grid.Column="1"
                                   Text="浏览器登录"
                                   Icon=""
-                                  ButtonStyle="Primary"
+                                  Variant="Primary"
                                   Click="OnLoginWithBrowser"/>
 
             <!-- Add Token button -->
             <controls:GlassButton Grid.Column="2"
                                   Text="添加令牌"
                                   Icon=""
-                                  ButtonStyle="Secondary"
+                                  Variant="Secondary"
                                   Click="OnAddToken"/>
         </Grid>
 
@@ -52,7 +52,7 @@
                       IsItemClickEnabled="False">
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <controls:GlassCard CornerRadius="12">
+                        <controls:GlassCard CardCornerRadius="12">
                             <Grid ColumnSpacing="12" Padding="4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>

@@ -27,7 +27,8 @@
                     <!-- API Password -->
                     <controls:SettingItem Label="API 密码">
                         <controls:SettingItem.ContentSlot>
-                            <PasswordBox Password="{x:Bind ViewModel.ApiPassword, Mode=TwoWay}"
+                            <PasswordBox x:Name="ApiPasswordBox"
+                                         PasswordChanged="OnApiPasswordChanged"
                                          Width="180" HorizontalAlignment="Right"/>
                         </controls:SettingItem.ContentSlot>
                     </controls:SettingItem>
@@ -65,13 +66,11 @@
                                 <Slider Value="{x:Bind ViewModel.CacheTTL, Mode=TwoWay}"
                                         Minimum="60" Maximum="3600" Step="60"
                                         Width="120"/>
-                                <TextBlock FontSize="12" FontFamily="Cascadia Code"
+                                <TextBlock Text="{x:Bind ViewModel.CacheTTLText, Mode=OneWay}"
+                                           FontSize="12" FontFamily="Cascadia Code"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            Width="44" TextAlignment="Right"
-                                           VerticalAlignment="Center">
-                                    <Run Text="{x:Bind ViewModel.CacheTTL, Mode=OneWay}"/>
-                                    <Run Text="s"/>
-                                </TextBlock>
+                                           VerticalAlignment="Center"/>
                             </StackPanel>
                         </controls:SettingItem.ContentSlot>
                     </controls:SettingItem>
@@ -130,13 +129,11 @@
                                 <Slider Value="{x:Bind ViewModel.CbResetTimeoutSecs, Mode=TwoWay}"
                                         Minimum="5" Maximum="120" Step="5"
                                         Width="120"/>
-                                <TextBlock FontSize="12" FontFamily="Cascadia Code"
+                                <TextBlock Text="{x:Bind ViewModel.CbResetTimeoutSecsText, Mode=OneWay}"
+                                           FontSize="12" FontFamily="Cascadia Code"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            Width="38" TextAlignment="Right"
-                                           VerticalAlignment="Center">
-                                    <Run Text="{x:Bind ViewModel.CbResetTimeoutSecs, Mode=OneWay}"/>
-                                    <Run Text="s"/>
-                                </TextBlock>
+                                           VerticalAlignment="Center"/>
                             </StackPanel>
                         </controls:SettingItem.ContentSlot>
                     </controls:SettingItem>
@@ -147,13 +144,11 @@
                                 <Slider Value="{x:Bind ViewModel.CooldownDurationSecs, Mode=TwoWay}"
                                         Minimum="5" Maximum="300" Step="5"
                                         Width="120"/>
-                                <TextBlock FontSize="12" FontFamily="Cascadia Code"
+                                <TextBlock Text="{x:Bind ViewModel.CooldownDurationSecsText, Mode=OneWay}"
+                                           FontSize="12" FontFamily="Cascadia Code"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            Width="38" TextAlignment="Right"
-                                           VerticalAlignment="Center">
-                                    <Run Text="{x:Bind ViewModel.CooldownDurationSecs, Mode=OneWay}"/>
-                                    <Run Text="s"/>
-                                </TextBlock>
+                                           VerticalAlignment="Center"/>
                             </StackPanel>
                         </controls:SettingItem.ContentSlot>
                     </controls:SettingItem>
@@ -180,13 +175,11 @@
                                 <Slider Value="{x:Bind ViewModel.LogMaxSizeMB, Mode=TwoWay}"
                                         Minimum="10" Maximum="500" Step="10"
                                         Width="120"/>
-                                <TextBlock FontSize="12" FontFamily="Cascadia Code"
+                                <TextBlock Text="{x:Bind ViewModel.LogMaxSizeMBText, Mode=OneWay}"
+                                           FontSize="12" FontFamily="Cascadia Code"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            Width="50" TextAlignment="Right"
-                                           VerticalAlignment="Center">
-                                    <Run Text="{x:Bind ViewModel.LogMaxSizeMB, Mode=OneWay}"/>
-                                    <Run Text="MB"/>
-                                </TextBlock>
+                                           VerticalAlignment="Center"/>
                             </StackPanel>
                         </controls:SettingItem.ContentSlot>
                     </controls:SettingItem>

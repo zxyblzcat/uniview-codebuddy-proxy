@@ -47,14 +47,22 @@ public sealed class ThemeColors
     public Color Primary => ColorHelper.FromHex("#5B9CF6");
     /// <summary>Accent color</summary>
     public Color Accent => ColorHelper.FromHex("#34D4AA");
+    // ── Surface ──
+
     /// <summary>Surface (card/secondary background)</summary>
     public Color Surface => IsDark ? ColorHelper.FromHex("#131926") : ColorHelper.FromHex("#FFFFFF");
+    /// <summary>Surface as SolidColorBrush</summary>
+    public SolidColorBrush SurfaceBrush => new(Surface);
 
     // ── Text hierarchy ──
 
     public Color Text => Fg;
     public Color TextSecondary => Fg.WithOpacity(0.6);
     public Color TextMuted => Fg.WithOpacity(0.35);
+
+    public SolidColorBrush TextBrush => new(Text);
+    public SolidColorBrush TextSecondaryBrush => new(TextSecondary);
+    public SolidColorBrush TextMutedBrush => new(TextMuted);
 
     // ── Primary variants ──
 
@@ -86,6 +94,7 @@ public sealed class ThemeColors
     public Color GlassBgHeavy => IsDark ? Colors.White.WithOpacity(0.09) : Colors.Black.WithOpacity(0.06);
     public Color GlassBgTabbar => IsDark ? ColorHelper.FromHex("#101420").WithOpacity(0.72) : Colors.White.WithOpacity(0.72);
     public Color GlassBorder => IsDark ? Colors.White.WithOpacity(0.09) : Colors.Black.WithOpacity(0.10);
+    public SolidColorBrush GlassBorderBrush => new(GlassBorder);
     public Color GlassBorderLight => IsDark ? Colors.White.WithOpacity(0.15) : Colors.Black.WithOpacity(0.15);
 
     // ── Highlight gradient — adaptive ──

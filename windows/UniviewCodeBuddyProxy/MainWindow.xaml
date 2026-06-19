@@ -69,8 +69,8 @@
             x:Name="StatusBar"
             Grid.Row="0"
             Padding="16,8"
-            Background="{x:Bind ThemeManager.Colors.Surface, Mode=OneWay}"
-            BorderBrush="{x:Bind ThemeManager.Colors.GlassBorder, Mode=OneWay}"
+            Background="{x:Bind ThemeManager.Colors.SurfaceBrush, Mode=OneWay}"
+            BorderBrush="{x:Bind ThemeManager.Colors.GlassBorderBrush, Mode=OneWay}"
             BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -97,7 +97,7 @@
                     Grid.Column="1"
                     VerticalAlignment="Center"
                     FontSize="13"
-                    Foreground="{x:Bind ThemeManager.Colors.Text, Mode=OneWay}"
+                    Foreground="{x:Bind ThemeManager.Colors.TextBrush, Mode=OneWay}"
                     Text="代理运行中" />
 
                 <!-- Separator -->
@@ -106,7 +106,7 @@
                     Margin="12,0,12,0"
                     VerticalAlignment="Center"
                     FontSize="13"
-                    Foreground="{x:Bind ThemeManager.Colors.TextMuted, Mode=OneWay}"
+                    Foreground="{x:Bind ThemeManager.Colors.TextMutedBrush, Mode=OneWay}"
                     Text="|" />
 
                 <!-- Model count -->
@@ -115,7 +115,7 @@
                     Grid.Column="3"
                     VerticalAlignment="Center"
                     FontSize="13"
-                    Foreground="{x:Bind ThemeManager.Colors.TextSecondary, Mode=OneWay}"
+                    Foreground="{x:Bind ThemeManager.Colors.TextSecondaryBrush, Mode=OneWay}"
                     Text="0 个模型可用" />
 
                 <!-- Current status label -->
@@ -124,7 +124,7 @@
                     Grid.Column="4"
                     VerticalAlignment="Center"
                     FontSize="13"
-                    Foreground="{x:Bind ThemeManager.Colors.TextSecondary, Mode=OneWay}"
+                    Foreground="{x:Bind ThemeManager.Colors.TextSecondaryBrush, Mode=OneWay}"
                     Text="仪表盘" />
             </Grid>
         </Border>
