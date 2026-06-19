@@ -71,6 +71,28 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
+      - name: Build WinUI app (diagnostic)
+        working-directory: windows
+        run: >
+          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
+          -c Release -p:Platform=x64 -v diag
+        continue-on-error: true
+
+      - name: Capture XamlCompiler output
+        if: failure()
+        shell: pwsh
+        run: |
+          $outputJson = "windows/UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0/output.json"
+          if (Test-Path $outputJson) {
+            Write-Host "=== XamlCompiler output.json ==="
+            Get-Content $outputJson
+          }
+          $inputJson = "windows/UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0/input.json"
+          if (Test-Path $inputJson) {
+            Write-Host "=== XamlCompiler input.json (first 200 lines) ==="
+            Get-Content $inputJson | Select-Object -First 200
+          }
+
       - name: Build WinUI app
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
