@@ -78,29 +78,50 @@ jobs:
         working-directory: windows
         shell: pwsh
         run: |
-          # Run build and capture output
-          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -v:normal 2>&1 | Tee-Object -FilePath build-output.log
+          # First, capture XamlCompiler's crash dump
+          $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.5.*" -Directory | Select-Object -First 1).FullName
+          $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
+          Write-Host "XamlCompiler path: $xamlCompiler"
+          Write-Host ".NET Framework version:"
+          Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -ErrorAction SilentlyContinue | Select-Object Release, Version | Format-List
+
+          # Run build
+          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 2>&1 | Tee-Object -FilePath build-output.log
           $buildExit = $LASTEXITCODE
           if ($buildExit -ne 0) {
             Write-Host "=== Build FAILED ==="
-            # Check if input.json was generated
+            # Try running XamlCompiler directly with various debugging
             $inputJson = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/input.json"
+            $outputJson = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/output.json"
             if (Test-Path $inputJson) {
-              Write-Host "=== input.json exists, running XamlCompiler with debug env ==="
-              $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.5.*" -Directory | Select-Object -First 1).FullName
-              $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
-              $outputJson = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/output.json"
-              if (Test-Path $xamlCompiler) {
-                $env:XAMLC_DIAGNOSTICS = "1"
+              Write-Host "=== Running XamlCompiler directly ==="
+              # Try with FusLogVw-style assembly binding logging
+              $env:COMPLUS_LoaderOptimization = "1"
+              try {
                 $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJson`"", "`"$outputJson`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xamlcompiler-stderr.txt" -RedirectStandardOutput "xamlcompiler-stdout.txt"
                 Write-Host "Exit code: $($proc.ExitCode)"
                 Write-Host "=== stdout ==="
                 if (Test-Path "xamlcompiler-stdout.txt") { Get-Content "xamlcompiler-stdout.txt" } else { Write-Host "(empty)" }
                 Write-Host "=== stderr ==="
                 if (Test-Path "xamlcompiler-stderr.txt") { Get-Content "xamlcompiler-stderr.txt" } else { Write-Host "(empty)" }
-                Write-Host "=== Windows Event Log (Application, last 5 errors) ==="
-                try { Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "$($_.TimeCreated) $($_.ProviderName): $($_.Message)" } } catch { Write-Host "(no events)" }
+              } catch {
+                Write-Host "Failed to run XamlCompiler: $_"
               }
+
+              # Check for .NET Runtime errors in event log
+              Write-Host "=== .NET Runtime Event Log errors ==="
+              try {
+                Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
+                  Write-Host "$($_.TimeCreated): $($_.Message)"
+                }
+              } catch { Write-Host "(no .NET Runtime errors)" }
+
+              Write-Host "=== Application Error events ==="
+              try {
+                Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
+                  Write-Host "$($_.TimeCreated): $($_.Message)"
+                }
+              } catch { Write-Host "(no Application Error events)" }
             }
             exit $buildExit
           }
