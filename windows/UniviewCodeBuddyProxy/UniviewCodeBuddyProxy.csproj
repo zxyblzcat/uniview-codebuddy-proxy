@@ -29,6 +29,12 @@
     </ProjectReference>
   </ItemGroup>
 
+  <!-- Suppress transitive FrameworkReference from Core library — ASP.NET Core assemblies
+       must NOT reach XamlCompiler (a .NET Framework 4.7.2 process that crashes with 200+ extra refs) -->
+  <ItemGroup>
+    <FrameworkReference Remove="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- App manifest for unpackaged deployment -->
     <Content Include="app.manifest" />
