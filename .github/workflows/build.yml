@@ -76,7 +76,34 @@ jobs:
 
       - name: Build WinUI app (Debug first)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
+        shell: pwsh
+        run: |
+          # Run build and capture output
+          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -v:normal 2>&1 | Tee-Object -FilePath build-output.log
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) {
+            Write-Host "=== Build FAILED ==="
+            # Check if input.json was generated
+            $inputJson = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/input.json"
+            if (Test-Path $inputJson) {
+              Write-Host "=== input.json exists, running XamlCompiler with debug env ==="
+              $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.5.*" -Directory | Select-Object -First 1).FullName
+              $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
+              $outputJson = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/output.json"
+              if (Test-Path $xamlCompiler) {
+                $env:XAMLC_DIAGNOSTICS = "1"
+                $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJson`"", "`"$outputJson`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xamlcompiler-stderr.txt" -RedirectStandardOutput "xamlcompiler-stdout.txt"
+                Write-Host "Exit code: $($proc.ExitCode)"
+                Write-Host "=== stdout ==="
+                if (Test-Path "xamlcompiler-stdout.txt") { Get-Content "xamlcompiler-stdout.txt" } else { Write-Host "(empty)" }
+                Write-Host "=== stderr ==="
+                if (Test-Path "xamlcompiler-stderr.txt") { Get-Content "xamlcompiler-stderr.txt" } else { Write-Host "(empty)" }
+                Write-Host "=== Windows Event Log (Application, last 5 errors) ==="
+                try { Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "$($_.TimeCreated) $($_.ProviderName): $($_.Message)" } } catch { Write-Host "(no events)" }
+              }
+            }
+            exit $buildExit
+          }
 
       - name: Build WinUI app (Release)
         working-directory: windows
