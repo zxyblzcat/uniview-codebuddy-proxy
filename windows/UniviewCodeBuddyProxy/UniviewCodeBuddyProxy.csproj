@@ -21,8 +21,11 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.*" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
 
-    <!-- System tray -->
-    <PackageReference Include="H.NotifyIcon" Version="2.*" />
+    <!-- System tray — PrivateAssets=all prevents transitive deps (System.Drawing.Common v10)
+         from flowing into XamlCompiler's reference assemblies, which causes it to crash -->
+    <PackageReference Include="H.NotifyIcon" Version="2.*">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
 
     <!-- ASP.NET Core Minimal API (in-process HTTP server) -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
