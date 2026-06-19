@@ -8,7 +8,7 @@
   -->
   <Target Name="_RemoveAspNetCoreRefsBeforeXamlCompiler"
           BeforeTargets="XamlMarkupCompilePass1;_XamlBuildExecTask;MarkupCompilePass1"
-          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences">
+          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
     <ItemGroup>
       <_AspNetCoreRefs Include="@(ReferencePath)" Condition="$([System.String]::new('%(FullPath)').Contains('Microsoft.AspNetCore'))" />
       <ReferencePath Remove="@(_AspNetCoreRefs)" />
