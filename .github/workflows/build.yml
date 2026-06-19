@@ -74,6 +74,100 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
+      - name: Create minimal WinUI test project
+        working-directory: windows
+        shell: pwsh
+        run: |
+          # Create a minimal WinUI 3 project with a page in a Views subfolder
+          mkdir -p MinimalTest/Views
+          @"
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>WinExe</OutputType>
+              <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+              <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+              <RootNamespace>MinimalTest</RootNamespace>
+              <ApplicationManifest>app.manifest</ApplicationManifest>
+              <Platforms>x64</Platforms>
+              <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+              <UseWinUI>true</UseWinUI>
+              <Nullable>enable</Nullable>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <EnableWindowsTargeting>true</EnableWindowsTargeting>
+              <WindowsPackageType>None</WindowsPackageType>
+              <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.250108004" />
+              <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
+            </ItemGroup>
+          </Project>
+          "@ | Out-File -FilePath "MinimalTest/MinimalTest.csproj" -Encoding utf8
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Application
+              x:Class="MinimalTest.App"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+              <Application.Resources>
+                  <ResourceDictionary>
+                      <ResourceDictionary.MergedDictionaries>
+                          <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+                      </ResourceDictionary.MergedDictionaries>
+                  </ResourceDictionary>
+              </Application.Resources>
+          </Application>
+          "@ | Out-File -FilePath "MinimalTest/App.xaml" -Encoding utf8
+          @"
+          namespace MinimalTest;
+          public partial class App : Application
+          {
+              private Window? _window;
+              public App() { InitializeComponent(); }
+              protected override void OnLaunched(LaunchActivatedEventArgs args)
+              {
+                  _window = new MainWindow();
+                  _window.Activate();
+              }
+          }
+          "@ | Out-File -FilePath "MinimalTest/App.xaml.cs" -Encoding utf8
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Window
+              x:Class="MinimalTest.MainWindow"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+              <TextBlock Text="Hello" />
+          </Window>
+          "@ | Out-File -FilePath "MinimalTest/MainWindow.xaml" -Encoding utf8
+          @"
+          namespace MinimalTest;
+          public partial class MainWindow : Window
+          {
+              public MainWindow() { InitializeComponent(); }
+          }
+          "@ | Out-File -FilePath "MinimalTest/MainWindow.xaml.cs" -Encoding utf8
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Page
+              x:Class="MinimalTest.Views.TestPage"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+              <Grid Background="Transparent">
+                  <TextBlock Text="Test Page" />
+              </Grid>
+          </Page>
+          "@ | Out-File -FilePath "MinimalTest/Views/TestPage.xaml" -Encoding utf8
+          @"
+          namespace MinimalTest.Views;
+          public partial class TestPage : Page
+          {
+              public TestPage() { InitializeComponent(); }
+          }
+          "@ | Out-File -FilePath "MinimalTest/Views/TestPage.xaml.cs" -Encoding utf8
+          Write-Host "=== Building minimal test project with subfolder XAML ==="
+          dotnet build MinimalTest/MinimalTest.csproj -c Release -p:Platform=x64
+
       - name: Build WinUI app (Release)
         working-directory: windows
         shell: pwsh
