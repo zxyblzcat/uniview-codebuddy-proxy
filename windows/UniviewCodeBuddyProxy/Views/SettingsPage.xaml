@@ -12,13 +12,13 @@
         <StackPanel Spacing="20" Margin="24">
 
             <!-- ═══ Network Section ═══ -->
-            <controls:GlassCard Header="网络" Icon="">
+            <controls:GlassCard Header="网络" Icon="&#xE774;">
                 <StackPanel Spacing="0">
                     <!-- Port -->
                     <controls:SettingItem Label="端口">
                         <controls:SettingItem.ContentSlot>
                             <NumberBox Value="{x:Bind ViewModel.Port, Mode=TwoWay}"
-                                       Minimum="1024" Maximum="65535" Step="1"
+                                       Minimum="1024" Maximum="65535" SmallChange="1"
                                        SpinButtonPlacementMode="Compact"
                                        Width="100" HorizontalAlignment="Right"/>
                         </controls:SettingItem.ContentSlot>
@@ -38,7 +38,7 @@
                         <controls:SettingItem.ContentSlot>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Slider Value="{x:Bind ViewModel.MaxConcurrentRequests, Mode=TwoWay}"
-                                        Minimum="1" Maximum="100" Step="1"
+                                        Minimum="1" Maximum="100" StepFrequency="1"
                                         Width="120"/>
                                 <TextBlock Text="{x:Bind ViewModel.MaxConcurrentRequests, Mode=OneWay}"
                                            FontSize="12" FontFamily="Cascadia Code"
@@ -52,7 +52,7 @@
             </controls:GlassCard>
 
             <!-- ═══ Cache Section ═══ -->
-            <controls:GlassCard Header="缓存" Icon="">
+            <controls:GlassCard Header="缓存" Icon="&#xE8B7;">
                 <StackPanel Spacing="0">
                     <controls:SettingItem Label="启用缓存">
                         <controls:SettingItem.ContentSlot>
@@ -64,7 +64,7 @@
                         <controls:SettingItem.ContentSlot>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Slider Value="{x:Bind ViewModel.CacheTTL, Mode=TwoWay}"
-                                        Minimum="60" Maximum="3600" Step="60"
+                                        Minimum="60" Maximum="3600" StepFrequency="60"
                                         Width="120"/>
                                 <TextBlock Text="{x:Bind ViewModel.CacheTTLText, Mode=OneWay}"
                                            FontSize="12" FontFamily="Cascadia Code"
@@ -78,7 +78,7 @@
             </controls:GlassCard>
 
             <!-- ═══ AI Features Section ═══ -->
-            <controls:GlassCard Header="AI 功能" Icon="">
+            <controls:GlassCard Header="AI 功能" Icon="&#xEB51;">
                 <StackPanel Spacing="0">
                     <controls:SettingItem Label="图片自动切换模型">
                         <controls:SettingItem.ContentSlot>
@@ -103,12 +103,12 @@
             </controls:GlassCard>
 
             <!-- ═══ Resilience Section ═══ -->
-            <controls:GlassCard Header="弹性容错" Icon="">
+            <controls:GlassCard Header="弹性容错" Icon="&#xE9A2;">
                 <StackPanel Spacing="0">
                     <controls:SettingItem Label="最大重试次数">
                         <controls:SettingItem.ContentSlot>
                             <NumberBox Value="{x:Bind ViewModel.MaxRetries, Mode=TwoWay}"
-                                       Minimum="0" Maximum="10" Step="1"
+                                       Minimum="0" Maximum="10" SmallChange="1"
                                        SpinButtonPlacementMode="Compact"
                                        Width="80" HorizontalAlignment="Right"/>
                         </controls:SettingItem.ContentSlot>
@@ -117,7 +117,7 @@
                     <controls:SettingItem Label="熔断器最大失败数">
                         <controls:SettingItem.ContentSlot>
                             <NumberBox Value="{x:Bind ViewModel.CbMaxFailures, Mode=TwoWay}"
-                                       Minimum="1" Maximum="20" Step="1"
+                                       Minimum="1" Maximum="20" SmallChange="1"
                                        SpinButtonPlacementMode="Compact"
                                        Width="80" HorizontalAlignment="Right"/>
                         </controls:SettingItem.ContentSlot>
@@ -127,7 +127,7 @@
                         <controls:SettingItem.ContentSlot>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Slider Value="{x:Bind ViewModel.CbResetTimeoutSecs, Mode=TwoWay}"
-                                        Minimum="5" Maximum="120" Step="5"
+                                        Minimum="5" Maximum="120" StepFrequency="5"
                                         Width="120"/>
                                 <TextBlock Text="{x:Bind ViewModel.CbResetTimeoutSecsText, Mode=OneWay}"
                                            FontSize="12" FontFamily="Cascadia Code"
@@ -142,7 +142,7 @@
                         <controls:SettingItem.ContentSlot>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Slider Value="{x:Bind ViewModel.CooldownDurationSecs, Mode=TwoWay}"
-                                        Minimum="5" Maximum="300" Step="5"
+                                        Minimum="5" Maximum="300" StepFrequency="5"
                                         Width="120"/>
                                 <TextBlock Text="{x:Bind ViewModel.CooldownDurationSecsText, Mode=OneWay}"
                                            FontSize="12" FontFamily="Cascadia Code"
@@ -156,7 +156,7 @@
             </controls:GlassCard>
 
             <!-- ═══ Telemetry Section ═══ -->
-            <controls:GlassCard Header="遥测" Icon="">
+            <controls:GlassCard Header="遥测" Icon="&#xEC7F;">
                 <StackPanel Spacing="0">
                     <controls:SettingItem Label="启用遥测">
                         <controls:SettingItem.ContentSlot>
@@ -167,13 +167,13 @@
             </controls:GlassCard>
 
             <!-- ═══ Logging Section ═══ -->
-            <controls:GlassCard Header="日志" Icon="">
+            <controls:GlassCard Header="日志" Icon="&#xE8F7;">
                 <StackPanel Spacing="0">
                     <controls:SettingItem Label="日志最大大小">
                         <controls:SettingItem.ContentSlot>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Slider Value="{x:Bind ViewModel.LogMaxSizeMB, Mode=TwoWay}"
-                                        Minimum="10" Maximum="500" Step="10"
+                                        Minimum="10" Maximum="500" StepFrequency="10"
                                         Width="120"/>
                                 <TextBlock Text="{x:Bind ViewModel.LogMaxSizeMBText, Mode=OneWay}"
                                            FontSize="12" FontFamily="Cascadia Code"
@@ -188,7 +188,7 @@
                         <controls:SettingItem.ContentSlot>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Slider Value="{x:Bind ViewModel.LogCleanupInterval, Mode=TwoWay}"
-                                        Minimum="300" Maximum="7200" Step="300"
+                                        Minimum="300" Maximum="7200" StepFrequency="300"
                                         Width="120"/>
                                 <TextBlock x:Name="CleanupLabel"
                                            FontSize="12" FontFamily="Cascadia Code"
@@ -202,7 +202,7 @@
             </controls:GlassCard>
 
             <!-- ═══ Appearance Section ═══ -->
-            <controls:GlassCard Header="外观" Icon="">
+            <controls:GlassCard Header="外观" Icon="&#xE771;">
                 <StackPanel Spacing="0">
                     <!-- Appearance mode -->
                     <controls:SettingItem Label="外观模式">
@@ -245,22 +245,23 @@
                         </controls:SettingItem.ContentSlot>
                     </controls:SettingItem>
 
-                    <!-- Language -->
+                    <!-- Language — WinUI 3 RadioButtons doesn't support Orientation/Spacing,
+                         use StackPanel with individual RadioButtons instead -->
                     <controls:SettingItem Label="语言">
                         <controls:SettingItem.ContentSlot>
-                            <RadioButtons Orientation="Horizontal" Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
                                 <RadioButton Content="中文" IsChecked="True"
                                              Checked="OnLocaleChanged" Tag="zh-CN"/>
                                 <RadioButton Content="English"
                                              Checked="OnLocaleChanged" Tag="en"/>
-                            </RadioButtons>
+                            </StackPanel>
                         </controls:SettingItem.ContentSlot>
                     </controls:SettingItem>
                 </StackPanel>
             </controls:GlassCard>
 
             <!-- ═══ About Section ═══ -->
-            <controls:GlassCard Header="关于" Icon="">
+            <controls:GlassCard Header="关于" Icon="&#xE946;">
                 <StackPanel Spacing="0">
                     <controls:SettingItem Label="应用">
                         <controls:SettingItem.ContentSlot>
@@ -303,7 +304,7 @@
                     HorizontalAlignment="Left"
                     Margin="0,0,0,40">
                 <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
+                    <FontIcon Glyph="&#xE104;" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
                     <TextBlock Text="恢复默认" FontSize="13" FontWeight="Medium"
                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
                 </StackPanel>

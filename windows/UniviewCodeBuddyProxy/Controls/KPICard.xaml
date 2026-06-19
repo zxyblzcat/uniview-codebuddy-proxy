@@ -20,7 +20,7 @@
                 BorderThickness="1"
                 BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}">
             <Border.Shadow>
-                <ThemeShadow OffsetY="8"/>
+                <ThemeShadow />
             </Border.Shadow>
         </Border>
 

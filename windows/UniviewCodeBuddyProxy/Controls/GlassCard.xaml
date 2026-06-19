@@ -34,7 +34,7 @@
                 BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                 Padding="0">
             <Border.Shadow>
-                <ThemeShadow OffsetY="8"/>
+                <ThemeShadow />
             </Border.Shadow>
         </Border>
 

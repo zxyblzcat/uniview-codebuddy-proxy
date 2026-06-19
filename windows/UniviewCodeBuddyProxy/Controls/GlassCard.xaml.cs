@@ -14,6 +14,13 @@ public sealed partial class GlassCard : UserControl
     public GlassCard()
     {
         this.InitializeComponent();
+
+        // ThemeShadow.OffsetY is not supported in XAML (WMC0011), set it in code
+        if (CardBorder.Shadow is Microsoft.UI.Xaml.Media.ThemeShadow shadow)
+        {
+            shadow.OffsetY = 8;
+        }
+
         PointerEntered += OnPointerEntered;
         PointerExited += OnPointerExited;
 

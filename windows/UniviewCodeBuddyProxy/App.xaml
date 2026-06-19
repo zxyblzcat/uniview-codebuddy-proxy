@@ -9,8 +9,8 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Toast shadow -->
-            <ThemeShadow x:Key="ToastShadow" OffsetY="4" />
+            <!-- Toast shadow — OffsetY set in App.xaml.cs because XamlCompiler doesn't support ThemeShadow.OffsetY in XAML -->
+            <ThemeShadow x:Key="ToastShadow" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

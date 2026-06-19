@@ -13,6 +13,12 @@ public sealed partial class KPICard : UserControl
     public KPICard()
     {
         this.InitializeComponent();
+
+        // ThemeShadow.OffsetY is not supported in XAML (WMC0011), set it in code
+        if (CardBorder.Shadow is Microsoft.UI.Xaml.Media.ThemeShadow shadow)
+        {
+            shadow.OffsetY = 8;
+        }
     }
 
     // ── Title ──

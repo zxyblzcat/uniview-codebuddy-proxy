@@ -135,7 +135,7 @@
                 x:Name="NavView"
                 IsBackButtonVisible="Collapsed"
                 IsSettingsVisible="False"
-                PaneDisplayMode="NavigationPaneLeft"
+                PaneDisplayMode="Left"
                 SelectionChanged="NavView_SelectionChanged"
                 OpenPaneLength="200"
                 Background="Transparent">
