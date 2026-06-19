@@ -25,7 +25,7 @@ jobs:
             macos/UniviewCodeBuddyProxy/.build
             ~/Library/Caches/org.swift.swiftpm
           key: spm-${{ runner.os }}-${{ hashFiles('macos/UniviewCodeBuddyProxy/Package.resolved') }}
-          restore-links: |
+          restore-keys: |
             spm-${{ runner.os }}-
 
       - name: Build for arm64
@@ -75,40 +75,16 @@ jobs:
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy.Core/UniviewCodeBuddyProxy.Core.csproj -c Debug -p:Platform=x64
 
-      - name: Build WinUI app (Debug) with diagnostics
+      - name: Build WinUI app (Debug) with detailed logging
         working-directory: windows
         shell: pwsh
         run: |
-          # Run the build
-          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 2>&1 | Tee-Object -FilePath build-output.log
-          $buildExit = $LASTEXITCODE
-
-          if ($buildExit -ne 0) {
-            Write-Host "=== Build FAILED ==="
-
-            $objDir = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0"
-
-            # Dump the full input.json
-            if (Test-Path "$objDir/input.json") {
-              Write-Host "=== FULL input.json (first 200 lines) ==="
-              Get-Content "$objDir/input.json" -TotalCount 200 | Write-Host
-            }
-            if (Test-Path "$objDir/output.json") {
-              Write-Host "=== FULL output.json ==="
-              Get-Content "$objDir/output.json" | Write-Host
-            } else {
-              Write-Host "output.json NOT FOUND"
-            }
-
-            # Check .NET Runtime event log
-            Write-Host "=== .NET Runtime Event Log ==="
-            try {
-              Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Level=2} -MaxEvents 3 -ErrorAction SilentlyContinue | ForEach-Object {
-                Write-Host "$($_.TimeCreated): $($_.Message)"
-              }
-            } catch { Write-Host "(none)" }
-
-            exit $buildExit
+          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -v:detailed 2>&1 | Out-File -FilePath build-detailed.log -Encoding utf8
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "=== Build FAILED, check build-detailed.log artifact ==="
+            # Show last 50 lines of the log
+            Get-Content build-detailed.log | Select-Object -Last 50 | Write-Host
+            exit 1
           }
 
       - name: Build WinUI app (Release)
@@ -147,3 +123,13 @@ jobs:
         run: >
           dotnet publish UniviewCodeBuddyProxy.Server/UniviewCodeBuddyProxy.Server.csproj
           -c Release -r linux-x64 --self-contained true
+
+      - name: Upload build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: |
+            windows/build-detailed.log
+            windows/UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/input.json
+            windows/UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/output.json
