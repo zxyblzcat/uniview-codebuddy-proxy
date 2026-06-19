@@ -59,6 +59,9 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v1.1
+
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
@@ -71,34 +74,30 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
+      - name: Restore NuGet packages
+        working-directory: windows
+        run: dotnet restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -p:Platform=x64
+
       - name: Build Core library
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy.Core/UniviewCodeBuddyProxy.Core.csproj -c Debug -p:Platform=x64
 
-      - name: Build WinUI app (Debug) with detailed logging
+      - name: Build WinUI app (Debug)
         working-directory: windows
-        shell: pwsh
-        run: |
-          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -v:detailed 2>&1 | Out-File -FilePath build-detailed.log -Encoding utf8
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "=== Build FAILED, check build-detailed.log artifact ==="
-            # Show last 50 lines of the log
-            Get-Content build-detailed.log | Select-Object -Last 50 | Write-Host
-            exit 1
-          }
+        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Debug /p:Platform=x64
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
+        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Release /p:Platform=x64
 
       - name: Publish WinUI app
         working-directory: windows
         run: >
-          dotnet publish UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
-          -c Release -p:Platform=x64
-          -p:SelfContained=true -p:RuntimeIdentifier=win-x64
-          -p:PublishSingleFile=false
-          -p:WindowsAppSDKSelfContained=true
+          msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
+          /p:Configuration=Release /p:Platform=x64
+          /p:SelfContained=true /p:RuntimeIdentifier=win-x64
+          /p:PublishSingleFile=false /p:WindowsAppSDKSelfContained=true
+          /t:Publish
 
       - name: Verify publish output
         shell: pwsh
@@ -123,13 +122,3 @@ jobs:
         run: >
           dotnet publish UniviewCodeBuddyProxy.Server/UniviewCodeBuddyProxy.Server.csproj
           -c Release -r linux-x64 --self-contained true
-
-      - name: Upload build diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-diagnostics
-          path: |
-            windows/build-detailed.log
-            windows/UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/input.json
-            windows/UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0/output.json
