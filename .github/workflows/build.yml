@@ -116,19 +116,22 @@ jobs:
         working-directory: windows
         shell: pwsh
         run: |
-          $objDir = "UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0"
-          $diagFile = "xaml-diag.txt"
-          "=== XamlCompiler input.json (first 200 lines) ===" | Out-File $diagFile -Encoding utf8
-          if (Test-Path "$objDir/input.json") { Get-Content "$objDir/input.json" -TotalCount 200 | Out-File $diagFile -Append -Encoding utf8 } else { "NOT FOUND" | Out-File $diagFile -Append -Encoding utf8 }
-          "=== XamlCompiler output.json ===" | Out-File $diagFile -Append -Encoding utf8
-          if (Test-Path "$objDir/output.json") { Get-Content "$objDir/output.json" | Out-File $diagFile -Append -Encoding utf8 } else { "NOT FOUND" | Out-File $diagFile -Append -Encoding utf8 }
-          "=== XamlSaveStateFile.xml ===" | Out-File $diagFile -Append -Encoding utf8
-          if (Test-Path "$objDir/XamlSaveStateFile.xml") { Get-Content "$objDir/XamlSaveStateFile.xml" | Out-File $diagFile -Append -Encoding utf8 } else { "NOT FOUND" | Out-File $diagFile -Append -Encoding utf8 }
-          "=== Generated .g.cs files ===" | Out-File $diagFile -Append -Encoding utf8
-          Get-ChildItem "$objDir" -Filter "*.g.cs" -Recurse | ForEach-Object { "--- $($_.Name) ---" | Out-File $diagFile -Append -Encoding utf8; Get-Content $_.FullName -TotalCount 30 | Out-File $diagFile -Append -Encoding utf8 }
-          "=== obj dir listing ===" | Out-File $diagFile -Append -Encoding utf8
-          Get-ChildItem "$objDir" -Recurse -Name | Select-Object -First 50 | Out-File $diagFile -Append -Encoding utf8
-          Get-Content $diagFile
+          # Try both Debug and Release obj directories
+          $configs = @("Debug", "Release")
+          foreach ($cfg in $configs) {
+            $objDir = "UniviewCodeBuddyProxy/obj/x64/$cfg/net8.0-windows10.0.19041.0"
+            if (Test-Path $objDir) {
+              Write-Host "=== Found obj dir for $cfg ==="
+              $diagFile = "xaml-diag-$cfg.txt"
+              "=== XamlCompiler input.json (first 200 lines) ===" | Out-File $diagFile -Encoding utf8
+              if (Test-Path "$objDir/input.json") { Get-Content "$objDir/input.json" -TotalCount 200 | Out-File $diagFile -Append -Encoding utf8 } else { "NOT FOUND" | Out-File $diagFile -Append -Encoding utf8 }
+              "=== XamlCompiler output.json ===" | Out-File $diagFile -Append -Encoding utf8
+              if (Test-Path "$objDir/output.json") { Get-Content "$objDir/output.json" | Out-File $diagFile -Append -Encoding utf8 } else { "NOT FOUND" | Out-File $diagFile -Append -Encoding utf8 }
+              "=== obj dir listing ===" | Out-File $diagFile -Append -Encoding utf8
+              Get-ChildItem "$objDir" -Recurse -Name | Select-Object -First 50 | Out-File $diagFile -Append -Encoding utf8
+              Get-Content $diagFile
+            }
+          }
 
       - name: Upload diagnostics on failure
         if: failure()

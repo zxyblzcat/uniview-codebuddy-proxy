@@ -20,9 +20,13 @@
     <!-- WinUI 3 / Windows App SDK -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.250108004" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
+  </ItemGroup>
 
-    <!-- ASP.NET Core Minimal API (in-process HTTP server) -->
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  <ItemGroup>
+    <!-- Core proxy library (contains ASP.NET Core server code) -->
+    <ProjectReference Include="..\UniviewCodeBuddyProxy.Core\UniviewCodeBuddyProxy.Core.csproj">
+      <PrivateAssets>all</PrivateAssets>
+    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>
