@@ -71,13 +71,14 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
-      - name: Install ProcDump for crash diagnostics
+      - name: Setup crash diagnostics
         shell: pwsh
         run: |
+          # Install ProcDump for crash dump capture
           choco install procdump -y
-          # Accept Sysinternals license
-          procdump -accepteula 2>$null
-          Write-Host "ProcDump installed"
+          # Accept Sysinternals EULA via registry
+          New-ItemProperty -Path "HKCU:\Software\Sysinternals\ProcDump" -Name "EulaAccepted" -Value 1 -PropertyType DWORD -Force | Out-Null
+          Write-Host "ProcDump installed and EULA accepted"
 
       - name: Build Core library
         working-directory: windows
@@ -87,92 +88,80 @@ jobs:
         working-directory: windows
         shell: pwsh
         run: |
-          # Set ProcDump as the post-mortem debugger for .NET Framework crashes
-          # This will capture a dump when XamlCompiler.exe crashes
-          $env:_NT_SYMBOL_PATH = "srv*C:\symbols*https://msdl.microsoft.com/download/symbols"
+          # Set ProcDump as the AeDebug post-mortem debugger to capture .NET Framework crashes
+          New-Item -Path "C:\xamlcrash" -ItemType Directory -Force | Out-Null
+          procdump64.exe -ma -i C:\xamlcrash 2>&1 | Write-Host
+          Write-Host "ProcDump registered as post-mortem debugger"
 
-          # Run the build and capture the result
-          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -v:detailed 2>&1 | Tee-Object -FilePath build-output.log
+          # Run the build
+          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 2>&1 | Tee-Object -FilePath build-output.log
           $buildExit = $LASTEXITCODE
 
           if ($buildExit -ne 0) {
             Write-Host "=== Build FAILED ==="
 
-            # Check if XamlCompiler produced any output
+            # Check for crash dump
+            if (Test-Path "C:\xamlcrash") {
+              $dumps = Get-ChildItem "C:\xamlcrash" -Filter "*.dmp"
+              if ($dumps.Count -gt 0) {
+                Write-Host "=== Crash dump files ==="
+                $dumps | ForEach-Object { Write-Host "  $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)" }
+              } else {
+                Write-Host "No crash dumps found in C:\xamlcrash"
+              }
+            }
+
+            # Check XamlCompiler input.json for diagnostics
             $objDir = "UniviewCodeBuddyProxy/obj/x64/Debug/net8.0-windows10.0.19041.0"
             if (Test-Path "$objDir/input.json") {
-              Write-Host "=== input.json XAML pages ==="
               $inputJson = Get-Content "$objDir/input.json" -Raw | ConvertFrom-Json
-              $inputJson.XamlPages | ForEach-Object { Write-Host "  $($_.Source)" }
-              Write-Host "=== input.json key fields ==="
-              Write-Host "  ReferenceAssemblies count: $($inputJson.ReferenceAssemblies.Count)"
+              Write-Host "=== input.json info ==="
+              Write-Host "  XAML pages: $($inputJson.XamlPages.Count)"
+              Write-Host "  Reference assemblies: $($inputJson.ReferenceAssemblies.Count)"
               Write-Host "  IsPass1: $($inputJson.IsPass1)"
-              Write-Host "  Language: $($inputJson.Language)"
+              $inputJson.XamlPages | ForEach-Object { Write-Host "  Page: $($_.Source)" }
             }
 
-            if (Test-Path "$objDir/output.json") {
-              Write-Host "=== output.json ==="
-              Get-Content "$objDir/output.json" | Write-Host
-            } else {
-              Write-Host "=== output.json NOT FOUND (XamlCompiler crashed before writing) ==="
-            }
+            # Check Windows Event Log
+            Write-Host "=== .NET Runtime errors ==="
+            try {
+              Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host "$($_.TimeCreated): $($_.Message)"
+              }
+            } catch { Write-Host "(none)" }
 
-            # Try to run XamlCompiler.exe with ProcDump monitoring
+            Write-Host "=== Application Error events ==="
+            try {
+              Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host "$($_.TimeCreated): $($_.Message)"
+              }
+            } catch { Write-Host "(none)" }
+
+            # Try running XamlCompiler.exe directly for more info
             $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.7.*" -Directory | Select-Object -First 1).FullName
             $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
-            $inputJson = Join-Path (Resolve-Path $objDir) "input.json"
-            $outputJson = Join-Path (Resolve-Path $objDir) "output.json"
+            $inputJsonPath = Join-Path (Resolve-Path $objDir) "input.json"
+            $outputJsonPath = Join-Path (Resolve-Path $objDir) "output.json"
 
-            if ((Test-Path $xamlCompiler) -and (Test-Path $inputJson)) {
-              Write-Host "=== Running XamlCompiler.exe under ProcDump ==="
-
-              # Start ProcDump to monitor XamlCompiler.exe for crashes
-              Start-Process -FilePath "procdump" -ArgumentList "-ma -e 1 -x C:\xamlcrash XamlCompiler.exe" -NoNewWindow -PassThru | Out-Null
-              Start-Sleep -Seconds 1
-
-              # Run XamlCompiler.exe
+            if ((Test-Path $xamlCompiler) -and (Test-Path $inputJsonPath)) {
+              Write-Host "=== Direct XamlCompiler.exe run ==="
               try {
-                $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJson`"", "`"$outputJson`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xamlcompiler-stderr.txt" -RedirectStandardOutput "xamlcompiler-stdout.txt"
-                Write-Host "XamlCompiler exit code: $($proc.ExitCode)"
+                $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJsonPath`"", "`"$outputJsonPath`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xc-stderr.txt" -RedirectStandardOutput "xc-stdout.txt"
+                Write-Host "Exit code: $($proc.ExitCode)"
+                if (Test-Path "xc-stdout.txt") { Get-Content "xc-stdout.txt" | Write-Host }
+                if (Test-Path "xc-stderr.txt") { Get-Content "xc-stderr.txt" | Write-Host }
               } catch {
-                Write-Host "XamlCompiler failed to start: $_"
+                Write-Host "Failed: $_"
               }
-
-              # Show stdout/stderr
-              if (Test-Path "xamlcompiler-stdout.txt") {
-                Write-Host "=== XamlCompiler stdout ==="
-                Get-Content "xamlcompiler-stdout.txt" | Write-Host
-              }
-              if (Test-Path "xamlcompiler-stderr.txt") {
-                Write-Host "=== XamlCompiler stderr ==="
-                Get-Content "xamlcompiler-stderr.txt" | Write-Host
-              }
-
-              # Check for crash dump
-              if (Test-Path "C:\xamlcrash") {
-                Write-Host "=== Crash dump files ==="
-                Get-ChildItem "C:\xamlcrash" | ForEach-Object { Write-Host "  $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)" }
-              }
-
-              # Check Windows Event Log for .NET Runtime errors
-              Write-Host "=== .NET Runtime Event Log ==="
-              try {
-                Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='.NET Runtime'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
-                  Write-Host "$($_.TimeCreated): $($_.Message)"
-                }
-              } catch { Write-Host "(no .NET Runtime errors found)" }
-
-              # Check Application Error events
-              Write-Host "=== Application Error Events ==="
-              try {
-                Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object {
-                  Write-Host "$($_.TimeCreated): $($_.Message)"
-                }
-              } catch { Write-Host "(no Application Error events)" }
             }
 
+            # Unregister ProcDump as AeDebug
+            procdump64.exe -u 2>&1 | Out-Null
             exit $buildExit
           }
+
+          # Unregister ProcDump as AeDebug
+          procdump64.exe -u 2>&1 | Out-Null
 
       - name: Build WinUI app (Release)
         working-directory: windows
@@ -210,14 +199,3 @@ jobs:
         run: >
           dotnet publish UniviewCodeBuddyProxy.Server/UniviewCodeBuddyProxy.Server.csproj
           -c Release -r linux-x64 --self-contained true
-
-      - name: Upload crash diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xaml-crash-diagnostics
-          path: |
-            windows/build-output.log
-            windows/xamlcompiler-stdout.txt
-            windows/xamlcompiler-stderr.txt
-            C:\xamlcrash\*
