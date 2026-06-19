@@ -88,7 +88,7 @@ jobs:
           $sdkDir = Get-ChildItem "$env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk" -Directory | Sort-Object -Descending | Select-Object -First 1
           $xamlCompiler = Join-Path $sdkDir.FullName "tools\net472\XamlCompiler.exe"
 
-          if (Test-Path $xamlCompiler -and (Test-Path $inputJson)) {
+          if ((Test-Path $xamlCompiler) -and (Test-Path $inputJson)) {
             Write-Host "=== Running XamlCompiler manually ==="
             Write-Host "Input: $inputJson"
             Write-Host "Output: $outputJson"
