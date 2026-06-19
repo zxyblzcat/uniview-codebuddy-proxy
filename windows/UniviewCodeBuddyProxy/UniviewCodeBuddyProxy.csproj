@@ -22,7 +22,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
 
     <!-- System tray -->
-    <PackageReference Include="H.NotifyIcon" Version="2.*" />
+    <PackageReference Include="H.NotifyIcon" Version="2.*" ExcludeAssets="runtime" />
 
     <!-- ASP.NET Core Minimal API (in-process HTTP server) -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

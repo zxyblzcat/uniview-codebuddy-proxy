@@ -69,11 +69,30 @@ jobs:
 
       - name: Restore workloads
         working-directory: windows
-        run: |
-          dotnet workload install windowsdesktop --version 8.0.18
-          dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
+        run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
       - name: Build WinUI app
+        working-directory: windows
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64 -fl -flp:logfile=build.log;verbosity=diagnostic
+        continue-on-error: true
+
+      - name: Show XamlCompiler output
+        if: always()
+        shell: pwsh
+        run: |
+          $objDir = "windows/UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0"
+          if (Test-Path "$objDir/output.json") {
+            Write-Host "=== XamlCompiler output.json ==="
+            Get-Content "$objDir/output.json"
+          } else {
+            Write-Host "No output.json found"
+          }
+          if (Test-Path "build.log") {
+            Write-Host "=== Build log (last 100 lines) ==="
+            Get-Content "build.log" | Select-Object -Last 100
+          }
+
+      - name: Fail if build failed
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
 
