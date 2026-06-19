@@ -71,6 +71,49 @@ jobs:
         working-directory: windows
         run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
 
+      - name: Restore NuGet packages
+        working-directory: windows
+        run: dotnet restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -p:Platform=x64
+
+      - name: Fix CompileXaml missing dependencies
+        shell: pwsh
+        run: |
+          # The CompileXaml in-process task (net6.0 DLLs) depends on
+          # System.Security.Permissions which is not bundled with
+          # WindowsAppSDK or .NET 8. Copy it from the NuGet cache to
+          # the WindowsAppSDK tools\net6.0\ directory so MSBuild can
+          # find it when loading the task.
+          $wasdkTools = Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.6.*\tools\net6.0" -Directory | Select-Object -First 1
+          if (-not $wasdkTools) {
+            Write-Error "WindowsAppSDK tools\net6.0 not found"
+            exit 1
+          }
+          Write-Host "WASDK tools dir: $($wasdkTools.FullName)"
+
+          # Find System.Security.Permissions.dll in NuGet cache
+          $sspDll = Get-ChildItem "C:\Users\runneradmin\.nuget\packages\system.security.permissions\7.*\lib\net6.0\System.Security.Permissions.dll" | Select-Object -First 1
+          if (-not $sspDll) {
+            # Try other TFM paths
+            $sspDll = Get-ChildItem "C:\Users\runneradmin\.nuget\packages\system.security.permissions\*\lib\*\System.Security.Permissions.dll" | Select-Object -First 1
+          }
+          if ($sspDll) {
+            Copy-Item $sspDll.FullName -Destination $wasdkTools.FullName
+            Write-Host "Copied $($sspDll.FullName) -> $($wasdkTools.FullName)"
+          } else {
+            Write-Warning "System.Security.Permissions.dll not found in NuGet cache - build may fail"
+          }
+
+          # Also check for System.Windows.Extensions which may be needed
+          $sweDll = Get-ChildItem "C:\Users\runneradmin\.nuget\packages\system.windows.extensions\*\lib\*\System.Windows.Extensions.dll" | Select-Object -First 1
+          if ($sweDll) {
+            Copy-Item $sweDll.FullName -Destination $wasdkTools.FullName
+            Write-Host "Copied $($sweDll.FullName) -> $($wasdkTools.FullName)"
+          }
+
+          # List the tools directory
+          Write-Host "=== WASDK tools\net6.0 contents ==="
+          Get-ChildItem $wasdkTools.FullName -Name
+
       - name: Build Core library
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy.Core/UniviewCodeBuddyProxy.Core.csproj -c Debug -p:Platform=x64
