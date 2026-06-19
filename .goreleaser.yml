@@ -1,9 +1,0 @@
-version: 2
-
-changelog:
-  use: github-native
-
-release:
-  github:
-    owner: zxyblzcat
-    name: uniview-codebuddy-proxy

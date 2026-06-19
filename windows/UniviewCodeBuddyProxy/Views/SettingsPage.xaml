@@ -1,0 +1,370 @@
+<Page
+    x:Class="UniviewCodeBuddyProxy.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="using:UniviewCodeBuddyProxy.Controls"
+    xmlns:helpers="using:UniviewCodeBuddyProxy.Helpers"
+    mc:Ignorable="d">
+
+    <ScrollView>
+        <StackPanel Spacing="20" Margin="24">
+
+            <!-- ═══ Network Section ═══ -->
+            <controls:GlassCard Header="网络" Icon="">
+                <StackPanel Spacing="0">
+                    <!-- Port -->
+                    <controls:SettingItem Label="端口">
+                        <controls:SettingItem.ContentSlot>
+                            <NumberBox Value="{x:Bind ViewModel.Port, Mode=TwoWay}"
+                                       Minimum="1024" Maximum="65535" Step="1"
+                                       SpinButtonPlacementMode="Compact"
+                                       Width="100" HorizontalAlignment="Right"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <!-- API Password -->
+                    <controls:SettingItem Label="API 密码">
+                        <controls:SettingItem.ContentSlot>
+                            <PasswordBox Password="{x:Bind ViewModel.ApiPassword, Mode=TwoWay}"
+                                         Width="180" HorizontalAlignment="Right"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <!-- Max Concurrent Requests -->
+                    <controls:SettingItem Label="最大并发请求">
+                        <controls:SettingItem.ContentSlot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Slider Value="{x:Bind ViewModel.MaxConcurrentRequests, Mode=TwoWay}"
+                                        Minimum="1" Maximum="100" Step="1"
+                                        Width="120"/>
+                                <TextBlock Text="{x:Bind ViewModel.MaxConcurrentRequests, Mode=OneWay}"
+                                           FontSize="12" FontFamily="Cascadia Code"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Width="28" TextAlignment="Right"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+                </StackPanel>
+            </controls:GlassCard>
+
+            <!-- ═══ Cache Section ═══ -->
+            <controls:GlassCard Header="缓存" Icon="">
+                <StackPanel Spacing="0">
+                    <controls:SettingItem Label="启用缓存">
+                        <controls:SettingItem.ContentSlot>
+                            <controls:GlassToggle IsOn="{x:Bind ViewModel.CacheEnabled, Mode=TwoWay}"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="缓存有效期">
+                        <controls:SettingItem.ContentSlot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Slider Value="{x:Bind ViewModel.CacheTTL, Mode=TwoWay}"
+                                        Minimum="60" Maximum="3600" Step="60"
+                                        Width="120"/>
+                                <TextBlock FontSize="12" FontFamily="Cascadia Code"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Width="44" TextAlignment="Right"
+                                           VerticalAlignment="Center">
+                                    <Run Text="{x:Bind ViewModel.CacheTTL, Mode=OneWay}"/>
+                                    <Run Text="s"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+                </StackPanel>
+            </controls:GlassCard>
+
+            <!-- ═══ AI Features Section ═══ -->
+            <controls:GlassCard Header="AI 功能" Icon="">
+                <StackPanel Spacing="0">
+                    <controls:SettingItem Label="图片自动切换模型">
+                        <controls:SettingItem.ContentSlot>
+                            <controls:GlassToggle IsOn="{x:Bind ViewModel.ImageAutoSwitchModel, Mode=TwoWay}"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="视觉模型">
+                        <controls:SettingItem.ContentSlot>
+                            <ComboBox ItemsSource="{x:Bind ViewModel.VisionModelOptions, Mode=OneWay}"
+                                      SelectedItem="{x:Bind ViewModel.VisionModel, Mode=TwoWay}"
+                                      Width="140" HorizontalAlignment="Right"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="Claude 注入">
+                        <controls:SettingItem.ContentSlot>
+                            <controls:GlassToggle IsOn="{x:Bind ViewModel.ClaudeInject, Mode=TwoWay}"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+                </StackPanel>
+            </controls:GlassCard>
+
+            <!-- ═══ Resilience Section ═══ -->
+            <controls:GlassCard Header="弹性容错" Icon="">
+                <StackPanel Spacing="0">
+                    <controls:SettingItem Label="最大重试次数">
+                        <controls:SettingItem.ContentSlot>
+                            <NumberBox Value="{x:Bind ViewModel.MaxRetries, Mode=TwoWay}"
+                                       Minimum="0" Maximum="10" Step="1"
+                                       SpinButtonPlacementMode="Compact"
+                                       Width="80" HorizontalAlignment="Right"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="熔断器最大失败数">
+                        <controls:SettingItem.ContentSlot>
+                            <NumberBox Value="{x:Bind ViewModel.CbMaxFailures, Mode=TwoWay}"
+                                       Minimum="1" Maximum="20" Step="1"
+                                       SpinButtonPlacementMode="Compact"
+                                       Width="80" HorizontalAlignment="Right"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="熔断器重置超时">
+                        <controls:SettingItem.ContentSlot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Slider Value="{x:Bind ViewModel.CbResetTimeoutSecs, Mode=TwoWay}"
+                                        Minimum="5" Maximum="120" Step="5"
+                                        Width="120"/>
+                                <TextBlock FontSize="12" FontFamily="Cascadia Code"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Width="38" TextAlignment="Right"
+                                           VerticalAlignment="Center">
+                                    <Run Text="{x:Bind ViewModel.CbResetTimeoutSecs, Mode=OneWay}"/>
+                                    <Run Text="s"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="冷却时长">
+                        <controls:SettingItem.ContentSlot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Slider Value="{x:Bind ViewModel.CooldownDurationSecs, Mode=TwoWay}"
+                                        Minimum="5" Maximum="300" Step="5"
+                                        Width="120"/>
+                                <TextBlock FontSize="12" FontFamily="Cascadia Code"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Width="38" TextAlignment="Right"
+                                           VerticalAlignment="Center">
+                                    <Run Text="{x:Bind ViewModel.CooldownDurationSecs, Mode=OneWay}"/>
+                                    <Run Text="s"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+                </StackPanel>
+            </controls:GlassCard>
+
+            <!-- ═══ Telemetry Section ═══ -->
+            <controls:GlassCard Header="遥测" Icon="">
+                <StackPanel Spacing="0">
+                    <controls:SettingItem Label="启用遥测">
+                        <controls:SettingItem.ContentSlot>
+                            <controls:GlassToggle IsOn="{x:Bind ViewModel.TelemetryEnabled, Mode=TwoWay}"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+                </StackPanel>
+            </controls:GlassCard>
+
+            <!-- ═══ Logging Section ═══ -->
+            <controls:GlassCard Header="日志" Icon="">
+                <StackPanel Spacing="0">
+                    <controls:SettingItem Label="日志最大大小">
+                        <controls:SettingItem.ContentSlot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Slider Value="{x:Bind ViewModel.LogMaxSizeMB, Mode=TwoWay}"
+                                        Minimum="10" Maximum="500" Step="10"
+                                        Width="120"/>
+                                <TextBlock FontSize="12" FontFamily="Cascadia Code"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Width="50" TextAlignment="Right"
+                                           VerticalAlignment="Center">
+                                    <Run Text="{x:Bind ViewModel.LogMaxSizeMB, Mode=OneWay}"/>
+                                    <Run Text="MB"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="清理间隔">
+                        <controls:SettingItem.ContentSlot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Slider Value="{x:Bind ViewModel.LogCleanupInterval, Mode=TwoWay}"
+                                        Minimum="300" Maximum="7200" Step="300"
+                                        Width="120"/>
+                                <TextBlock x:Name="CleanupLabel"
+                                           FontSize="12" FontFamily="Cascadia Code"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Width="50" TextAlignment="Right"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+                </StackPanel>
+            </controls:GlassCard>
+
+            <!-- ═══ Appearance Section ═══ -->
+            <controls:GlassCard Header="外观" Icon="">
+                <StackPanel Spacing="0">
+                    <!-- Theme presets -->
+                    <controls:SettingItem Label="主题预设">
+                        <controls:SettingItem.ContentSlot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <RadioButton GroupName="ThemePreset"
+                                             Tag="Deep" IsChecked="True"
+                                             Checked="OnThemePresetChanged"
+                                             CornerRadius="12" Padding="8,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <Ellipse Width="16" Height="16" Fill="#5B9CF6"/>
+                                        <TextBlock Text="深邃" FontSize="10"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton GroupName="ThemePreset"
+                                             Tag="Bright"
+                                             Checked="OnThemePresetChanged"
+                                             CornerRadius="12" Padding="8,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <Ellipse Width="16" Height="16" Fill="#5B9CF6"
+                                                 Stroke="#999" StrokeThickness="1"/>
+                                        <TextBlock Text="明亮" FontSize="10"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton GroupName="ThemePreset"
+                                             Tag="Midnight"
+                                             Checked="OnThemePresetChanged"
+                                             CornerRadius="12" Padding="8,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <Ellipse Width="16" Height="16" Fill="#6366F1"/>
+                                        <TextBlock Text="午夜" FontSize="10"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton GroupName="ThemePreset"
+                                             Tag="Sunset"
+                                             Checked="OnThemePresetChanged"
+                                             CornerRadius="12" Padding="8,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <Ellipse Width="16" Height="16" Fill="#F97316"/>
+                                        <TextBlock Text="日落" FontSize="10"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </StackPanel>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <!-- Appearance mode -->
+                    <controls:SettingItem Label="外观模式">
+                        <controls:SettingItem.ContentSlot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <RadioButton GroupName="AppearanceMode"
+                                             Tag="System" IsChecked="True"
+                                             Checked="OnAppearanceModeChanged"
+                                             CornerRadius="12" Padding="8,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <FontIcon Glyph="&#xE790;" FontSize="12"
+                                                  VerticalAlignment="Center"/>
+                                        <TextBlock Text="系统" FontSize="10"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton GroupName="AppearanceMode"
+                                             Tag="Light"
+                                             Checked="OnAppearanceModeChanged"
+                                             CornerRadius="12" Padding="8,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <FontIcon Glyph="&#xE793;" FontSize="12"
+                                                  VerticalAlignment="Center"/>
+                                        <TextBlock Text="浅色" FontSize="10"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton GroupName="AppearanceMode"
+                                             Tag="Dark"
+                                             Checked="OnAppearanceModeChanged"
+                                             CornerRadius="12" Padding="8,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <FontIcon Glyph="&#xE791;" FontSize="12"
+                                                  VerticalAlignment="Center"/>
+                                        <TextBlock Text="深色" FontSize="10"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </StackPanel>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <!-- Language -->
+                    <controls:SettingItem Label="语言">
+                        <controls:SettingItem.ContentSlot>
+                            <RadioButtons Orientation="Horizontal" Spacing="8">
+                                <RadioButton Content="中文" IsChecked="True"
+                                             Checked="OnLocaleChanged" Tag="zh-CN"/>
+                                <RadioButton Content="English"
+                                             Checked="OnLocaleChanged" Tag="en"/>
+                            </RadioButtons>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+                </StackPanel>
+            </controls:GlassCard>
+
+            <!-- ═══ About Section ═══ -->
+            <controls:GlassCard Header="关于" Icon="">
+                <StackPanel Spacing="0">
+                    <controls:SettingItem Label="应用">
+                        <controls:SettingItem.ContentSlot>
+                            <TextBlock Text="{x:Bind ViewModel.AppName, Mode=OneWay}"
+                                       FontSize="13"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="包标识">
+                        <controls:SettingItem.ContentSlot>
+                            <TextBlock Text="{x:Bind ViewModel.BundleId, Mode=OneWay}"
+                                       FontSize="12" FontFamily="Cascadia Code"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="版本">
+                        <controls:SettingItem.ContentSlot>
+                            <TextBlock Text="{x:Bind ViewModel.Version, Mode=OneWay}"
+                                       FontSize="13" FontFamily="Cascadia Code"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+
+                    <controls:SettingItem Label="构建">
+                        <controls:SettingItem.ContentSlot>
+                            <TextBlock Text="{x:Bind ViewModel.Build, Mode=OneWay}"
+                                       FontSize="13" FontFamily="Cascadia Code"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                        </controls:SettingItem.ContentSlot>
+                    </controls:SettingItem>
+                </StackPanel>
+            </controls:GlassCard>
+
+            <!-- ═══ Reset to Defaults ═══ -->
+            <Button Click="OnResetToDefaults"
+                    CornerRadius="999"
+                    Padding="20,10"
+                    HorizontalAlignment="Left"
+                    Margin="0,0,0,40">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
+                    <TextBlock Text="恢复默认" FontSize="13" FontWeight="Medium"
+                               Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
+                </StackPanel>
+            </Button>
+
+        </StackPanel>
+    </ScrollView>
+</Page>

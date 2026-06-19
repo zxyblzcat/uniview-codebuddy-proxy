@@ -1,0 +1,126 @@
+<Page
+    x:Class="UniviewCodeBuddyProxy.Views.LogsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="using:UniviewCodeBuddyProxy.Controls"
+    mc:Ignorable="d">
+
+    <Grid RowSpacing="12" Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header row -->
+        <Grid Grid.Row="0" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Text="日志"
+                       FontSize="20"
+                       FontWeight="Bold"
+                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                       VerticalAlignment="Center"/>
+
+            <!-- Auto-scroll toggle -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <TextBlock Text="自动滚动" FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center"/>
+                <ToggleSwitch IsOn="{x:Bind ViewModel.AutoScroll, Mode=TwoWay}"
+                              OnContent="" OffContent="" MinWidth="0"/>
+            </StackPanel>
+
+            <!-- Clear button -->
+            <Button Grid.Column="2"
+                    Click="OnClearLogs"
+                    CornerRadius="6"
+                    Padding="12,6">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="" FontSize="12"/>
+                    <TextBlock Text="清除" FontSize="12"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Filter row: level chips + search -->
+        <Grid Grid.Row="1" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Level filter chips -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                <RadioButton Content="全部" GroupName="LogLevel" IsChecked="True"
+                             Checked="OnLevelFilterChanged" Tag="All"
+                             CornerRadius="12" Padding="12,4" FontSize="12" MinWidth="0"/>
+                <RadioButton Content="调试" GroupName="LogLevel"
+                             Checked="OnLevelFilterChanged" Tag="Debug"
+                             CornerRadius="12" Padding="12,4" FontSize="12" MinWidth="0"/>
+                <RadioButton Content="信息" GroupName="LogLevel"
+                             Checked="OnLevelFilterChanged" Tag="Info"
+                             CornerRadius="12" Padding="12,4" FontSize="12" MinWidth="0"/>
+                <RadioButton Content="警告" GroupName="LogLevel"
+                             Checked="OnLevelFilterChanged" Tag="Warn"
+                             CornerRadius="12" Padding="12,4" FontSize="12" MinWidth="0"/>
+                <RadioButton Content="错误" GroupName="LogLevel"
+                             Checked="OnLevelFilterChanged" Tag="Error"
+                             CornerRadius="12" Padding="12,4" FontSize="12" MinWidth="0"/>
+            </StackPanel>
+
+            <!-- Search bar -->
+            <AutoSuggestBox Grid.Column="1"
+                            PlaceholderText="搜索日志..."
+                            Text="{x:Bind ViewModel.SearchText, Mode=TwoWay}"
+                            QueryIcon="Find"
+                            CornerRadius="8"/>
+        </Grid>
+
+        <!-- Log entries list -->
+        <ListView x:Name="LogList"
+                  Grid.Row="2"
+                  ItemsSource="{x:Bind ViewModel.FilteredEntries, Mode=OneWay}"
+                  SelectionMode="None"
+                  IsItemClickEnabled="False">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnSpacing="10" Padding="4,6"
+                          Background="{Binding LevelBgBrush}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="32"/>
+                            <ColumnDefinition Width="72"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="{Binding LevelEmoji}" FontSize="14"
+                                   VerticalAlignment="Center"/>
+                        <Border Grid.Column="1" CornerRadius="3" Padding="4,2"
+                                Background="{Binding LevelBadgeBrush}">
+                            <TextBlock Text="{Binding LevelTag}" FontSize="9"
+                                       FontWeight="SemiBold" Foreground="White"
+                                       HorizontalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Grid.Column="2" Text="{Binding ShortTime}" FontSize="11"
+                                   FontFamily="Cascadia Code"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="3" Text="{Binding Message}" FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap" MaxHeight="60"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</Page>

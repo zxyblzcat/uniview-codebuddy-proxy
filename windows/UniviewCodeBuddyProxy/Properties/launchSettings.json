@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "UniviewCodeBuddyProxy": {
+      "commandName": "Project",
+      "compatibleTargetFrameworks": []
+    }
+  }
+}

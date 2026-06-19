@@ -1,0 +1,109 @@
+name: Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos:
+    name: Build macOS
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            macos/UniviewCodeBuddyProxy/.build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('macos/UniviewCodeBuddyProxy/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Build for arm64
+        working-directory: macos/UniviewCodeBuddyProxy
+        run: swift build -c release --arch arm64
+
+      - name: Build for x86_64
+        working-directory: macos/UniviewCodeBuddyProxy
+        run: swift build -c release --arch x86_64
+
+      - name: Create universal binary
+        working-directory: macos/UniviewCodeBuddyProxy
+        run: |
+          mkdir -p .build/universal
+          lipo -create \
+            .build/arm64-apple-macosx/release/UniviewCodeBuddyProxy \
+            .build/x86_64-apple-macosx/release/UniviewCodeBuddyProxy \
+            -output .build/universal/UniviewCodeBuddyProxy
+          echo "✅ Universal binary created:"
+          lipo -info .build/universal/UniviewCodeBuddyProxy
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('windows/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore workloads
+        working-directory: windows
+        run: dotnet workload restore
+
+      - name: Build WinUI app
+        working-directory: windows
+        run: dotnet build -c Release -p:Platform=x64
+
+      - name: Publish WinUI app
+        working-directory: windows
+        run: >
+          dotnet publish UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
+          -c Release -p:Platform=x64
+          -p:SelfContained=true -p:RuntimeIdentifier=win-x64
+          -p:PublishSingleFile=false
+          -p:WindowsAppSDKSelfContained=true
+
+      - name: Verify publish output
+        shell: pwsh
+        run: |
+          $publishDir = "windows/UniviewCodeBuddyProxy/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish"
+          if (Test-Path $publishDir) {
+            Write-Host "✅ Publish output exists"
+            Get-ChildItem $publishDir -Name | Select-Object -First 20
+          } else {
+            Write-Error "❌ Publish directory not found: $publishDir"
+            exit 1
+          }
+
+      - name: Publish Server CLI (Windows)
+        working-directory: windows
+        run: >
+          dotnet publish UniviewCodeBuddyProxy.Server/UniviewCodeBuddyProxy.Server.csproj
+          -c Release -r win-x64 --self-contained true
+
+      - name: Publish Server CLI (Linux)
+        working-directory: windows
+        run: >
+          dotnet publish UniviewCodeBuddyProxy.Server/UniviewCodeBuddyProxy.Server.csproj
+          -c Release -r linux-x64 --self-contained true

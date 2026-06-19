@@ -1,14 +1,33 @@
-docs/
-*.DS_Store
-.env
-codebuddy-proxy
-codebuddy-proxy-*
-uniview-codebuddy-proxy
-uniview-codebuddy-proxy-*
-*.exe
-*.app
-*.syso
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
 .idea/
-PLAN.md
-.claude
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# ── macOS / Swift ──
+.build/
+DerivedData/
+*.app
+xcuserdata/
+*.xcscmblueprint
+
+# ── Windows / .NET ──
+bin/
+obj/
+publish/
+*.pdb
+*.user
+*.suo
+*.cache
+
+# ── Tooling ──
+.claude/
 .codegraph/
+.playwright-mcp/
