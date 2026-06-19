@@ -101,8 +101,22 @@ jobs:
               <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.250108004" />
               <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
             </ItemGroup>
+            <ItemGroup>
+              <Content Include="app.manifest" />
+            </ItemGroup>
           </Project>
           "@ | Out-File -FilePath "MinimalTest/MinimalTest.csproj" -Encoding utf8
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+            <assemblyIdentity version="1.0.0.0" name="MinimalTest"/>
+            <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+              <application>
+                <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+              </application>
+            </compatibility>
+          </assembly>
+          "@ | Out-File -FilePath "MinimalTest/app.manifest" -Encoding utf8
           @"
           <?xml version="1.0" encoding="utf-8"?>
           <Application
@@ -170,6 +184,7 @@ jobs:
           "@ | Out-File -FilePath "MinimalTest/Views/TestPage.xaml.cs" -Encoding utf8
           Write-Host "=== Building minimal test project with subfolder XAML ==="
           dotnet build MinimalTest/MinimalTest.csproj -c Release -p:Platform=x64
+          Write-Host "=== Minimal test SUCCEEDED === subfolder XAML works fine"
 
       - name: Build WinUI app (Release)
         working-directory: windows
