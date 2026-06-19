@@ -113,22 +113,11 @@ struct ContentView: View {
     // MARK: - 顶部状态栏（从窗口顶部透明过渡到不透明）
 
     @ViewBuilder
+    // MARK: - 顶部状态栏（从窗口顶部透明过渡到不透明）
+
+    @ViewBuilder
     private func topStatusBar(colors: ThemeColors) -> some View {
         VStack(spacing: 0) {
-            // 透明渐变区域（扩展到窗口顶部）
-            Rectangle()
-                .frame(height: 40) // 延伸区域高度
-                .background(
-                    LinearGradient(
-                        colors: [
-                            colors.bg.opacity(0),
-                            colors.bg.opacity(0.2),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-
             // 状态栏内容区
             HStack(spacing: 12) {
                 // 连接指示器：绿色圆点
@@ -179,5 +168,6 @@ struct ContentView: View {
                 )
             )
         }
+    }
     }
 }

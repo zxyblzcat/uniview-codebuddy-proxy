@@ -1,18 +1,8 @@
 <Project>
   <!--
-    Force UseXamlCompilerExecutable=false AFTER the WindowsAppSDK's interop.targets
-    sets it to true for dotnet build (MSBuildRuntimeType=Core). The net472
-    XamlCompiler.exe crashes when loading .NET 6/8 reference assemblies.
-    The net6.0 in-process CompileXaml task handles them correctly.
-  -->
-  <PropertyGroup>
-    <UseXamlCompilerExecutable>false</UseXamlCompilerExecutable>
-  </PropertyGroup>
-
-  <!--
     Remove ASP.NET Core reference assemblies before XamlCompiler runs.
-    Even the in-process net6.0 CompileXaml task can have issues with
-    ASP.NET Core transitive refs from the Core project.
+    The net472 in-process CompileXaml task (used by MSBuild) can have issues
+    with ASP.NET Core transitive refs from the Core project.
   -->
   <Target Name="_RemoveAspNetCoreRefsBeforeXamlCompiler"
           BeforeTargets="XamlMarkupCompilePass1;_XamlBuildExecTask;MarkupCompilePass1"
@@ -26,7 +16,7 @@
 
   <!--
     Remove XamlPreCompile from PrepareResourcesDependsOn.
-    XamlPreCompile is a WPF/WinFX target that does not exist in WinUI 3 projects.
+    XamlPreCompile is a WPF/WinFX target inherited by the build pipeline.
     When it runs under MSBuild, it invokes the .NET Framework Roslyn csc.exe which
     cannot resolve WinRT projected types (Color, NavigationView, DispatcherQueue),
     causing CS0246 errors. Removing it lets the normal CoreCompile (which uses the

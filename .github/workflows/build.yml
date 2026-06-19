@@ -59,6 +59,9 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v1.1
+
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
@@ -73,18 +76,20 @@ jobs:
 
       - name: Build WinUI app (Debug)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
+        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Debug /p:Platform=x64 /restore
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
+        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Release /p:Platform=x64
 
       - name: Publish WinUI app
         working-directory: windows
         run: >
-          dotnet publish UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
-          -c Release -r win-x64 --self-contained true
-          -p:Platform=x64 -p:WindowsAppSDKSelfContained=true
+          msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
+          /p:Configuration=Release /p:Platform=x64
+          /p:SelfContained=true /p:RuntimeIdentifier=win-x64
+          /p:PublishSingleFile=false /p:WindowsAppSDKSelfContained=true
+          /t:Publish
 
       - name: Verify publish output
         shell: pwsh
