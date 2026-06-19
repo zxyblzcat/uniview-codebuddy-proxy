@@ -76,7 +76,36 @@ jobs:
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
+        shell: pwsh
+        run: |
+          # Run build and capture output
+          dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64 2>&1 | Tee-Object -FilePath build-output.log
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) {
+            Write-Host "=== Build FAILED ==="
+            # Try running XamlCompiler directly to capture its stderr
+            $sdkPath = (Get-ChildItem "C:\Users\runneradmin\.nuget\packages\microsoft.windowsappsdk\1.5.*" -Directory | Select-Object -First 1).FullName
+            $xamlCompiler = Join-Path $sdkPath "tools\net472\XamlCompiler.exe"
+            $inputJson = "UniviewCodeBuddyProxy\obj\x64\Release\net8.0-windows10.0.19041.0\input.json"
+            $outputJson = "UniviewCodeBuddyProxy\obj\x64\Release\net8.0-windows10.0.19041.0\output.json"
+            if (Test-Path $xamlCompiler) {
+              Write-Host "=== Running XamlCompiler directly ==="
+              Write-Host "XamlCompiler: $xamlCompiler"
+              Write-Host ".NET Framework version:"
+              Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -ErrorAction SilentlyContinue | Select-Object Release, Version | Format-List
+              try {
+                $proc = Start-Process -FilePath $xamlCompiler -ArgumentList "`"$inputJson`"", "`"$outputJson`"" -Wait -PassThru -NoNewWindow -RedirectStandardError "xamlcompiler-stderr.txt" -RedirectStandardOutput "xamlcompiler-stdout.txt"
+                Write-Host "Exit code: $($proc.ExitCode)"
+                Write-Host "=== stdout ==="
+                if (Test-Path "xamlcompiler-stdout.txt") { Get-Content "xamlcompiler-stdout.txt" } else { Write-Host "(empty)" }
+                Write-Host "=== stderr ==="
+                if (Test-Path "xamlcompiler-stderr.txt") { Get-Content "xamlcompiler-stderr.txt" } else { Write-Host "(empty)" }
+              } catch {
+                Write-Host "Failed to run XamlCompiler: $_"
+              }
+            }
+            exit $buildExit
+          }
 
       - name: Capture XamlCompiler diagnostics on failure
         if: failure()
