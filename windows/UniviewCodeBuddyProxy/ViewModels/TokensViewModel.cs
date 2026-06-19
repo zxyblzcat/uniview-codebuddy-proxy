@@ -5,7 +5,10 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using UniviewCodeBuddyProxy.Models;
-using UniviewCodeBuddyProxy.Services;
+
+// Services namespace imports — use aliases to avoid ambiguity with Models.TokenInfo / Models.TokenStatus
+using ServicesTokenStatus = UniviewCodeBuddyProxy.Services.TokenStatus;
+using TokenManager = UniviewCodeBuddyProxy.Services.TokenManager;
 
 namespace UniviewCodeBuddyProxy.ViewModels;
 
@@ -98,13 +101,13 @@ public sealed class TokensViewModel : INotifyPropertyChanged
         }
     }
 
-    private static TokenStatus MapStatus(Services.TokenStatus status) => status switch
+    private static TokenStatus MapStatus(ServicesTokenStatus status) => status switch
     {
-        Services.TokenStatus.Active => Models.TokenStatus.Active,
-        Services.TokenStatus.Cooldown => Models.TokenStatus.Cooldown,
-        Services.TokenStatus.Unavailable => Models.TokenStatus.Unavailable,
-        Services.TokenStatus.Expired => Models.TokenStatus.Expired,
-        _ => Models.TokenStatus.Active
+        ServicesTokenStatus.Active => TokenStatus.Active,
+        ServicesTokenStatus.Cooldown => TokenStatus.Cooldown,
+        ServicesTokenStatus.Unavailable => TokenStatus.Unavailable,
+        ServicesTokenStatus.Expired => TokenStatus.Expired,
+        _ => TokenStatus.Active
     };
 
     private void ExecuteAddToken()

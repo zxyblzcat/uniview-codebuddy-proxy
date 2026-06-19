@@ -59,6 +59,18 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('windows/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore workloads
+        working-directory: windows
+        run: dotnet workload restore UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
+
       - name: Build WinUI app (Debug)
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
@@ -71,9 +83,8 @@ jobs:
         working-directory: windows
         run: >
           dotnet publish UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
-          -c Release -p:Platform=x64
-          -p:SelfContained=true -r win-x64
-          -p:WindowsAppSDKSelfContained=true
+          -c Release -r win-x64 --self-contained true
+          -p:Platform=x64 -p:WindowsAppSDKSelfContained=true
 
       - name: Verify publish output
         shell: pwsh

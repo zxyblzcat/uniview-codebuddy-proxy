@@ -5,6 +5,7 @@ using UniviewCodeBuddyProxy.Helpers;
 using UniviewCodeBuddyProxy.Models;
 using UniviewCodeBuddyProxy.Services;
 using UniviewCodeBuddyProxy.ViewModels;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
