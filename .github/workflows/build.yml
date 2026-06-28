@@ -75,37 +75,9 @@ jobs:
         working-directory: windows
         run: dotnet restore UniviewCodeBuddyProxy.sln
 
-      - name: Diagnostic - Check CsWinRT references
-        working-directory: windows
-        shell: pwsh
-        run: |
-          $nugetPath = "$env:USERPROFILE\.nuget\packages"
-          if (Test-Path $nugetPath) {
-            Write-Host "=== CsWinRT projection DLLs ==="
-            $wasdk = Join-Path $nugetPath "microsoft.windowsappsdk"
-            if (Test-Path $wasdk) {
-              Get-ChildItem -Recurse -Filter "*.dll" -Path $wasdk |
-                Where-Object { $_.Name -match "Microsoft\.UI|WinRT|CsWinRT" } |
-                ForEach-Object { Write-Host $_.FullName }
-            }
-            Write-Host "=== All Microsoft.UI* DLLs ==="
-            Get-ChildItem -Recurse -Filter "Microsoft.UI.Xaml.dll" -Path $nugetPath |
-              ForEach-Object { Write-Host $_.FullName }
-            Get-ChildItem -Recurse -Filter "Microsoft.UI.dll" -Path $nugetPath |
-              ForEach-Object { Write-Host $_.FullName }
-            Write-Host "=== Microsoft.Windows.Sdk.BuildTools DLLs ==="
-            $bt = Join-Path $nugetPath "microsoft.windows.sdk.buildtools"
-            if (Test-Path $bt) {
-              Get-ChildItem -Recurse -Filter "*.dll" -Path $bt |
-                ForEach-Object { Write-Host $_.FullName }
-            }
-          } else {
-            Write-Host "NuGet packages path not found at $nugetPath"
-          }
-
       - name: Build WinUI app (Debug)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -v:n
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
 
       - name: Build WinUI app (Release)
         working-directory: windows

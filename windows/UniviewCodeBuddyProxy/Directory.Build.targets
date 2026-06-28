@@ -1,14 +1,11 @@
 <Project>
   <!--
     Remove XamlPreCompile from PrepareResourcesDependsOn.
-    XamlPreCompile is a target that runs an in-process C# compilation using
-    the .NET Framework Roslyn csc.exe (invoked by the net472 XamlCompiler.exe).
-    This csc.exe cannot resolve CsWinRT projected types like Microsoft.UI.Color,
-    causing CS0246 errors. By removing XamlPreCompile, C# compilation is deferred
-    to CoreCompile which uses the correct .NET 8 SDK Roslyn.
-
-    The XAML codegen (MarkupCompilePass1/Pass2) still runs normally, providing
-    the WinUI assembly references that CoreCompile needs.
+    XamlPreCompile runs an in-process C# compilation via the net472 XamlCompiler.exe
+    which cannot resolve CsWinRT projected types (Microsoft.UI.Color etc.), causing
+    CS0246. By removing it, C# compilation is deferred to CoreCompile which uses the
+    correct .NET 8 SDK Roslyn that resolves WinRT projected types through the
+    CsWinRT projection chain: Microsoft.WinUI.dll → WinRT.Runtime.dll.
   -->
   <PropertyGroup>
     <PrepareResourcesDependsOn>
