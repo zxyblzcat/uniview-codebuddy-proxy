@@ -20,11 +20,11 @@
     <!-- WinUI 3 / Windows App SDK -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
-    <!-- CsWinRT source generator — required for WinRT type projection (Microsoft.UI.Color etc.)
-         IncludeAssets="compile;analyzers" skips the cswinrt.exe tool (needs Platform.xml
-         which is absent on CI) while keeping the Roslyn source generator that produces
-         projected type implementations at compile time. -->
-    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.*" IncludeAssets="compile;analyzers" ExcludeAssets="build;buildTransitive;runtime;native" />
+    <!-- CsWinRT — provides WinRT.Runtime.dll and the Roslyn source generator that
+         produces projected type implementations (e.g. Microsoft.UI.Color) at compile time.
+         The cswinrt.exe tool (build asset) requires UAP Platform.xml; we install the
+         matching Windows SDK on CI to provide it. -->
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.*" />
   </ItemGroup>
 
   <ItemGroup>
