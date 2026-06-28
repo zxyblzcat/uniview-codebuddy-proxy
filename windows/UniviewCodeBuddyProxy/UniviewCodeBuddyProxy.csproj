@@ -38,6 +38,21 @@
     <Analyzer Include="$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\10.0.19041.56\analyzers\dotnet\cs\WinRT.SourceGenerator.dll" />
   </ItemGroup>
 
+  <!--
+    Add CsWinRTInputs for the versioned .winmd files from the WindowsAppSDK NuGet package.
+    Microsoft.WinUI.References.targets only adds lib/uap10.0/*.winmd to CsWinRTInputs,
+    but Microsoft.UI.winmd (defining Microsoft.UI.Color, Microsoft.UI.Colors, etc.),
+    Microsoft.Foundation.winmd, and Microsoft.Graphics.winmd are only in the versioned
+    subdirectory (uap10.0.17763). Without these, the CsWinRT source generator does not
+    produce the projected types, causing CS0246 on CI where the full VS MSBuild setup
+    is absent.
+  -->
+  <ItemGroup>
+    <CsWinRTInputs Include="$(NuGetPackageRoot)microsoft.windowsappsdk\1.7.260224002\lib\uap10.0.17763\Microsoft.UI.winmd" />
+    <CsWinRTInputs Include="$(NuGetPackageRoot)microsoft.windowsappsdk\1.7.260224002\lib\uap10.0.17763\Microsoft.Foundation.winmd" />
+    <CsWinRTInputs Include="$(NuGetPackageRoot)microsoft.windowsappsdk\1.7.260224002\lib\uap10.0.17763\Microsoft.Graphics.winmd" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Core proxy library — normal project reference.
          ASP.NET Core FrameworkReference from Core is excluded via Directory.Build.targets
