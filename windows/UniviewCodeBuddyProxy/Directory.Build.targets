@@ -16,6 +16,19 @@
   </PropertyGroup>
 
   <!--
+    Diagnostic: dump all references containing "Microsoft" before CoreCompile
+    to understand why Color type can't be resolved.
+  -->
+  <Target Name="_DiagReferences" BeforeTargets="CoreCompile"
+          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
+    <Message Importance="high" Text="=== REFERENCE DIAGNOSTICS ===" />
+    <Message Importance="high" Text="[Ref] %(ReferencePath.Identity)" Condition="$([System.String]::new('%(ReferencePath.FileName)').Contains('Microsoft'))" />
+    <Message Importance="high" Text="[RefPath] %(ReferencePathWithRefAssemblies.Identity)" Condition="$([System.String]::new('%(ReferencePathWithRefAssemblies.FileName)').Contains('Microsoft'))" />
+    <Message Importance="high" Text="[Analy] %(Analyzer.Identity)" Condition="$([System.String]::new('%(Analyzer.FileName)').Contains('CsWinRT'))" />
+    <Message Importance="high" Text="=== END REF DIAGNOSTICS ===" />
+  </Target>
+
+  <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
     WMC1509 "No LocalAssembly parameter given during MarkupCompilePass2" occurs when
     the intermediate assembly doesn't exist yet on first build.
