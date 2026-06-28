@@ -24,7 +24,7 @@ public sealed partial class DashboardPage : Page
     public DashboardPage()
     {
         var app = (App)Application.Current;
-        ViewModel = new DashboardViewModel(app.TokenManager, app.LogBuffer, app.TelemetryReporter);
+        ViewModel = new DashboardViewModel(app.TokenManager, app.LogBuffer, app.TelemetryReporter, app.UsageStats);
         this.InitializeComponent();
 
         // Capture dispatcher queue in constructor since Page is created on UI thread

@@ -27,6 +27,7 @@ public sealed class ProxyServer
     private readonly AuthService _authService;
     private readonly LogBuffer _logBuffer;
     private readonly TelemetryReporter _telemetryReporter;
+    private readonly UsageStats _usageStats;
 
     // ═══ Internal Services ═══
 
@@ -46,13 +47,15 @@ public sealed class ProxyServer
         TokenManager tokenManager,
         AuthService authService,
         LogBuffer logBuffer,
-        TelemetryReporter telemetryReporter)
+        TelemetryReporter telemetryReporter,
+        UsageStats usageStats)
     {
         _configManager = configManager;
         _tokenManager = tokenManager;
         _authService = authService;
         _logBuffer = logBuffer;
         _telemetryReporter = telemetryReporter;
+        _usageStats = usageStats;
 
         _upstreamClient = new UpstreamClient(configManager.UpstreamMaxConnsPerHost);
         _circuitBreaker = new CircuitBreaker();
@@ -60,7 +63,7 @@ public sealed class ProxyServer
         _cacheManager = new CacheManager();
         _proxyController = new ProxyController(
             _configManager, _tokenManager, _upstreamClient, _retryHandler,
-            _cacheManager, _circuitBreaker, _telemetryReporter, _logBuffer);
+            _cacheManager, _circuitBreaker, _telemetryReporter, _logBuffer, _usageStats);
 
         _concurrencyLimiter = new SemaphoreSlim(configManager.MaxConcurrentRequests, configManager.MaxConcurrentRequests);
     }

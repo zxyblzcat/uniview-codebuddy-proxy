@@ -27,6 +27,7 @@ public static class Program
         var tokenManager = new TokenManager();
         var authService = new AuthService();
         var telemetryReporter = new TelemetryReporter(configManager, tokenManager);
+        var usageStats = new UsageStats();
 
         // ═══ Auto-start Device Flow if no tokens ═══
 
@@ -66,7 +67,8 @@ public static class Program
             tokenManager,
             authService,
             logBuffer,
-            telemetryReporter);
+            telemetryReporter,
+            usageStats);
 
         server.Start();
 
@@ -94,6 +96,8 @@ public static class Program
 
         logBuffer.Info("stopping proxy server...");
         server.Stop();
+        usageStats.Dispose();
+        telemetryReporter.Shutdown();
         configManager.Dispose();
         tokenManager.Dispose();
 
