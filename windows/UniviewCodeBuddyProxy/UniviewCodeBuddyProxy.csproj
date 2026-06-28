@@ -24,7 +24,7 @@
          produces projected type implementations (e.g. Microsoft.UI.Color) at compile time.
          The cswinrt.exe tool (build asset) requires UAP Platform.xml; we install the
          matching Windows SDK on CI to provide it. -->
-    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.*" />
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.6" />
   </ItemGroup>
 
   <ItemGroup>
