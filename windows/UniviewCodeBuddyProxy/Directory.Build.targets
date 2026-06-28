@@ -15,19 +15,4 @@
     </PropertyGroup>
     <Message Importance="high" Text="[_SetLocalAssemblyForMarkupCompilePass2] LocalAssembly=$(LocalAssembly)" />
   </Target>
-
-  <!--
-    Remove XamlPreCompile from PrepareResourcesDependsOn.
-    XamlPreCompile runs an in-process C# compilation via the net472 XamlCompiler.exe
-    which cannot resolve CsWinRT projected types (Microsoft.UI.Color etc.), causing
-    CS0246. By removing it, all C# compilation is deferred to CoreCompile which uses
-    the correct .NET 8 SDK Roslyn that supports WinRT type projection via CsWinRT.
-  -->
-  <PropertyGroup>
-    <PrepareResourcesDependsOn>
-      MarkupCompilePass1;
-      MarkupCompilePass2;
-      $(PrepareResourcesDependsOn)
-    </PrepareResourcesDependsOn>
-  </PropertyGroup>
 </Project>
