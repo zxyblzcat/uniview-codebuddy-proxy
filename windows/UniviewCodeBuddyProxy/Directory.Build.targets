@@ -15,43 +15,6 @@
   </PropertyGroup>
 
   <!--
-    Add WinRT.Runtime.dll and the CsWinRT source generator explicitly.
-
-    The Microsoft.Windows.SDK.NET.Ref NuGet package (FrameworkReference targeting pack)
-    only adds Microsoft.Windows.SDK.NET.dll to the compile references, but NOT
-    WinRT.Runtime.dll or the source generator. Without these, CsWinRT projected
-    types like Microsoft.UI.Color cannot be resolved.
-
-    We find the SDK.NET.Ref package directory from the already-resolved
-    Microsoft.Windows.SDK.NET.dll in ReferencePath, then add the companion
-    WinRT.Runtime.dll as a Reference and WinRT.SourceGenerator.dll as an Analyzer.
-  -->
-  <Target Name="_AddCsWinRTReferences"
-          BeforeTargets="CoreCompile"
-          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
-    <ItemGroup>
-      <_SdkNetRefCandidate Include="@(ReferencePath)" Condition="$([System.String]::new('%(FileName)').Equals('Microsoft.Windows.SDK.NET')) And $([System.String]::new('%(Extension)').Equals('.dll'))" />
-    </ItemGroup>
-    <PropertyGroup>
-      <_SdkNetRefDir Condition="'@(_SdkNetRefCandidate)' != ''">%(_SdkNetRefCandidate.RootDir)%(_SdkNetRefCandidate.Directory)</_SdkNetRefDir>
-      <_WinRTRuntimePath Condition="'$(_SdkNetRefDir)' != ''">$(_SdkNetRefDir)WinRT.Runtime.dll</_WinRTRuntimePath>
-      <_WinRTSourceGenPath Condition="'$(_SdkNetRefDir)' != ''">$(_SdkNetRefDir)..\..\analyzers\dotnet\cs\WinRT.SourceGenerator.dll</_WinRTSourceGenPath>
-    </PropertyGroup>
-    <ItemGroup Condition="Exists('$(_WinRTRuntimePath)')">
-      <Reference Include="WinRT.Runtime">
-        <HintPath>$(_WinRTRuntimePath)</HintPath>
-        <Private>false</Private>
-      </Reference>
-    </ItemGroup>
-    <ItemGroup Condition="Exists('$(_WinRTSourceGenPath)')">
-      <Analyzer Include="$(_WinRTSourceGenPath)" />
-    </ItemGroup>
-    <Message Importance="high" Text="[_AddCsWinRTReferences] SDK.NET.Ref dir: $(_SdkNetRefDir)" />
-    <Message Importance="high" Text="[_AddCsWinRTReferences] WinRT.Runtime.dll: $(_WinRTRuntimePath) Exists=$([System.IO.File]::Exists('$(_WinRTRuntimePath)'))" />
-    <Message Importance="high" Text="[_AddCsWinRTReferences] WinRT.SourceGenerator.dll: $(_WinRTSourceGenPath) Exists=$([System.IO.File]::Exists('$(_WinRTSourceGenPath)'))" />
-  </Target>
-
-  <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
     WMC1509 "No LocalAssembly parameter given during MarkupCompilePass2" occurs when
     the intermediate assembly doesn't exist yet on first build.

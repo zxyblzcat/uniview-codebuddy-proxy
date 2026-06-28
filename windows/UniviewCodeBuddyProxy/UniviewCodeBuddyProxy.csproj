@@ -22,6 +22,22 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
   </ItemGroup>
 
+  <!--
+    Explicitly add WinRT.Runtime.dll and the CsWinRT source generator from the
+    SDK.NET.Ref NuGet package. The FrameworkReference targeting pack only adds
+    Microsoft.Windows.SDK.NET.dll to compile references; without WinRT.Runtime.dll
+    and the source generator, CsWinRT projected types like Microsoft.UI.Color
+    cannot be resolved. These are added at project evaluation time (not in a target)
+    so the source generator is available when CoreCompile runs.
+  -->
+  <ItemGroup>
+    <Reference Include="WinRT.Runtime">
+      <HintPath>$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\10.0.19041.56\lib\net8.0\WinRT.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Analyzer Include="$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\10.0.19041.56\analyzers\dotnet\cs\WinRT.SourceGenerator.dll" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Core proxy library — normal project reference.
          ASP.NET Core FrameworkReference from Core is excluded via Directory.Build.targets
