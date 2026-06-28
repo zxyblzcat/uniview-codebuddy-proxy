@@ -14,43 +14,26 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <!--
+      HAS_CSWINRT_COLOR: defined when CsWinRT source generator is expected to produce
+      Microsoft.UI.Color (local VS builds). On CI the generator may fail; the polyfill
+      in Helpers/WinUIColorPolyfill.cs (#if !HAS_CSWINRT_COLOR) fills the gap.
+    -->
+    <DefineConstants Condition="'$(BuildingInsideVisualStudio)' == 'true'">$(DefineConstants);HAS_CSWINRT_COLOR</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- WinUI 3 / Windows App SDK -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
-  </ItemGroup>
-
-  <!--
-    Explicitly add WinRT.Runtime.dll and the CsWinRT source generator from the
-    SDK.NET.Ref NuGet package. The FrameworkReference targeting pack only adds
-    Microsoft.Windows.SDK.NET.dll to compile references; without WinRT.Runtime.dll
-    and the source generator, CsWinRT projected types like Microsoft.UI.Color
-    cannot be resolved. These are added at project evaluation time (not in a target)
-    so the source generator is available when CoreCompile runs.
-  -->
-  <ItemGroup>
-    <Reference Include="WinRT.Runtime">
-      <HintPath>$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\10.0.19041.56\lib\net8.0\WinRT.Runtime.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Analyzer Include="$(NuGetPackageRoot)microsoft.windows.sdk.net.ref\10.0.19041.56\analyzers\dotnet\cs\WinRT.SourceGenerator.dll" />
-  </ItemGroup>
-
-  <!--
-    Add CsWinRTInputs for the versioned .winmd files from the WindowsAppSDK NuGet package.
-    Microsoft.WinUI.References.targets only adds lib/uap10.0/*.winmd to CsWinRTInputs,
-    but Microsoft.UI.winmd (defining Microsoft.UI.Color, Microsoft.UI.Colors, etc.),
-    Microsoft.Foundation.winmd, and Microsoft.Graphics.winmd are only in the versioned
-    subdirectory (uap10.0.17763). Without these, the CsWinRT source generator does not
-    produce the projected types, causing CS0246 on CI where the full VS MSBuild setup
-    is absent.
-  -->
-  <ItemGroup>
-    <CsWinRTInputs Include="$(NuGetPackageRoot)microsoft.windowsappsdk\1.7.260224002\lib\uap10.0.17763\Microsoft.UI.winmd" />
-    <CsWinRTInputs Include="$(NuGetPackageRoot)microsoft.windowsappsdk\1.7.260224002\lib\uap10.0.17763\Microsoft.Foundation.winmd" />
-    <CsWinRTInputs Include="$(NuGetPackageRoot)microsoft.windowsappsdk\1.7.260224002\lib\uap10.0.17763\Microsoft.Graphics.winmd" />
+    <!--
+      CsWinRT package — provides WinRT.Runtime.dll, the source generator (analyzers),
+      and the cswinrt.exe tool that processes .winmd files into projected C# types.
+      On local VS builds the FrameworkReference targeting pack may already supply
+      these, but on CI the package is the only source. Without it, projected types
+      like Microsoft.UI.Color cannot be resolved by the source generator, causing CS0246.
+    -->
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.6" />
   </ItemGroup>
 
   <ItemGroup>

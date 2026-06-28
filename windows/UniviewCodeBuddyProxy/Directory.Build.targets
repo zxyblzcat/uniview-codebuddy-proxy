@@ -2,9 +2,13 @@
   <!--
     Remove XamlPreCompile from PrepareResourcesDependsOn.
     XamlPreCompile runs an in-process C# compilation via the net472 XamlCompiler.exe
-    which cannot resolve CsWinRT projected types (Microsoft.UI.Color etc.), causing
-    CS0246. By removing it, C# compilation is deferred to CoreCompile which uses the
-    correct .NET 8 SDK Roslyn + CsWinRT source generator for WinRT type projection.
+    which cannot resolve .NET 8 reference assemblies (e.g. ASP.NET Core), causing
+    compilation errors. By removing it, C# compilation is deferred to CoreCompile
+    which uses the correct .NET 8 SDK Roslyn compiler.
+
+    The Color/Colors polyfill (Helpers/WinUIColorPolyfill.cs) ensures that
+    Microsoft.UI.Color and Microsoft.UI.Colors are available to CoreCompile even
+    when the CsWinRT source generator doesn't run (CI environments).
   -->
   <PropertyGroup>
     <PrepareResourcesDependsOn>
