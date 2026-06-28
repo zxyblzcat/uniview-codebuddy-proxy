@@ -1,10 +1,27 @@
 <Project>
   <!--
+    Remove XamlPreCompile from PrepareResourcesDependsOn.
+    XamlPreCompile is a target that runs an in-process C# compilation using
+    the .NET Framework Roslyn csc.exe (invoked by the net472 XamlCompiler.exe).
+    This csc.exe cannot resolve CsWinRT projected types like Microsoft.UI.Color,
+    causing CS0246 errors. By removing XamlPreCompile, C# compilation is deferred
+    to CoreCompile which uses the correct .NET 8 SDK Roslyn.
+
+    The XAML codegen (MarkupCompilePass1/Pass2) still runs normally, providing
+    the WinUI assembly references that CoreCompile needs.
+  -->
+  <PropertyGroup>
+    <PrepareResourcesDependsOn>
+      MarkupCompilePass1;
+      MarkupCompilePass2;
+      $(PrepareResourcesDependsOn)
+    </PrepareResourcesDependsOn>
+  </PropertyGroup>
+
+  <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
     WMC1509 "No LocalAssembly parameter given during MarkupCompilePass2" occurs when
-    the intermediate assembly doesn't exist yet on first build. We point it to the
-    CoreCompile output path which should exist by the time Pass2 runs (after Pass1
-    generates code and CoreCompile produces the assembly).
+    the intermediate assembly doesn't exist yet on first build.
   -->
   <Target Name="_SetLocalAssemblyForMarkupCompilePass2"
           BeforeTargets="MarkupCompilePass2"
