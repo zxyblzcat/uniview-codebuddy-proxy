@@ -15,32 +15,30 @@
   </PropertyGroup>
 
   <!--
-    Add WinRT.Runtime.dll explicitly as a compile reference.
+    Add WinRT.Runtime.dll and WinRT.SourceGenerator.dll explicitly.
 
-    The Microsoft.Windows.SDK.NET.Ref NuGet package contains WinRT.Runtime.dll
-    alongside Microsoft.Windows.SDK.NET.dll in lib/net8.0/, but the .NET SDK's
-    FrameworkReference targeting pack resolution only includes
-    Microsoft.Windows.SDK.NET.dll in the compile reference list.
-    Without WinRT.Runtime.dll, the compiler cannot resolve CsWinRT projected
-    types like Microsoft.UI.Color.
+    The Microsoft.Windows.SDK.NET.Ref NuGet package contains these alongside
+    Microsoft.Windows.SDK.NET.dll, but the .NET SDK's FrameworkReference targeting
+    pack resolution only includes Microsoft.Windows.SDK.NET.dll in the compile
+    reference list. Without WinRT.Runtime.dll AND the CsWinRT source generator,
+    the compiler cannot resolve projected types like Microsoft.UI.Color.
 
-    We locate the DLL by finding it in the ReferencePath items (where it may
-    appear as part of the NuGet package resolution for dependent packages),
-    or by constructing the path from the NuGet package root.
+    We locate these DLLs by finding Microsoft.Windows.SDK.NET.dll in the reference
+    paths and deriving the companion DLL paths from its directory.
   -->
   <Target Name="_AddCsWinRTReferences"
           BeforeTargets="CoreCompile"
           DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
-    <!--
-      Strategy: Find the SDK.NET.Ref package directory by looking for Microsoft.Windows.SDK.NET.dll
-      in the reference paths and deriving the WinRT.Runtime.dll path from its location.
-    -->
     <ItemGroup>
       <_SdkNetRefCandidate Include="@(ReferencePath)" Condition="$([System.String]::new('%(FileName)').Equals('Microsoft.Windows.SDK.NET')) And $([System.String]::new('%(Extension)').Equals('.dll'))" />
     </ItemGroup>
     <PropertyGroup>
-      <!-- Derive the WinRT.Runtime.dll path: same directory as Microsoft.Windows.SDK.NET.dll -->
-      <_WinRTRuntimePath Condition="'@(_SdkNetRefCandidate)' != ''">%(_SdkNetRefCandidate.RootDir)%(_SdkNetRefCandidate.Directory)WinRT.Runtime.dll</_WinRTRuntimePath>
+      <!-- Derive paths from the SDK.NET.Ref package directory (same parent as Microsoft.Windows.SDK.NET.dll) -->
+      <_SdkNetRefDir Condition="'@(_SdkNetRefCandidate)' != ''">%(_SdkNetRefCandidate.RootDir)%(_SdkNetRefCandidate.Directory)</_SdkNetRefDir>
+      <_WinRTRuntimePath Condition="'$(_SdkNetRefDir)' != ''">$(_SdkNetRefDir)WinRT.Runtime.dll</_WinRTRuntimePath>
+      <!-- The source generator is in the analyzers/dotnet/cs/ subdirectory of the NuGet package root -->
+      <_SdkNetRefPkgRoot Condition="'$(_SdkNetRefDir)' != ''">$(_SdkNetRefDir)..\..\</_SdkNetRefPkgRoot>
+      <_WinRTSourceGenPath Condition="'$(_SdkNetRefPkgRoot)' != ''">$(_SdkNetRefPkgRoot)analyzers\dotnet\cs\WinRT.SourceGenerator.dll</_WinRTSourceGenPath>
     </PropertyGroup>
     <ItemGroup Condition="Exists('$(_WinRTRuntimePath)')">
       <Reference Include="WinRT.Runtime">
@@ -48,10 +46,12 @@
         <Private>false</Private>
       </Reference>
     </ItemGroup>
-    <Message Importance="high" Text="[_AddCsWinRTReferences] SDK.NET.dll: @(_SdkNetRefCandidate->'%(FullPath)')" />
-    <Message Importance="high" Text="[_AddCsWinRTReferences] WinRT.Runtime.dll: $(_WinRTRuntimePath)" />
-    <Message Importance="high" Text="[_AddCsWinRTReferences] Exists=$([System.IO.File]::Exists('$(_WinRTRuntimePath)'))" />
-    <Warning Condition="!Exists('$(_WinRTRuntimePath)')" Text="[_AddCsWinRTReferences] WinRT.Runtime.dll not found - CsWinRT projected types may not resolve" />
+    <ItemGroup Condition="Exists('$(_WinRTSourceGenPath)')">
+      <Analyzer Include="$(_WinRTSourceGenPath)" />
+    </ItemGroup>
+    <Message Importance="high" Text="[_AddCsWinRTReferences] _SdkNetRefDir=$(_SdkNetRefDir)" />
+    <Message Importance="high" Text="[_AddCsWinRTReferences] WinRT.Runtime.dll=$(_WinRTRuntimePath) Exists=$([System.IO.File]::Exists('$(_WinRTRuntimePath)'))" />
+    <Message Importance="high" Text="[_AddCsWinRTReferences] WinRT.SourceGenerator.dll=$(_WinRTSourceGenPath) Exists=$([System.IO.File]::Exists('$(_WinRTSourceGenPath)'))" />
   </Target>
 
   <!--
