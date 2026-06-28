@@ -75,9 +75,21 @@ jobs:
         working-directory: windows
         run: dotnet restore UniviewCodeBuddyProxy.sln
 
+      - name: Diagnostic - Check CsWinRT references
+        working-directory: windows
+        shell: pwsh
+        run: |
+          Write-Host "=== CsWinRT projection DLLs ==="
+          Get-ChildItem -Recurse -Filter "*.dll" -Path "$env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk" |
+            Where-Object { $_.Name -match "Microsoft\.UI|WinRT|CsWinRT" } |
+            ForEach-Object { Write-Host $_.FullName }
+          Write-Host "=== Microsoft.Windows.Sdk.BuildTools DLLs ==="
+          Get-ChildItem -Recurse -Filter "*.dll" -Path "$env:USERPROFILE\.nuget\packages\microsoft.windows.sdk.buildtools" |
+            ForEach-Object { Write-Host $_.FullName }
+
       - name: Build WinUI app (Debug)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -v:n
 
       - name: Build WinUI app (Release)
         working-directory: windows
