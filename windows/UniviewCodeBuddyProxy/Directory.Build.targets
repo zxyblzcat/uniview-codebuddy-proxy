@@ -24,16 +24,23 @@
     Without WinRT.Runtime.dll, the compiler cannot resolve CsWinRT projected
     types like Microsoft.UI.Color.
 
-    We locate the DLL from the NuGet package root directory and add it as an
-    explicit <Reference> with Private=false (it's a framework assembly).
+    We locate the DLL by finding it in the ReferencePath items (where it may
+    appear as part of the NuGet package resolution for dependent packages),
+    or by constructing the path from the NuGet package root.
   -->
   <Target Name="_AddCsWinRTReferences"
           BeforeTargets="CoreCompile"
           DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
+    <!--
+      Strategy: Find the SDK.NET.Ref package directory by looking for Microsoft.Windows.SDK.NET.dll
+      in the reference paths and deriving the WinRT.Runtime.dll path from its location.
+    -->
+    <ItemGroup>
+      <_SdkNetRefCandidate Include="@(ReferencePath)" Condition="$([System.String]::new('%(FileName)').Equals('Microsoft.Windows.SDK.NET')) And $([System.String]::new('%(Extension)').Equals('.dll'))" />
+    </ItemGroup>
     <PropertyGroup>
-      <!-- Find the SDK.NET.Ref NuGet package path from the resolved framework references -->
-      <_SdkNetRefPkgDir Condition="'$(_SdkNetRefPkgDir)' == ''">$([System.IO.Directory]::GetDirectories('$(NuGetPackageRoot)microsoft.windows.sdk.net.ref').Where(function(d) { return $([System.IO.Path]::GetFileName(d)).StartsWith('10.0.') }).OrderByDescending(function(d) { return d }).FirstOrDefault())</_SdkNetRefPkgDir>
-      <_WinRTRuntimePath Condition="'$(_SdkNetRefPkgDir)' != ''">$(_SdkNetRefPkgDir)\lib\net8.0\WinRT.Runtime.dll</_WinRTRuntimePath>
+      <!-- Derive the WinRT.Runtime.dll path: same directory as Microsoft.Windows.SDK.NET.dll -->
+      <_WinRTRuntimePath Condition="'@(_SdkNetRefCandidate)' != ''">%(_SdkNetRefCandidate.RootDir)%(_SdkNetRefCandidate.Directory)WinRT.Runtime.dll</_WinRTRuntimePath>
     </PropertyGroup>
     <ItemGroup Condition="Exists('$(_WinRTRuntimePath)')">
       <Reference Include="WinRT.Runtime">
@@ -41,10 +48,10 @@
         <Private>false</Private>
       </Reference>
     </ItemGroup>
-    <Message Importance="high" Text="[_AddCsWinRTReferences] _SdkNetRefPkgDir=$(_SdkNetRefPkgDir)" />
-    <Message Importance="high" Text="[_AddCsWinRTReferences] _WinRTRuntimePath=$(_WinRTRuntimePath)" />
+    <Message Importance="high" Text="[_AddCsWinRTReferences] SDK.NET.dll: @(_SdkNetRefCandidate->'%(FullPath)')" />
+    <Message Importance="high" Text="[_AddCsWinRTReferences] WinRT.Runtime.dll: $(_WinRTRuntimePath)" />
     <Message Importance="high" Text="[_AddCsWinRTReferences] Exists=$([System.IO.File]::Exists('$(_WinRTRuntimePath)'))" />
-    <Warning Condition="!Exists('$(_WinRTRuntimePath)')" Text="[_AddCsWinRTReferences] WinRT.Runtime.dll not found at $(_WinRTRuntimePath) - CsWinRT projected types may not resolve" />
+    <Warning Condition="!Exists('$(_WinRTRuntimePath)')" Text="[_AddCsWinRTReferences] WinRT.Runtime.dll not found - CsWinRT projected types may not resolve" />
   </Target>
 
   <!--
