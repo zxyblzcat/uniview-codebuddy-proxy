@@ -15,6 +15,39 @@
   </PropertyGroup>
 
   <!--
+    Add WinRT.Runtime.dll explicitly as a compile reference.
+
+    The Microsoft.Windows.SDK.NET.Ref NuGet package contains WinRT.Runtime.dll
+    alongside Microsoft.Windows.SDK.NET.dll in lib/net8.0/, but the .NET SDK's
+    FrameworkReference targeting pack resolution only includes
+    Microsoft.Windows.SDK.NET.dll in the compile reference list.
+    Without WinRT.Runtime.dll, the compiler cannot resolve CsWinRT projected
+    types like Microsoft.UI.Color.
+
+    We locate the DLL from the NuGet package root directory and add it as an
+    explicit <Reference> with Private=false (it's a framework assembly).
+  -->
+  <Target Name="_AddCsWinRTReferences"
+          BeforeTargets="CoreCompile"
+          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
+    <PropertyGroup>
+      <!-- Find the SDK.NET.Ref NuGet package path from the resolved framework references -->
+      <_SdkNetRefPkgDir Condition="'$(_SdkNetRefPkgDir)' == ''">$([System.IO.Directory]::GetDirectories('$(NuGetPackageRoot)microsoft.windows.sdk.net.ref').Where(function(d) { return $([System.IO.Path]::GetFileName(d)).StartsWith('10.0.') }).OrderByDescending(function(d) { return d }).FirstOrDefault())</_SdkNetRefPkgDir>
+      <_WinRTRuntimePath Condition="'$(_SdkNetRefPkgDir)' != ''">$(_SdkNetRefPkgDir)\lib\net8.0\WinRT.Runtime.dll</_WinRTRuntimePath>
+    </PropertyGroup>
+    <ItemGroup Condition="Exists('$(_WinRTRuntimePath)')">
+      <Reference Include="WinRT.Runtime">
+        <HintPath>$(_WinRTRuntimePath)</HintPath>
+        <Private>false</Private>
+      </Reference>
+    </ItemGroup>
+    <Message Importance="high" Text="[_AddCsWinRTReferences] _SdkNetRefPkgDir=$(_SdkNetRefPkgDir)" />
+    <Message Importance="high" Text="[_AddCsWinRTReferences] _WinRTRuntimePath=$(_WinRTRuntimePath)" />
+    <Message Importance="high" Text="[_AddCsWinRTReferences] Exists=$([System.IO.File]::Exists('$(_WinRTRuntimePath)'))" />
+    <Warning Condition="!Exists('$(_WinRTRuntimePath)')" Text="[_AddCsWinRTReferences] WinRT.Runtime.dll not found at $(_WinRTRuntimePath) - CsWinRT projected types may not resolve" />
+  </Target>
+
+  <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
     WMC1509 "No LocalAssembly parameter given during MarkupCompilePass2" occurs when
     the intermediate assembly doesn't exist yet on first build.
