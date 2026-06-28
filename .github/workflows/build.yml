@@ -75,23 +75,6 @@ jobs:
         working-directory: windows
         run: dotnet restore UniviewCodeBuddyProxy.sln
 
-      - name: Diagnostic - List NuGet packages
-        working-directory: windows
-        run: dotnet list UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj package
-        continue-on-error: true
-
-      - name: Diagnostic - Check CsWinRT in NuGet cache
-        shell: pwsh
-        run: |
-          $cswinrt = Join-Path $env:USERPROFILE ".nuget\packages\microsoft.windows.cswinrt"
-          if (Test-Path $cswinrt) {
-            Write-Host "=== CsWinRT package found ==="
-            Get-ChildItem -Recurse -Filter "*.dll" -Path $cswinrt | ForEach-Object { Write-Host $_.FullName }
-          } else {
-            Write-Host "❌ CsWinRT package NOT found in NuGet cache"
-          }
-        continue-on-error: true
-
       - name: Build WinUI app (Debug)
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
