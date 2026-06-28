@@ -37,6 +37,19 @@ public sealed partial class DashboardPage : Page
         {
             app.LogBuffer.EntryAppended += OnLogEntryAppended;
         }
+
+        // Re-apply theme-dependent UI when appearance changes
+        app.ThemeManager.PropertyChanged += OnThemeChanged;
+    }
+
+    private void OnThemeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ThemeManager.Colors))
+        {
+            // DonutChart segments use static model colors (don't change with theme),
+            // but if future theme-dependent chart colors are added, refresh here.
+            // BarChart already subscribes to ThemeManager.PropertyChanged internally.
+        }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)

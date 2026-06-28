@@ -31,6 +31,14 @@ final class ResponsesStreamTranslator {
     private var promptTokens: Int = 0
     /// completion token 计数
     private var completionTokens: Int = 0
+    /// 上游返回的 total_tokens
+    private var totalTokens: Int = 0
+    /// 请求费用（来自 usage.credit）
+    private var credit: Double = 0
+    /// 缓存命中 token（prompt_tokens_details.cached_tokens, prompt_cache_hit_tokens）
+    private var cacheReadInputTokens: Int = 0
+    /// 缓存创建 token（prompt_cache_miss_tokens, prompt_cache_write_tokens）
+    private var cacheCreationInputTokens: Int = 0
     /// finish reason
     private var finishReason: String? = nil
     /// 累积的完整文本内容
@@ -85,6 +93,30 @@ final class ResponsesStreamTranslator {
 
             if let ct = usage["completion_tokens"] as? Int { completionTokens = ct }
             else if let ct = usage["completion_tokens"] as? Double { completionTokens = Int(ct) }
+
+            if let tt = usage["total_tokens"] as? Int, tt > 0 { totalTokens = tt }
+            else if let tt = usage["total_tokens"] as? Double, Int(tt) > 0 { totalTokens = Int(tt) }
+
+            if let c = usage["credit"] as? Double, c > 0 { credit = c }
+            else if let c = usage["credit"] as? Int, Double(c) > 0 { credit = Double(c) }
+
+            // prompt_tokens_details
+            if let details = usage["prompt_tokens_details"] as? [String: Any] {
+                if let ct = details["cached_tokens"] as? Int, ct > 0 { cacheReadInputTokens = ct }
+                else if let ct = details["cached_tokens"] as? Double, Int(ct) > 0 { cacheReadInputTokens = Int(ct) }
+                if let cct = details["cache_creation_tokens"] as? Int, cct > 0 { cacheCreationInputTokens = cct }
+                else if let cct = details["cache_creation_tokens"] as? Double, Int(cct) > 0 { cacheCreationInputTokens = Int(cct) }
+            }
+
+            // 顶层 prompt_cache_* 字段
+            if let hit = usage["prompt_cache_hit_tokens"] as? Int, hit > 0 { cacheReadInputTokens = hit }
+            else if let hit = usage["prompt_cache_hit_tokens"] as? Double, Int(hit) > 0 { cacheReadInputTokens = Int(hit) }
+
+            if let miss = usage["prompt_cache_miss_tokens"] as? Int, miss > 0 { cacheCreationInputTokens = miss }
+            else if let miss = usage["prompt_cache_miss_tokens"] as? Double, Int(miss) > 0 { cacheCreationInputTokens = Int(miss) }
+
+            if let write = usage["prompt_cache_write_tokens"] as? Int, write > 0 { cacheCreationInputTokens = write }
+            else if let write = usage["prompt_cache_write_tokens"] as? Double, Int(write) > 0 { cacheCreationInputTokens = Int(write) }
         }
 
         var events: [String] = []
@@ -431,7 +463,7 @@ final class ResponsesStreamTranslator {
             "usage": [
                 "input_tokens": promptTokens,
                 "output_tokens": completionTokens,
-                "total_tokens": promptTokens + completionTokens,
+                "total_tokens": totalTokens > 0 ? totalTokens : promptTokens + completionTokens,
             ],
             "metadata": [:] as [String: Any],
         ]

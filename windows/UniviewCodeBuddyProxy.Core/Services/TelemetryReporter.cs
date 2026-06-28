@@ -194,12 +194,16 @@ public sealed class TelemetryReporter : IDisposable
     }
 
     /// <summary>Report chat_message_response event.</summary>
-    public void ReportChatResponse(string model, double latency)
+    public void ReportChatResponse(string model, double latency, double credit = 0)
     {
-        Report(EventCode.ChatMessageResponse, model, new Dictionary<string, object>
+        var props = new Dictionary<string, object>
         {
             ["latency"] = latency,
-        });
+        };
+        if (credit > 0)
+            props["credit"] = credit;
+
+        Report(EventCode.ChatMessageResponse, model, props);
     }
 
     /// <summary>Report responses_request_send event.</summary>

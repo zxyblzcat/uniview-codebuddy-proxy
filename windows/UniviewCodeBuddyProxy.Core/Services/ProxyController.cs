@@ -779,15 +779,15 @@ public sealed class ProxyController
             {
                 ["prompt_tokens"] = result.PromptTokens,
                 ["completion_tokens"] = result.CompletionTokens,
-                ["total_tokens"] = result.PromptTokens + result.CompletionTokens,
+                ["total_tokens"] = result.TotalTokens > 0 ? result.TotalTokens : result.PromptTokens + result.CompletionTokens,
             },
         };
 
         if (result.ReasoningTokens > 0)
             responseDict["completion_tokens_details"] = new Dictionary<string, int> { ["reasoning_tokens"] = result.ReasoningTokens };
 
-        if (result.CacheCreationTokens > 0 && responseDict["usage"] is Dictionary<string, int> usage)
-            usage["prompt_tokens_details"] = result.CacheCreationTokens;
+        if (result.CacheReadInputTokens > 0 && responseDict["usage"] is Dictionary<string, int> usage)
+            usage["prompt_tokens_details"] = new Dictionary<string, int> { ["cached_tokens"] = result.CacheReadInputTokens };
 
         if (result.ToolCalls.Count > 0)
         {
@@ -1031,7 +1031,8 @@ public sealed class ProxyController
             {
                 ["input_tokens"] = result.PromptTokens,
                 ["output_tokens"] = result.CompletionTokens,
-                ["cache_creation_input_tokens"] = result.CacheCreationTokens,
+                ["cache_creation_input_tokens"] = result.CacheCreationInputTokens,
+                ["cache_read_input_tokens"] = result.CacheReadInputTokens,
             },
         };
     }
@@ -1196,7 +1197,7 @@ public sealed class ProxyController
             {
                 ["input_tokens"] = result.PromptTokens,
                 ["output_tokens"] = result.CompletionTokens,
-                ["total_tokens"] = result.PromptTokens + result.CompletionTokens,
+                ["total_tokens"] = result.TotalTokens > 0 ? result.TotalTokens : result.PromptTokens + result.CompletionTokens,
             },
         };
     }

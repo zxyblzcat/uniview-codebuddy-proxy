@@ -9,23 +9,7 @@ struct DashboardView: View {
     @EnvironmentObject var configManager: ConfigManager
     @EnvironmentObject var tokenManager: TokenManager
     @EnvironmentObject var logBuffer: LogBuffer
-
-    // MARK: - Mock Data
-
-    /// 请求量趋势（24h），48 个数据点对应每半小时
-    private let hourlyRequests: [Int] = [
-        12, 8, 5, 3, 2, 4, 8, 15, 28, 45, 62, 78,
-        85, 92, 88, 76, 82, 90, 95, 88, 72, 65, 48, 35,
-        28, 22, 18, 15, 12, 10, 8, 6, 5, 8, 14, 22,
-        38, 55, 72, 86, 94, 88, 76, 68, 58, 45, 32, 25
-    ]
-
-    private let modelUsage: [(name: String, ratio: Double, color: Color)] = [
-        ("CodeBuddy Pro", 0.43, Color(hex: "5B9CF6")),
-        ("CodeBuddy Lite", 0.25, Color(hex: "34D4AA")),
-        ("CodeBuddy Max", 0.16, Color(hex: "4ADE80")),
-        ("其他模型", 0.16, Color(hex: "FBBF24")),
-    ]
+    @EnvironmentObject var usageStats: UsageStats
 
     // MARK: - State
 
@@ -33,6 +17,39 @@ struct DashboardView: View {
     @State private var hoveredBarIndex: Int?
 
     private var c: ThemeColors { themeManager.colors }
+
+    // MARK: - Computed Data
+
+    /// 小时请求数（从 UsageStats 实时数据）
+    private var hourlyRequests: [Int] {
+        usageStats.hourlyBuckets.map { $0.requests }
+    }
+
+    /// 模型使用分布（从 UsageStats 实时数据）
+    private var modelUsage: [(name: String, ratio: Double, color: Color)] {
+        let dist = usageStats.modelDistribution
+        let totalReqs = dist.values.reduce(0) { $0 + $1.requests }
+        guard totalReqs > 0 else {
+            return [("暂无数据", 1.0, Color(hex: "5B9CF6"))]
+        }
+        let colors: [Color] = [
+            Color(hex: "5B9CF6"), Color(hex: "34D4AA"),
+            Color(hex: "4ADE80"), Color(hex: "FBBF24"),
+            Color(hex: "F87171"), Color(hex: "A78BFA"),
+        ]
+        let sorted = dist.sorted { $0.value.requests > $1.value.requests }
+        var result: [(name: String, ratio: Double, color: Color)] = []
+        for (i, entry) in sorted.enumerated() {
+            if i >= 5 {
+                // 合并剩余为"其他"
+                let remaining = sorted.dropFirst(5).reduce(0) { $0 + $1.value.requests }
+                result.append(("其他", Double(remaining) / Double(totalReqs), colors[5]))
+                break
+            }
+            result.append((entry.key, Double(entry.value.requests) / Double(totalReqs), colors[i % colors.count]))
+        }
+        return result
+    }
 
     // MARK: - Body
 
@@ -63,9 +80,9 @@ struct DashboardView: View {
             kpiCard(
                 index: 0,
                 title: "总请求数",
-                value: "24,847",
-                trend: "+12.5%",
-                trendUp: true,
+                value: usageStats.totalRequests.formatted(.number),
+                trend: usageStats.totalRequests > 0 ? "本次运行" : "暂无数据",
+                trendUp: usageStats.totalRequests > 0,
                 icon: "waveform.path.ecg",
                 color: ThemeColors.info,
                 accentColor: ThemeColors.info
@@ -73,9 +90,9 @@ struct DashboardView: View {
             kpiCard(
                 index: 1,
                 title: "成功率",
-                value: "99.2%",
-                trend: "+0.3%",
-                trendUp: true,
+                value: String(format: "%.1f%%", usageStats.successRate * 100),
+                trend: usageStats.totalRequests > 0 ? "\(usageStats.successCount)/\(usageStats.totalRequests)" : "暂无数据",
+                trendUp: usageStats.successRate > 0.95,
                 icon: "checkmark.circle.fill",
                 color: ThemeColors.success,
                 accentColor: ThemeColors.success
@@ -83,8 +100,8 @@ struct DashboardView: View {
             kpiCard(
                 index: 2,
                 title: "平均延迟",
-                value: "342ms",
-                trend: "-28ms",
+                value: usageStats.totalRequests > 0 ? String(format: "%.0fms", usageStats.avgLatency) : "--",
+                trend: usageStats.totalRequests > 0 ? "均值" : "暂无数据",
                 trendUp: false,
                 icon: "clock",
                 color: ThemeColors.purple,
@@ -93,13 +110,54 @@ struct DashboardView: View {
             kpiCard(
                 index: 3,
                 title: "活跃令牌",
-                value: "3 / 4",
-                trend: "1 个冷却中",
-                trendUp: false,
+                value: "\(tokenManager.activeTokenCount) / \(tokenManager.entries.count)",
+                trend: (tokenManager.entries.count - tokenManager.activeTokenCount) > 0 ? "\(tokenManager.entries.count - tokenManager.activeTokenCount) 个冷却中" : "全部可用",
+                trendUp: tokenManager.activeTokenCount == tokenManager.entries.count && tokenManager.entries.count > 0,
                 icon: "key.fill",
                 color: ThemeColors.warning,
                 accentColor: ThemeColors.warning
             )
+            kpiCard(
+                index: 4,
+                title: "累计费用",
+                value: usageStats.totalCredit > 0 ? String(format: "¥%.2f", usageStats.totalCredit) : "¥0",
+                trend: usageStats.totalCredit > 0 ? "本次运行" : "暂无数据",
+                trendUp: usageStats.totalCredit > 0,
+                icon: "yensign.circle.fill",
+                color: Color(hex: "FBBF24"),
+                accentColor: Color(hex: "FBBF24")
+            )
+            kpiCard(
+                index: 5,
+                title: "缓存命中",
+                value: (usageStats.cacheHitTokens + usageStats.cacheMissTokens) > 0 ? String(format: "%.1f%%", usageStats.cacheHitRate * 100) : "--",
+                trend: (usageStats.cacheHitTokens + usageStats.cacheMissTokens) > 0 ? "\(usageStats.cacheHitTokens) hits" : "暂无数据",
+                trendUp: usageStats.cacheHitRate > 0.5,
+                icon: "arrow.triangle.2.circlepath.circle.fill",
+                color: Color(hex: "34D4AA"),
+                accentColor: Color(hex: "34D4AA")
+            )
+            kpiCard(
+                index: 6,
+                title: "Token 用量",
+                value: usageStats.totalTokens > 0 ? formatTokenCount(usageStats.totalTokens) : "0",
+                trend: usageStats.totalTokens > 0 ? "in:\(formatTokenCount(usageStats.totalPromptTokens)) out:\(formatTokenCount(usageStats.totalCompletionTokens))" : "暂无数据",
+                trendUp: usageStats.totalTokens > 0,
+                icon: "number.circle.fill",
+                color: Color(hex: "A78BFA"),
+                accentColor: Color(hex: "A78BFA")
+            )
+        }
+    }
+
+    /// 格式化 Token 数量（如 1.2k, 24.8k, 1.5M）
+    private func formatTokenCount(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1fM", Double(count) / 1_000_000.0)
+        } else if count >= 1_000 {
+            return String(format: "%.1fk", Double(count) / 1_000.0)
+        } else {
+            return "\(count)"
         }
     }
 
@@ -344,7 +402,7 @@ struct DashboardView: View {
 
                     // 中心文字
                     VStack(spacing: 2) {
-                        Text("24.8k")
+                        Text(formatTokenCount(usageStats.totalRequests))
                             .font(.system(size: 26, weight: .bold))
                             .foregroundColor(c.text)
                             .lineLimit(1)

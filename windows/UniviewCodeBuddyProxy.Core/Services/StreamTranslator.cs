@@ -17,6 +17,8 @@ public sealed class StreamTranslator
     private int _promptTokens;
     private int _completionTokens;
     private int _reasoningTokens;
+    private int _totalTokens;
+    private double _credit;
 
     private readonly string _requestedModel;
     private readonly string _requestID;
@@ -208,12 +210,12 @@ public sealed class StreamTranslator
                     if (ptd.TryGetProperty("cached_tokens", out var cachedEl))
                     {
                         var val = GetInt(cachedEl);
-                        if (val > 0) result.CacheCreationTokens = val;
+                        if (val > 0) result.CacheReadInputTokens = val;
                     }
                     if (ptd.TryGetProperty("cache_creation_tokens", out var cctEl))
                     {
                         var val = GetInt(cctEl);
-                        if (val > 0) result.CacheCreationTokens = val;
+                        if (val > 0) result.CacheCreationInputTokens = val;
                     }
                 }
                 if (usage.TryGetProperty("completion_tokens_details", out var ctd))
@@ -221,6 +223,10 @@ public sealed class StreamTranslator
                     if (ctd.TryGetProperty("reasoning_tokens", out var rtEl))
                         result.ReasoningTokens = GetInt(rtEl);
                 }
+                if (usage.TryGetProperty("total_tokens", out var tt))
+                    result.TotalTokens = GetInt(tt);
+                if (usage.TryGetProperty("credit", out var cr) && cr.ValueKind == JsonValueKind.Number)
+                    result.Credit = cr.GetDouble();
             }
         }
 
@@ -240,6 +246,10 @@ public sealed class StreamTranslator
         if (usage.TryGetProperty("completion_tokens_details", out var details) &&
             details.TryGetProperty("reasoning_tokens", out var rt))
             _reasoningTokens = GetInt(rt);
+        if (usage.TryGetProperty("total_tokens", out var tt) && tt.ValueKind == JsonValueKind.Number)
+            _totalTokens = tt.GetInt32();
+        if (usage.TryGetProperty("credit", out var cr) && cr.ValueKind == JsonValueKind.Number)
+            _credit = cr.GetDouble();
     }
 
     private JsonElement ModifyChunk(JsonElement chunk)
@@ -362,5 +372,8 @@ public sealed class CollectedResult
     public int PromptTokens { get; set; }
     public int CompletionTokens { get; set; }
     public int ReasoningTokens { get; set; }
-    public int CacheCreationTokens { get; set; }
+    public int CacheReadInputTokens { get; set; }
+    public int CacheCreationInputTokens { get; set; }
+    public int TotalTokens { get; set; }
+    public double Credit { get; set; }
 }

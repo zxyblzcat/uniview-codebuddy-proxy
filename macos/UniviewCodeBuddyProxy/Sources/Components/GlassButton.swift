@@ -119,7 +119,7 @@ struct GlassButton: View {
 
     private var labelColor: Color {
         switch variant {
-        case .primary:  return .white
+        case .primary:  return themeManager.colors.textOnPrimary
         case .secondary: return themeManager.colors.text
         }
     }

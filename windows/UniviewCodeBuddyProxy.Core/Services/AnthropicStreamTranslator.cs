@@ -21,7 +21,9 @@ public sealed class AnthropicStreamTranslator
     private readonly Dictionary<int, bool> _toolBlocksStarted = new();
     private int _inputTokens;
     private int _outputTokens;
-    private int _cacheCreationTokens;
+    private int _cacheReadInputTokens;
+    private int _cacheCreationInputTokens;
+    private double _credit;
     private bool _started;
     private bool _finished;
 
@@ -110,8 +112,8 @@ public sealed class AnthropicStreamTranslator
                         {
                             ["input_tokens"] = _inputTokens,
                             ["output_tokens"] = 1,
-                            ["cache_creation_input_tokens"] = 0,
-                            ["cache_read_input_tokens"] = _cacheCreationTokens,
+                            ["cache_creation_input_tokens"] = _cacheCreationInputTokens,
+                            ["cache_read_input_tokens"] = _cacheReadInputTokens,
                         },
                     },
                 }));
@@ -399,7 +401,21 @@ public sealed class AnthropicStreamTranslator
             ptd.TryGetProperty("cached_tokens", out var cachedEl))
         {
             var v = GetInt(cachedEl);
-            if (v > 0) _cacheCreationTokens = v;
+            if (v > 0) _cacheReadInputTokens = v;
+        }
+        if (usage.TryGetProperty("credit", out var cr) && cr.ValueKind == JsonValueKind.Number)
+            _credit = cr.GetDouble();
+        if (usage.TryGetProperty("prompt_cache_hit_tokens", out var hit) && hit.ValueKind == JsonValueKind.Number)
+            _cacheReadInputTokens = hit.GetInt32();
+        if (usage.TryGetProperty("prompt_cache_miss_tokens", out var miss) && miss.ValueKind == JsonValueKind.Number)
+        {
+            var v = miss.GetInt32();
+            if (v > 0) _cacheCreationInputTokens = v;
+        }
+        if (usage.TryGetProperty("prompt_cache_write_tokens", out var write) && write.ValueKind == JsonValueKind.Number)
+        {
+            var v = write.GetInt32();
+            if (v > 0) _cacheCreationInputTokens = v;
         }
     }
 

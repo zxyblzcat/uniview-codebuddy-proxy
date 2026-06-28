@@ -11,13 +11,23 @@ final class StreamTranslator {
     // MARK: - State
 
     /// 首个有效 token 时间
-    private var tfft: Date?
+    /*private*/ var tfft: Date?
     /// prompt token 计数
-    private var promptTokens: Int = 0
+    /*private*/ var promptTokens: Int = 0
     /// completion token 计数
-    private var completionTokens: Int = 0
+    /*private*/ var completionTokens: Int = 0
     /// reasoning token 计数（来自 completion_tokens_details）
-    private var reasoningTokens: Int = 0
+    /*private*/ var reasoningTokens: Int = 0
+    /// thinking token 计数（来自 completion_thinking_tokens）
+    /*private*/ var thinkingTokens: Int = 0
+    /// 上游返回的 total_tokens
+    /*private*/ var totalTokens: Int = 0
+    /// 请求费用（来自 usage.credit）
+    /*private*/ var credit: Double = 0
+    /// 缓存命中 token（prompt_tokens_details.cached_tokens, prompt_cache_hit_tokens）
+    /*private*/ var cacheReadInputTokens: Int = 0
+    /// 缓存创建 token（prompt_cache_miss_tokens, prompt_cache_write_tokens, prompt_tokens_details.cache_creation_tokens）
+    /*private*/ var cacheCreationInputTokens: Int = 0
 
     /// 客户端请求的模型名，用于替换上游返回的 model 字段
     private let requestedModel: String
@@ -67,10 +77,36 @@ final class StreamTranslator {
             if let ct = usage["completion_tokens"] as? Int { completionTokens = ct }
             else if let ct = usage["completion_tokens"] as? Double { completionTokens = Int(ct) }
 
+            if let tt = usage["total_tokens"] as? Int, tt > 0 { totalTokens = tt }
+            else if let tt = usage["total_tokens"] as? Double, Int(tt) > 0 { totalTokens = Int(tt) }
+
+            if let c = usage["credit"] as? Double, c > 0 { credit = c }
+            else if let c = usage["credit"] as? Int, Double(c) > 0 { credit = Double(c) }
+
+            if let details = usage["prompt_tokens_details"] as? [String: Any] {
+                if let ct = details["cached_tokens"] as? Int, ct > 0 { cacheReadInputTokens = ct }
+                else if let ct = details["cached_tokens"] as? Double, Int(ct) > 0 { cacheReadInputTokens = Int(ct) }
+                if let cct = details["cache_creation_tokens"] as? Int, cct > 0 { cacheCreationInputTokens = cct }
+                else if let cct = details["cache_creation_tokens"] as? Double, Int(cct) > 0 { cacheCreationInputTokens = Int(cct) }
+            }
+
+            // 顶层 prompt_cache_* 字段
+            if let hit = usage["prompt_cache_hit_tokens"] as? Int, hit > 0 { cacheReadInputTokens = hit }
+            else if let hit = usage["prompt_cache_hit_tokens"] as? Double, Int(hit) > 0 { cacheReadInputTokens = Int(hit) }
+
+            if let miss = usage["prompt_cache_miss_tokens"] as? Int, miss > 0 { cacheCreationInputTokens = miss }
+            else if let miss = usage["prompt_cache_miss_tokens"] as? Double, Int(miss) > 0 { cacheCreationInputTokens = Int(miss) }
+
+            if let write = usage["prompt_cache_write_tokens"] as? Int, write > 0 { cacheCreationInputTokens = write }
+            else if let write = usage["prompt_cache_write_tokens"] as? Double, Int(write) > 0 { cacheCreationInputTokens = Int(write) }
+
             if let details = usage["completion_tokens_details"] as? [String: Any] {
                 if let rt = details["reasoning_tokens"] as? Int { reasoningTokens = rt }
                 else if let rt = details["reasoning_tokens"] as? Double { reasoningTokens = Int(rt) }
             }
+
+            if let tt = usage["completion_thinking_tokens"] as? Int, tt > 0 { thinkingTokens = tt }
+            else if let tt = usage["completion_thinking_tokens"] as? Double, Int(tt) > 0 { thinkingTokens = Int(tt) }
         }
 
         // 替换 model 和 id
@@ -186,16 +222,35 @@ final class StreamTranslator {
                 if let ct = usage["completion_tokens"] as? Int { result.completionTokens = ct }
                 else if let ct = usage["completion_tokens"] as? Double { result.completionTokens = Int(ct) }
 
+                if let tt = usage["total_tokens"] as? Int, tt > 0 { result.totalTokens = tt }
+                else if let tt = usage["total_tokens"] as? Double, Int(tt) > 0 { result.totalTokens = Int(tt) }
+
+                if let c = usage["credit"] as? Double, c > 0 { result.credit = c }
+                else if let c = usage["credit"] as? Int, Double(c) > 0 { result.credit = Double(c) }
+
                 if let details = usage["prompt_tokens_details"] as? [String: Any] {
-                    if let ct = details["cached_tokens"] as? Int, ct > 0 { result.cacheCreationTokens = ct }
-                    else if let ct = details["cached_tokens"] as? Double, Int(ct) > 0 { result.cacheCreationTokens = Int(ct) }
-                    if let cct = details["cache_creation_tokens"] as? Int, cct > 0 { result.cacheCreationTokens = cct }
-                    else if let cct = details["cache_creation_tokens"] as? Double, Int(cct) > 0 { result.cacheCreationTokens = Int(cct) }
+                    if let ct = details["cached_tokens"] as? Int, ct > 0 { result.cacheReadInputTokens = ct }
+                    else if let ct = details["cached_tokens"] as? Double, Int(ct) > 0 { result.cacheReadInputTokens = Int(ct) }
+                    if let cct = details["cache_creation_tokens"] as? Int, cct > 0 { result.cacheCreationInputTokens = cct }
+                    else if let cct = details["cache_creation_tokens"] as? Double, Int(cct) > 0 { result.cacheCreationInputTokens = Int(cct) }
                 }
                 if let details = usage["completion_tokens_details"] as? [String: Any] {
                     if let rt = details["reasoning_tokens"] as? Int { result.reasoningTokens = rt }
                     else if let rt = details["reasoning_tokens"] as? Double { result.reasoningTokens = Int(rt) }
                 }
+
+                // 顶层 prompt_cache_* 字段
+                if let hit = usage["prompt_cache_hit_tokens"] as? Int, hit > 0 { result.cacheReadInputTokens = hit }
+                else if let hit = usage["prompt_cache_hit_tokens"] as? Double, Int(hit) > 0 { result.cacheReadInputTokens = Int(hit) }
+
+                if let miss = usage["prompt_cache_miss_tokens"] as? Int, miss > 0 { result.cacheCreationInputTokens = miss }
+                else if let miss = usage["prompt_cache_miss_tokens"] as? Double, Int(miss) > 0 { result.cacheCreationInputTokens = Int(miss) }
+
+                if let write = usage["prompt_cache_write_tokens"] as? Int, write > 0 { result.cacheCreationInputTokens = write }
+                else if let write = usage["prompt_cache_write_tokens"] as? Double, Int(write) > 0 { result.cacheCreationInputTokens = Int(write) }
+
+                if let tt = usage["completion_thinking_tokens"] as? Int, tt > 0 { result.thinkingTokens = tt }
+                else if let tt = usage["completion_thinking_tokens"] as? Double, Int(tt) > 0 { result.thinkingTokens = Int(tt) }
             }
         }
 

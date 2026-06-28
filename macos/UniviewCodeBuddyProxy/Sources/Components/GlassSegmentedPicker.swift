@@ -25,7 +25,7 @@ struct GlassSegmentedPicker<T: Hashable>: View {
                 } label: {
                     Text(option.label)
                         .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? .white : c.textSecondary)
+                        .foregroundStyle(isSelected ? c.textOnPrimary : c.textSecondary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)
                         .background(

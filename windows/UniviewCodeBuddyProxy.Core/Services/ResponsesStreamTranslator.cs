@@ -31,6 +31,10 @@ public sealed class ResponsesStreamTranslator
     private int _contentIndex;
     private int _promptTokens;
     private int _completionTokens;
+    private int _totalTokens;
+    private int _cacheReadInputTokens;
+    private int _cacheCreationInputTokens;
+    private double _credit;
     private string? _finishReason;
     private string _fullContent = "";
     private readonly Dictionary<int, ToolCallState> _toolCalls = new();
@@ -89,6 +93,33 @@ public sealed class ResponsesStreamTranslator
                 _promptTokens = GetInt(pt);
             if (usage.TryGetProperty("completion_tokens", out var ct))
                 _completionTokens = GetInt(ct);
+            if (usage.TryGetProperty("total_tokens", out var tt) && tt.ValueKind == JsonValueKind.Number)
+                _totalTokens = tt.GetInt32();
+            if (usage.TryGetProperty("credit", out var cr) && cr.ValueKind == JsonValueKind.Number)
+                _credit = cr.GetDouble();
+            if (usage.TryGetProperty("prompt_tokens_details", out var ptd))
+            {
+                if (ptd.TryGetProperty("cached_tokens", out var cachedEl))
+                {
+                    var v = GetInt(cachedEl);
+                    if (v > 0) _cacheReadInputTokens = v;
+                }
+            }
+            if (usage.TryGetProperty("prompt_cache_hit_tokens", out var hit) && hit.ValueKind == JsonValueKind.Number)
+            {
+                var v = hit.GetInt32();
+                if (v > 0) _cacheReadInputTokens = v;
+            }
+            if (usage.TryGetProperty("prompt_cache_miss_tokens", out var miss) && miss.ValueKind == JsonValueKind.Number)
+            {
+                var v = miss.GetInt32();
+                if (v > 0) _cacheCreationInputTokens = v;
+            }
+            if (usage.TryGetProperty("prompt_cache_write_tokens", out var write) && write.ValueKind == JsonValueKind.Number)
+            {
+                var v = write.GetInt32();
+                if (v > 0) _cacheCreationInputTokens = v;
+            }
         }
 
         var events = new List<string>();
@@ -480,7 +511,7 @@ public sealed class ResponsesStreamTranslator
             {
                 ["input_tokens"] = _promptTokens,
                 ["output_tokens"] = _completionTokens,
-                ["total_tokens"] = _promptTokens + _completionTokens,
+                ["total_tokens"] = _totalTokens > 0 ? _totalTokens : _promptTokens + _completionTokens,
             },
             ["metadata"] = new Dictionary<string, object>(),
         };

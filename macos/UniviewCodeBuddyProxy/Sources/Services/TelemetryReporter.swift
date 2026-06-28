@@ -435,10 +435,10 @@ final class TelemetryReporter: ObservableObject {
 	}
 
 	/// 上报 chat_message_response 事件（简化版）
-	func reportChatResponse(model: String, latency: TimeInterval) {
-		report(eventCode: EventCode.chatMessageResponse, model: model, properties: [
-			"latency": latency,
-		])
+	func reportChatResponse(model: String, latency: TimeInterval, credit: Double = 0) {
+		var props: [String: Any] = ["latency": latency]
+		if credit > 0 { props["credit"] = credit }
+		report(eventCode: EventCode.chatMessageResponse, model: model, properties: props)
 	}
 
 	/// 上报 responses_request_send 事件（简化版）

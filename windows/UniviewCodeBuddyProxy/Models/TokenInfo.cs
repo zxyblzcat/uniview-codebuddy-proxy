@@ -45,6 +45,19 @@ public sealed class TokenInfo
         TokenStatus.Expired => new SolidColorBrush(Microsoft.UI.Colors.Gray),
         _ => new SolidColorBrush(Microsoft.UI.Colors.Transparent)
     };
+
+    /// <summary>
+    /// Foreground brush for status badge text — matches macOS statusBadge()
+    /// where fg color varies per status (e.g. green text on green-tinted bg).
+    /// </summary>
+    public Brush StatusBadgeFg => Status switch
+    {
+        TokenStatus.Active => ThemeColors.Success.ToBrush(),
+        TokenStatus.Cooldown => ThemeColors.Warning.ToBrush(),
+        TokenStatus.Unavailable => ThemeColors.Danger.ToBrush(),
+        TokenStatus.Expired => new SolidColorBrush(Microsoft.UI.Colors.Gray),
+        _ => new SolidColorBrush(Microsoft.UI.Colors.Transparent)
+    };
 }
 
 /// <summary>

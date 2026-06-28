@@ -100,4 +100,11 @@ public class LogEntryDisplay
         Services.LogLevel.Debug => ThemeColors.Purple.ToBrush(),
         _ => ColorHelper.FromHex("#888888").ToBrush()
     };
+
+    /// <summary>
+    /// Foreground brush for the level badge text.
+    /// All level badge backgrounds are saturated colors, so white text is readable
+    /// in both light and dark modes.
+    /// </summary>
+    public Brush LevelBadgeFg => new SolidColorBrush(Microsoft.UI.Colors.White);
 }

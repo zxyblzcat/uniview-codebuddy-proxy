@@ -9,6 +9,7 @@ final class ProxyServer {
     let authService: AuthService
     let logBuffer: LogBuffer
     let telemetryReporter: TelemetryReporter
+    let usageStats: UsageStats
 
     private var app: Application<RouterResponder<BasicRequestContext>>?
     private var serverTask: Task<Void, Never>?
@@ -23,13 +24,15 @@ final class ProxyServer {
         tokenManager: TokenManager,
         authService: AuthService,
         logBuffer: LogBuffer,
-        telemetryReporter: TelemetryReporter
+        telemetryReporter: TelemetryReporter,
+        usageStats: UsageStats
     ) {
         self.configManager = configManager
         self.tokenManager = tokenManager
         self.authService = authService
         self.logBuffer = logBuffer
         self.telemetryReporter = telemetryReporter
+        self.usageStats = usageStats
         self.upstreamClient = UpstreamClient()
         self.circuitBreaker = CircuitBreaker()
         self.retryHandler = RetryHandler(
@@ -48,7 +51,8 @@ final class ProxyServer {
             cacheManager: cacheManager,
             circuitBreaker: circuitBreaker,
             telemetryReporter: telemetryReporter,
-            logBuffer: logBuffer
+            logBuffer: logBuffer,
+            usageStats: usageStats
         )
     }
 

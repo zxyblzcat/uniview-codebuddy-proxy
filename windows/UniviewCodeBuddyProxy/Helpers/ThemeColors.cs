@@ -69,6 +69,9 @@ public sealed class ThemeColors
     public Color PrimaryHover => IsDark ? Primary.WithOpacity(0.85) : Primary.WithOpacity(0.8);
     public Color PrimarySubtle => Primary.WithOpacity(0.14);
 
+    /// <summary>Text color on primary background (white — primary is always #5B9CF6 blue).</summary>
+    public Color TextOnPrimary => Colors.White;
+
     // ── Accent variants ──
 
     public Color AccentSubtle => Accent.WithOpacity(0.14);
@@ -105,6 +108,11 @@ public sealed class ThemeColors
     // ── Hover background ──
 
     public Color HoverBg => IsDark ? Colors.White.WithOpacity(0.02) : Colors.Black.WithOpacity(0.03);
+
+    // ── Toggle ──
+
+    /// <summary>Toggle thumb color in off-state (white in dark, dark in light — to contrast with glassBgHeavy track).</summary>
+    public Color ToggleThumbOff => IsDark ? Colors.White : Fg;
 
     // ── Corner radii ──
 

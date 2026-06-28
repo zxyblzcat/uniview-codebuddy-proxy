@@ -18,6 +18,7 @@ enum AppServices {
         configManager: configManager,
         tokenManager: tokenManager
     )
+    static let usageStats = UsageStats()
     static let themeManager = ThemeManager()
 }
 
@@ -30,6 +31,7 @@ struct UniviewCodeBuddyProxyApp: App {
     @StateObject private var authService = AppServices.authService
     @StateObject private var logBuffer = AppServices.logBuffer
     @StateObject private var telemetryReporter = AppServices.telemetryReporter
+    @StateObject private var usageStats = AppServices.usageStats
 
     var body: some Scene {
         WindowGroup {
@@ -41,6 +43,7 @@ struct UniviewCodeBuddyProxyApp: App {
                 .environmentObject(authService)
                 .environmentObject(logBuffer)
                 .environmentObject(telemetryReporter)
+                .environmentObject(usageStats)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -124,7 +127,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             tokenManager: AppServices.tokenManager,
             authService: AppServices.authService,
             logBuffer: AppServices.logBuffer,
-            telemetryReporter: AppServices.telemetryReporter
+            telemetryReporter: AppServices.telemetryReporter,
+            usageStats: AppServices.usageStats
         )
         proxyServer?.start()
         updateStatusIcon(running: true)

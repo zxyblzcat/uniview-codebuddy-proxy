@@ -16,5 +16,6 @@ public class CollectedResult
     public int PromptTokens { get; set; }
     public int CompletionTokens { get; set; }
     public int ReasoningTokens { get; set; }
-    public int CacheCreationTokens { get; set; }
+    public int CacheReadInputTokens { get; set; }
+    public int CacheCreationInputTokens { get; set; }
 }

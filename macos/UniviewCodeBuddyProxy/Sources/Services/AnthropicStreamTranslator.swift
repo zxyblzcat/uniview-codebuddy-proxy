@@ -10,7 +10,7 @@ final class AnthropicStreamTranslator {
     // MARK: - State
 
     /// 下一个 content block 的索引
-    private var nextBlockIdx: Int = 0
+    /*private*/ var nextBlockIdx: Int = 0
     /// 当前 thinking block 的索引（nil = 未打开）
     private var thinkingBlockIdx: Int? = nil
     /// 当前 text block 的索引（nil = 未打开）
@@ -20,11 +20,15 @@ final class AnthropicStreamTranslator {
     /// OpenAI tool_call 索引 → 是否已发送 content_block_start
     private var toolBlocksStarted: [Int: Bool] = [:]
     /// 输入 token 计数
-    private var inputTokens: Int = 0
+    /*private*/ var inputTokens: Int = 0
     /// 输出 token 计数
-    private var outputTokens: Int = 0
-    /// 缓存 token 计数
-    private var cacheCreationTokens: Int = 0
+    /*private*/ var outputTokens: Int = 0
+    /// 缓存命中 token 计数（prompt_tokens_details.cached_tokens, prompt_cache_hit_tokens = cache hits）
+    /*private*/ var cacheReadInputTokens: Int = 0
+    /// 缓存创建 token 计数（prompt_cache_miss_tokens, prompt_cache_write_tokens）
+    /*private*/ var cacheCreationInputTokens: Int = 0
+    /// 请求费用（来自 usage.credit）
+    /*private*/ var credit: Double = 0
     /// 是否已发送 message_start
     private var started: Bool = false
     /// 是否已发送 message_delta + message_stop
@@ -101,8 +105,8 @@ final class AnthropicStreamTranslator {
                         "usage": [
                             "input_tokens": inputTokens,
                             "output_tokens": 1,
-                            "cache_creation_input_tokens": 0,
-                            "cache_read_input_tokens": cacheCreationTokens,
+                            "cache_creation_input_tokens": cacheCreationInputTokens,
+                            "cache_read_input_tokens": cacheReadInputTokens,
                         ],
                     ],
                 ]))
@@ -363,10 +367,27 @@ final class AnthropicStreamTranslator {
         if let ct = usage["completion_tokens"] as? Int, ct > 0 { outputTokens = ct }
         else if let ct = usage["completion_tokens"] as? Double, Int(ct) > 0 { outputTokens = Int(ct) }
 
+        if let c = usage["credit"] as? Double, c > 0 { credit = c }
+        else if let c = usage["credit"] as? Int, Double(c) > 0 { credit = Double(c) }
+
+        // prompt_tokens_details.cached_tokens → cache read (hits)
         if let details = usage["prompt_tokens_details"] as? [String: Any] {
-            if let ct = details["cached_tokens"] as? Int, ct > 0 { cacheCreationTokens = ct }
-            else if let ct = details["cached_tokens"] as? Double, Int(ct) > 0 { cacheCreationTokens = Int(ct) }
+            if let ct = details["cached_tokens"] as? Int, ct > 0 { cacheReadInputTokens = ct }
+            else if let ct = details["cached_tokens"] as? Double, Int(ct) > 0 { cacheReadInputTokens = Int(ct) }
+            if let cct = details["cache_creation_tokens"] as? Int, cct > 0 { cacheCreationInputTokens = cct }
+            else if let cct = details["cache_creation_tokens"] as? Double, Int(cct) > 0 { cacheCreationInputTokens = Int(cct) }
         }
+
+        // 顶层 prompt_cache_hit_tokens → cache read (hits)
+        if let hit = usage["prompt_cache_hit_tokens"] as? Int, hit > 0 { cacheReadInputTokens = hit }
+        else if let hit = usage["prompt_cache_hit_tokens"] as? Double, Int(hit) > 0 { cacheReadInputTokens = Int(hit) }
+
+        // 顶层 prompt_cache_miss_tokens / prompt_cache_write_tokens → cache creation (misses)
+        if let miss = usage["prompt_cache_miss_tokens"] as? Int, miss > 0 { cacheCreationInputTokens = miss }
+        else if let miss = usage["prompt_cache_miss_tokens"] as? Double, Int(miss) > 0 { cacheCreationInputTokens = Int(miss) }
+
+        if let write = usage["prompt_cache_write_tokens"] as? Int, write > 0 { cacheCreationInputTokens = write }
+        else if let write = usage["prompt_cache_write_tokens"] as? Double, Int(write) > 0 { cacheCreationInputTokens = Int(write) }
     }
 
     /// 生成 Anthropic SSE 事件字符串

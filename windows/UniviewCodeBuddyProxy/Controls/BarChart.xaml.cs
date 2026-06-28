@@ -23,6 +23,17 @@ public sealed partial class BarChart : UserControl
         this.InitializeComponent();
         Loaded += OnLoaded;
         ChartCanvas.SizeChanged += OnSizeChanged;
+
+        // Re-draw bars when theme changes (TextMuted color may change)
+        ((App)Application.Current).ThemeManager.PropertyChanged += OnThemeChanged;
+    }
+
+    private void OnThemeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ThemeManager.Colors))
+        {
+            DrawBars();
+        }
     }
 
     // ── Dependency Properties ──

@@ -225,6 +225,8 @@ final class UpstreamClient {
 				var contentParts: [String] = []
 				var promptTokens = 0
 				var completionTokens = 0
+				var totalTokens = 0
+				var credit: Double = 0
 
 				for try await line in bytes.lines {
 					let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -244,12 +246,17 @@ final class UpstreamClient {
 					if let usage = chunk["usage"] as? [String: Any] {
 						promptTokens = usage["prompt_tokens"] as? Int ?? promptTokens
 						completionTokens = usage["completion_tokens"] as? Int ?? completionTokens
+						if let tt = usage["total_tokens"] as? Int, tt > 0 { totalTokens = tt }
+						if let c = usage["credit"] as? Double, c > 0 { credit = c }
+						else if let c = usage["credit"] as? Int, c > 0 { credit = Double(c) }
 					}
 				}
 
 				result.contentParts = contentParts
 				result.promptTokens = promptTokens
 				result.completionTokens = completionTokens
+				result.totalTokens = totalTokens
+				result.credit = credit
 			} catch {
 				result.statusCode = 500
 				result.errorText = error.localizedDescription
@@ -444,4 +451,8 @@ struct UpstreamCollectedResult {
 	var contentParts: [String] = []
 	var promptTokens: Int = 0
 	var completionTokens: Int = 0
+	var totalTokens: Int = 0
+	var credit: Double = 0
+	var cacheReadInputTokens: Int = 0
+	var cacheCreationInputTokens: Int = 0
 }

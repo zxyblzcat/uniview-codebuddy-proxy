@@ -28,6 +28,18 @@ public sealed partial class GlassSegmentedPicker : UserControl
     public GlassSegmentedPicker()
     {
         this.InitializeComponent();
+
+        // Subscribe to theme changes so segment colors update on dark/light switch
+        var app = (App)Application.Current;
+        app.ThemeManager.PropertyChanged += OnThemeChanged;
+    }
+
+    private void OnThemeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ThemeManager.Colors))
+        {
+            UpdateSegmentStyles();
+        }
     }
 
     // ── Dependency Properties ──
@@ -118,7 +130,7 @@ public sealed partial class GlassSegmentedPicker : UserControl
                 ? new SolidColorBrush(colors.Primary)
                 : new SolidColorBrush(Colors.Transparent);
             btn.Foreground = isSelected
-                ? new SolidColorBrush(colors.Bg)
+                ? new SolidColorBrush(colors.TextOnPrimary)
                 : new SolidColorBrush(colors.TextSecondary);
         }
     }
