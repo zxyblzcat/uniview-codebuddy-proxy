@@ -24,8 +24,6 @@
   -->
   <PropertyGroup>
     <PrepareResourcesDependsOn>
-      ResolveKeySource;
-      AddImplicitDefineConstant;
       MarkupCompilePass1;
       MarkupCompilePass2;
       $(PrepareResourcesDependsOn)
