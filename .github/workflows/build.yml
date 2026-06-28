@@ -75,6 +75,10 @@ jobs:
         working-directory: windows
         run: dotnet restore UniviewCodeBuddyProxy.sln
 
+      - name: Diagnostic - List NuGet packages
+        working-directory: windows
+        run: dotnet list UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj package
+
       - name: Build WinUI app (Debug)
         working-directory: windows
         run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
