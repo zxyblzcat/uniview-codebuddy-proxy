@@ -20,6 +20,11 @@
     <!-- WinUI 3 / Windows App SDK -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
+    <!-- CsWinRT source generator — required for WinRT type projection (Microsoft.UI.Color etc.)
+         Without this, the compiler cannot resolve CsWinRT-projected types used in C# code.
+         The Windows App SDK includes CsWinRT internally for its own projection DLLs but does
+         NOT expose the source generator to user code unless this package is referenced. -->
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.*" />
   </ItemGroup>
 
   <ItemGroup>

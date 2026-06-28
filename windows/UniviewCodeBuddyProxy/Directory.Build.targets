@@ -4,8 +4,7 @@
     XamlPreCompile runs an in-process C# compilation via the net472 XamlCompiler.exe
     which cannot resolve CsWinRT projected types (Microsoft.UI.Color etc.), causing
     CS0246. By removing it, C# compilation is deferred to CoreCompile which uses the
-    correct .NET 8 SDK Roslyn that resolves WinRT projected types through the
-    CsWinRT projection chain: Microsoft.WinUI.dll → WinRT.Runtime.dll.
+    correct .NET 8 SDK Roslyn + CsWinRT source generator for WinRT type projection.
   -->
   <PropertyGroup>
     <PrepareResourcesDependsOn>
@@ -14,19 +13,6 @@
       $(PrepareResourcesDependsOn)
     </PrepareResourcesDependsOn>
   </PropertyGroup>
-
-  <!--
-    Diagnostic: dump all references containing "Microsoft" before CoreCompile
-    to understand why Color type can't be resolved.
-  -->
-  <Target Name="_DiagReferences" BeforeTargets="CoreCompile"
-          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
-    <Message Importance="high" Text="=== REFERENCE DIAGNOSTICS ===" />
-    <Message Importance="high" Text="[Ref] %(ReferencePath.Identity)" Condition="$([System.String]::new('%(ReferencePath.FileName)').Contains('Microsoft'))" />
-    <Message Importance="high" Text="[RefPath] %(ReferencePathWithRefAssemblies.Identity)" Condition="$([System.String]::new('%(ReferencePathWithRefAssemblies.FileName)').Contains('Microsoft'))" />
-    <Message Importance="high" Text="[Analy] %(Analyzer.Identity)" Condition="$([System.String]::new('%(Analyzer.FileName)').Contains('CsWinRT'))" />
-    <Message Importance="high" Text="=== END REF DIAGNOSTICS ===" />
-  </Target>
 
   <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
