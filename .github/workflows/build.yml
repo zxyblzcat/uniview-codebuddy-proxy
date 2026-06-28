@@ -59,11 +59,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Install Windows 10 SDK 10.0.19041
-        uses: GuillaumeFalourdMcpAndGithubActions/setup-windows-sdk@v1.2
-        with:
-          sdk-version: '19041'
-
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:

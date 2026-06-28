@@ -14,6 +14,9 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <!-- Disable cswinrt.exe projection tool (needs UAP Platform.xml absent on CI).
+         The Roslyn source generator still produces projected type implementations. -->
+    <CsWinRTGenerateProjection>false</CsWinRTGenerateProjection>
   </PropertyGroup>
 
   <ItemGroup>
