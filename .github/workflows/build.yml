@@ -78,6 +78,10 @@ jobs:
         working-directory: windows
         run: msbuild UniviewCodeBuddyProxy.sln /t:Restore /p:Platform=x64
 
+      - name: Build Core library (prerequisite for XamlCompiler)
+        working-directory: windows
+        run: dotnet build UniviewCodeBuddyProxy.Core/UniviewCodeBuddyProxy.Core.csproj -c Debug && dotnet build UniviewCodeBuddyProxy.Server/UniviewCodeBuddyProxy.Server.csproj -c Debug
+
       - name: Build WinUI app (Debug)
         working-directory: windows
         run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Debug /p:Platform=x64 /m

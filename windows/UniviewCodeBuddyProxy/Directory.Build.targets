@@ -41,7 +41,7 @@
   -->
   <Target Name="_SetLocalAssemblyForMarkupCompilePass2"
           BeforeTargets="MarkupCompilePass2"
-          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
+          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences;CoreCompile">
     <PropertyGroup>
       <LocalAssembly Condition="'$(LocalAssembly)' == ''">$(IntermediateOutputPath)$(TargetName)$(TargetExt)</LocalAssembly>
       <XamlLocalAssembly Condition="'$(XamlLocalAssembly)' == ''">$(LocalAssembly)</XamlLocalAssembly>
