@@ -77,7 +77,7 @@ public static class Colors
 {
     public static Color White => new(255, 255, 255, 255);
     public static Color Black => new(255, 0, 0, 0);
-    public static Color Transparent => new(0, 255, 255, 255);
+    public static Color Transparent => new(0, 0, 0, 0);
     public static Color Gray => new(255, 128, 128, 128);
 }
 

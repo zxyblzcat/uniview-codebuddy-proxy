@@ -1,21 +1,22 @@
 <Project>
   <!--
-    Remove XamlPreCompile from PrepareResourcesDependsOn.
-    XamlPreCompile runs the net472 XamlCompiler.exe which cannot resolve .NET 8
-    reference assemblies, causing compilation errors. By removing it, C# compilation
-    is deferred to CoreCompile which uses the correct .NET 8 SDK Roslyn compiler.
+    ══════════════════════════════════════════════════════════════════════════════
+    CI Build Configuration — XamlCompiler / PRI / XBF overrides
+    ══════════════════════════════════════════════════════════════════════════════
 
-    We also override XamlPreCompile and MarkupCompilePass2 as no-op targets to
-    ensure the net472 XamlCompiler.exe is never invoked. MarkupCompilePass2 also
-    calls XamlCompiler.exe, which fails on CI.
+    The net472 XamlCompiler.exe cannot process .NET 8 reference assemblies and
+    fails on CI. These overrides skip it entirely, deferring C# compilation to
+    CoreCompile (Roslyn). The Color/Colors polyfill (WinUIColorPolyfill.cs)
+    provides the projected types that CsWinRT would normally emit.
 
-    The Color/Colors polyfill (Helpers/WinUIColorPolyfill.cs) ensures that
-    Microsoft.UI.Color and Microsoft.UI.Colors are available to CoreCompile even
-    when the CsWinRT source generator doesn't run (CI environments).
-
-    Note: Skipping MarkupCompilePass2 means x:Bind won't be compiled. If x:Bind
-    is needed, the build must be done in Visual Studio locally.
+    ⚠️  IMPORTANT: Skipping MarkupCompilePass2 means x:Bind compiled bindings
+    are NOT generated. CI builds validate compilation only — the resulting
+    binary has ~48 broken x:Bind bindings and must NOT be distributed.
+    For release builds, use Visual Studio locally.
   -->
+
+  <!-- ── XamlCompiler bypass ── -->
+
   <PropertyGroup>
     <PrepareResourcesDependsOn>
       MarkupCompilePass1;
@@ -25,53 +26,37 @@
 
   <!--
     Override XamlPreCompile and MarkupCompilePass2 as no-ops so the net472
-    XamlCompiler.exe is never invoked. These targets are defined in
-    Microsoft.UI.Xaml.Markup.Compiler.interop.targets and run XamlCompiler.exe.
+    XamlCompiler.exe is never invoked.
   -->
   <Target Name="XamlPreCompile" />
   <Target Name="MarkupCompilePass2" />
 
+  <!-- ── XBF (XAML Binary Format) skip ── -->
+
   <!--
-    XAML Binary Format (.xbf) files are produced by XamlCompiler (XamlPreCompile
-    and MarkupCompilePass2). Since we skip both, .xbf files are never generated.
-    Setting DisableXbfGeneration=true tells the XAML infrastructure to keep .xaml
-    extensions in item groups instead of swapping to .xbf, so the Copy task doesn't
-    try to copy non-existent .xbf files.
+    XBF files are produced by XamlCompiler. Since we skip it, set
+    DisableXbfGeneration=true so the infrastructure keeps .xaml extensions
+    instead of swapping to .xbf in copy item groups.
   -->
   <PropertyGroup>
     <DisableXbfGeneration>true</DisableXbfGeneration>
   </PropertyGroup>
 
   <!--
-    Skip the copy of generated XAML/XBF files since XamlCompiler didn't produce
-    any. These targets would try to copy .xbf files from obj/ to bin/ and fail
-    with MSB3030 "Could not copy the file because it was not found".
+    Skip copy of generated XAML/XBF files since XamlCompiler didn't produce
+    any. Prevents MSB3030 "Could not copy the file because it was not found".
   -->
   <Target Name="CopyGeneratedXaml" />
   <Target Name="AddProcessedXamlFilesToCopyLocal" />
 
+  <!-- ── Packaging ── -->
+
   <!--
-    Skip MSIX packaging. The project is unpackaged (WindowsPackageType=None)
-    so AppxPackage is not needed. Setting this to false avoids packaging targets
-    that may fail on CI runners without full Visual Studio workloads.
+    Skip MSIX packaging. The project is unpackaged (WindowsPackageType=None).
+    EnableMsixTooling=true in csproj handles PRI generation via the NuGet-packaged
+    Microsoft.Build.Msix.dll (not VS-dependent).
   -->
   <PropertyGroup>
     <AppxPackage>false</AppxPackage>
-    <GeneratePri>false</GeneratePri>
   </PropertyGroup>
-
-  <!--
-    Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
-    WMC1509 "No LocalAssembly parameter given during MarkupCompilePass2" occurs when
-    the intermediate assembly doesn't exist yet on first build.
-  -->
-  <Target Name="_SetLocalAssemblyForMarkupCompilePass2"
-          BeforeTargets="MarkupCompilePass2"
-          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences;CoreCompile">
-    <PropertyGroup>
-      <LocalAssembly Condition="'$(LocalAssembly)' == ''">$(IntermediateOutputPath)$(TargetName)$(TargetExt)</LocalAssembly>
-      <XamlLocalAssembly Condition="'$(XamlLocalAssembly)' == ''">$(LocalAssembly)</XamlLocalAssembly>
-    </PropertyGroup>
-    <Message Importance="high" Text="[_SetLocalAssemblyForMarkupCompilePass2] LocalAssembly=$(LocalAssembly)" />
-  </Target>
 </Project>
