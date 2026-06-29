@@ -52,6 +52,19 @@
   </PropertyGroup>
 
   <!--
+    Override ALL targets from MrtCore.PriGen.targets that reference
+    the ExpandPriContent task. The UsingTask declaration still tries to
+    load the DLL even when the targets don't execute, so we need to ensure
+    these targets never attempt to invoke the missing task.
+  -->
+  <Target Name="_ExpandPriContent" />
+  <Target Name="_ComputePriPayload" />
+  <Target Name="MergePriFiles" />
+  <Target Name="_CreatePri" />
+  <Target Name="_GeneratePriProjectRemoteEntries" />
+  <Target Name="_PriGenComputeBuiltFileList" />
+
+  <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
     WMC1509 "No LocalAssembly parameter given during MarkupCompilePass2" occurs when
     the intermediate assembly doesn't exist yet on first build.
