@@ -5,28 +5,31 @@
     reference assemblies, causing compilation errors. By removing it, C# compilation
     is deferred to CoreCompile which uses the correct .NET 8 SDK Roslyn compiler.
 
-    We also override XamlPreCompile as a no-op target to ensure nothing invokes
-    the net472 XamlCompiler.exe even if another target adds it back as a dependency.
+    We also override XamlPreCompile and MarkupCompilePass2 as no-op targets to
+    ensure the net472 XamlCompiler.exe is never invoked. MarkupCompilePass2 also
+    calls XamlCompiler.exe, which fails on CI.
 
     The Color/Colors polyfill (Helpers/WinUIColorPolyfill.cs) ensures that
     Microsoft.UI.Color and Microsoft.UI.Colors are available to CoreCompile even
     when the CsWinRT source generator doesn't run (CI environments).
+
+    Note: Skipping MarkupCompilePass2 means x:Bind won't be compiled. If x:Bind
+    is needed, the build must be done in Visual Studio locally.
   -->
   <PropertyGroup>
     <PrepareResourcesDependsOn>
       MarkupCompilePass1;
-      MarkupCompilePass2;
       $(PrepareResourcesDependsOn)
     </PrepareResourcesDependsOn>
   </PropertyGroup>
 
   <!--
-    Override XamlPreCompile as a no-op so the net472 XamlCompiler.exe is never
-    invoked. The real XamlPreCompile target is defined in
-    Microsoft.UI.Xaml.Markup.Compiler.interop.targets and runs XamlCompiler.exe.
-    By overriding it here, we skip that step entirely.
+    Override XamlPreCompile and MarkupCompilePass2 as no-ops so the net472
+    XamlCompiler.exe is never invoked. These targets are defined in
+    Microsoft.UI.Xaml.Markup.Compiler.interop.targets and run XamlCompiler.exe.
   -->
   <Target Name="XamlPreCompile" />
+  <Target Name="MarkupCompilePass2" />
 
   <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
