@@ -40,7 +40,17 @@
   <PropertyGroup>
     <AppxPackage>false</AppxPackage>
     <GeneratePri>false</GeneratePri>
+    <EnableMrtTargets>false</EnableMrtTargets>
+    <DisableMrtAutoMerger>true</DisableMrtAutoMerger>
   </PropertyGroup>
+
+  <!--
+    Override the _ExpandPriContent target (from MrtCore.PriGen.targets) as a no-op
+    so ExpandPriContent task is never invoked. That task requires
+    Microsoft.Build.Packaging.Pri.Tasks.dll which is only available with the
+    Visual Studio MSBuild workload, not on GitHub Actions runners.
+  -->
+  <Target Name="_ExpandPriContent" />
 
   <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
