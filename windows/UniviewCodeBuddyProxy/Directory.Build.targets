@@ -51,6 +51,9 @@
     Visual Studio MSBuild workload, not on GitHub Actions runners.
   -->
   <Target Name="_ExpandPriContent" />
+  <Target Name="_ComputePriPayload" />
+  <Target Name="MergePriFiles" />
+  <Target Name="_CreatePri" />
 
   <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
