@@ -32,37 +32,14 @@
   <Target Name="MarkupCompilePass2" />
 
   <!--
-    Skip PRI (Package Resource Index) generation on CI.
-    The ExpandPriContent task requires Microsoft.Build.Packaging.Pri.Tasks.dll
-    which is only available with the Visual Studio workload, not on CI runners.
-    For unpackaged apps (WindowsPackageType=None), PRI generation is not needed.
+    Skip MSIX packaging on CI. The project is unpackaged (WindowsPackageType=None)
+    so AppxPackage is not needed. Setting this to false avoids packaging targets
+    that may fail on CI runners without full Visual Studio workloads.
   -->
   <PropertyGroup>
     <AppxPackage>false</AppxPackage>
     <GeneratePri>false</GeneratePri>
-    <EnableMrtTargets>false</EnableMrtTargets>
-    <DisableMrtAutoMerger>true</DisableMrtAutoMerger>
-    <!--
-      When building outside Visual Studio (CI), skip all MRT/PRI steps.
-      MrtCore.PriGen.targets uses UsingTask to load the PRI task DLL which
-      doesn't exist on CI runners. Setting these flags disables the targets.
-    -->
-    <DisableMrtGen Condition="'$(BuildingInsideVisualStudio)' != 'true'">true</DisableMrtGen>
-    <MrtPriGenEnabled Condition="'$(BuildingInsideVisualStudio)' != 'true'">false</MrtPriGenEnabled>
   </PropertyGroup>
-
-  <!--
-    Override ALL targets from MrtCore.PriGen.targets that reference
-    the ExpandPriContent task. The UsingTask declaration still tries to
-    load the DLL even when the targets don't execute, so we need to ensure
-    these targets never attempt to invoke the missing task.
-  -->
-  <Target Name="_ExpandPriContent" />
-  <Target Name="_ComputePriPayload" />
-  <Target Name="MergePriFiles" />
-  <Target Name="_CreatePri" />
-  <Target Name="_GeneratePriProjectRemoteEntries" />
-  <Target Name="_PriGenComputeBuiltFileList" />
 
   <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.

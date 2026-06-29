@@ -77,11 +77,11 @@ jobs:
 
       - name: Build WinUI app (Debug)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -p:GeneratePri=false -p:EnableMrtTargets=false
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64 -p:GeneratePri=false -p:EnableMrtTargets=false
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
 
       - name: Publish WinUI app
         working-directory: windows
@@ -90,7 +90,6 @@ jobs:
           -c Release -p:Platform=x64
           -p:SelfContained=true -r win-x64
           -p:PublishSingleFile=false -p:WindowsAppSDKSelfContained=true
-          -p:GeneratePri=false -p:EnableMrtTargets=false
 
       - name: Verify publish output
         shell: pwsh

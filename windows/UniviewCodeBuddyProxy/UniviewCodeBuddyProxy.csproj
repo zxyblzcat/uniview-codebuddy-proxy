@@ -15,6 +15,15 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
     <!--
+      EnableMsixTooling: switches from old MrtCore.PriGen.targets (which requires
+      VS-MSBuild's Microsoft.Build.Packaging.Pri.Tasks.dll) to the new
+      Microsoft.Build.Msix.*.targets path that uses Microsoft.Build.Msix.dll
+      bundled inside the WindowsAppSDK NuGet package. This makes PRI generation
+      work on CI without Visual Studio's MSBuild extensions.
+      See: https://github.com/microsoft/WindowsAppSDK/issues/4889
+    -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <!--
       HAS_CSWINRT_COLOR: defined when CsWinRT source generator is expected to produce
       Microsoft.UI.Color (local VS builds). On CI the generator may fail; the polyfill
       in Helpers/WinUIColorPolyfill.cs (#if !HAS_CSWINRT_COLOR) fills the gap.
