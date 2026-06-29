@@ -59,9 +59,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Install Windows Desktop SDK workload
-        run: dotnet workload install windowsdesktop-sdk
-
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
@@ -80,11 +77,11 @@ jobs:
 
       - name: Build WinUI app (Debug)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64 -p:GeneratePri=false -p:EnableMrtTargets=false
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64 -p:GeneratePri=false -p:EnableMrtTargets=false
 
       - name: Publish WinUI app
         working-directory: windows
@@ -93,6 +90,7 @@ jobs:
           -c Release -p:Platform=x64
           -p:SelfContained=true -r win-x64
           -p:PublishSingleFile=false -p:WindowsAppSDKSelfContained=true
+          -p:GeneratePri=false -p:EnableMrtTargets=false
 
       - name: Verify publish output
         shell: pwsh
