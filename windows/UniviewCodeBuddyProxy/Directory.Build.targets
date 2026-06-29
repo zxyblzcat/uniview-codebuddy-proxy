@@ -32,7 +32,26 @@
   <Target Name="MarkupCompilePass2" />
 
   <!--
-    Skip MSIX packaging on CI. The project is unpackaged (WindowsPackageType=None)
+    XAML Binary Format (.xbf) files are produced by XamlCompiler (XamlPreCompile
+    and MarkupCompilePass2). Since we skip both, .xbf files are never generated.
+    Setting DisableXbfGeneration=true tells the XAML infrastructure to keep .xaml
+    extensions in item groups instead of swapping to .xbf, so the Copy task doesn't
+    try to copy non-existent .xbf files.
+  -->
+  <PropertyGroup>
+    <DisableXbfGeneration>true</DisableXbfGeneration>
+  </PropertyGroup>
+
+  <!--
+    Skip the copy of generated XAML/XBF files since XamlCompiler didn't produce
+    any. These targets would try to copy .xbf files from obj/ to bin/ and fail
+    with MSB3030 "Could not copy the file because it was not found".
+  -->
+  <Target Name="CopyGeneratedXaml" />
+  <Target Name="AddProcessedXamlFilesToCopyLocal" />
+
+  <!--
+    Skip MSIX packaging. The project is unpackaged (WindowsPackageType=None)
     so AppxPackage is not needed. Setting this to false avoids packaging targets
     that may fail on CI runners without full Visual Studio workloads.
   -->
