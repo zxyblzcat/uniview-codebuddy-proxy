@@ -51,7 +51,7 @@ public sealed partial class MainWindow : Window
 
         // Detect initial system theme
         var backgroundColor = _uiSettings.GetColorValue(global::Windows.UI.ViewManagement.UIColorType.Background);
-        _themeManager.UpdateSystemTheme(backgroundColor == global::Windows.UI.Colors.Black || backgroundColor.R < 128);
+        _themeManager.UpdateSystemTheme(backgroundColor == global::Windows.UI.Color.FromArgb(255, 0, 0, 0) || backgroundColor.R < 128);
 
         // Apply initial theme
         ApplyTheme();
@@ -117,7 +117,7 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() =>
         {
             var backgroundColor = sender.GetColorValue(global::Windows.UI.ViewManagement.UIColorType.Background);
-            var systemIsDark = backgroundColor == global::Windows.UI.Colors.Black || backgroundColor.R < 128;
+            var systemIsDark = backgroundColor == global::Windows.UI.Color.FromArgb(255, 0, 0, 0) || backgroundColor.R < 128;
             _themeManager.UpdateSystemTheme(systemIsDark);
         });
     }
