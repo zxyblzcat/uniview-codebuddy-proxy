@@ -1,10 +1,12 @@
 <Project>
   <!--
     Remove XamlPreCompile from PrepareResourcesDependsOn.
-    XamlPreCompile runs an in-process C# compilation via the net472 XamlCompiler.exe
-    which cannot resolve .NET 8 reference assemblies (e.g. ASP.NET Core), causing
-    compilation errors. By removing it, C# compilation is deferred to CoreCompile
-    which uses the correct .NET 8 SDK Roslyn compiler.
+    XamlPreCompile runs the net472 XamlCompiler.exe which cannot resolve .NET 8
+    reference assemblies, causing compilation errors. By removing it, C# compilation
+    is deferred to CoreCompile which uses the correct .NET 8 SDK Roslyn compiler.
+
+    We also override XamlPreCompile as a no-op target to ensure nothing invokes
+    the net472 XamlCompiler.exe even if another target adds it back as a dependency.
 
     The Color/Colors polyfill (Helpers/WinUIColorPolyfill.cs) ensures that
     Microsoft.UI.Color and Microsoft.UI.Colors are available to CoreCompile even
@@ -17,6 +19,14 @@
       $(PrepareResourcesDependsOn)
     </PrepareResourcesDependsOn>
   </PropertyGroup>
+
+  <!--
+    Override XamlPreCompile as a no-op so the net472 XamlCompiler.exe is never
+    invoked. The real XamlPreCompile target is defined in
+    Microsoft.UI.Xaml.Markup.Compiler.interop.targets and runs XamlCompiler.exe.
+    By overriding it here, we skip that step entirely.
+  -->
+  <Target Name="XamlPreCompile" />
 
   <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
