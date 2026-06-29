@@ -80,6 +80,8 @@ public sealed partial class MainWindow : Window
         }
 
         // Update gradient background layers
+        // colors.Bg etc. return Microsoft.UI.Color; implicit conversion to Windows.UI.Color
+        // handles GradientStop.Color and AcrylicBrush properties.
         BgBaseBrush.Color = colors.Bg;
         PrimaryGlowStop.Color = colors.Primary.WithOpacity(0.08);
         AccentGlowStop.Color = colors.Accent.WithOpacity(0.05);
@@ -88,7 +90,7 @@ public sealed partial class MainWindow : Window
         // Apply AcrylicBrush to the content area for glass-morphism
         var acrylicBrush = new AcrylicBrush
         {
-            BackgroundSource = AcrylicBackgroundSource.HostBackdrop,
+            BackgroundSource = Microsoft.UI.Xaml.Media.AcrylicBackgroundSource.HostBackdrop,
             TintColor = colors.Bg,
             TintOpacity = 0.78,
             FallbackColor = colors.Bg,

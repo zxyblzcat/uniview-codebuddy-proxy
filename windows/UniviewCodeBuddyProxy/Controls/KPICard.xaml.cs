@@ -1,6 +1,8 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
+using ColorHelper = UniviewCodeBuddyProxy.Helpers.ColorHelper;
 
 namespace UniviewCodeBuddyProxy.Controls;
 
@@ -13,12 +15,6 @@ public sealed partial class KPICard : UserControl
     public KPICard()
     {
         this.InitializeComponent();
-
-        // ThemeShadow.OffsetY is not supported in XAML (WMC0011), set it in code
-        if (CardBorder.Shadow is Microsoft.UI.Xaml.Media.ThemeShadow shadow)
-        {
-            shadow.OffsetY = 8;
-        }
     }
 
     // ── Title ──
@@ -91,8 +87,8 @@ public sealed partial class KPICard : UserControl
 
         var color = trend switch
         {
-            KPITrend.Up => ColorHelper.ToHex(ThemeColors.Success),
-            KPITrend.Down => ColorHelper.ToHex(ThemeColors.Danger),
+            KPITrend.Up => ColorHelper.ToHex(Helpers.ThemeColors.Success),
+            KPITrend.Down => ColorHelper.ToHex(Helpers.ThemeColors.Danger),
             _ => null
         };
 
@@ -130,7 +126,9 @@ public sealed partial class KPICard : UserControl
             card.AccentLine.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             return;
         }
-        var color = brush.Color;
+        var color = brush.Color; // Windows.UI.Color from SolidColorBrush
+        // Convert to Microsoft.UI.Color for WithOpacity, implicit conversion back for GradientStop.Color
+        var miColor = (Microsoft.UI.Color)color;
         var gradient = new LinearGradientBrush
         {
             StartPoint = new Point(0, 0.5),
@@ -138,7 +136,7 @@ public sealed partial class KPICard : UserControl
             GradientStops = new GradientStopCollection
             {
                 new() { Color = color, Offset = 0 },
-                new() { Color = color.WithOpacity(0.2), Offset = 1 }
+                new() { Color = miColor.WithOpacity(0.2), Offset = 1 }
             }
         };
         card.AccentLine.Background = gradient;

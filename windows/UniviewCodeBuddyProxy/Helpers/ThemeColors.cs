@@ -122,18 +122,6 @@ public sealed class ThemeColors
     public double RadiusLG => Radius * 1.4;
     public static double RadiusPill => 999;
 
-    // ── Shadows — adaptive ──
-
-    public ThemeShadow ShadowGlass => IsDark
-        ? new(Colors.Black.WithOpacity(0.3), 32, 8)
-        : new(Colors.Black.WithOpacity(0.08), 20, 4);
-    public ThemeShadow ShadowGlassSM => IsDark
-        ? new(Colors.Black.WithOpacity(0.2), 16, 4)
-        : new(Colors.Black.WithOpacity(0.05), 10, 2);
-    public ThemeShadow ShadowTabbar => IsDark
-        ? new(Colors.Black.WithOpacity(0.4), 40, -4)
-        : new(Colors.Black.WithOpacity(0.10), 20, -2);
-
     // ── Animation ──
 
     public static double EaseHarmonyResponse => 0.35;
@@ -273,23 +261,6 @@ public sealed class ThemeManager : INotifyPropertyChanged
 // ═══════════════════════════════════════════════
 // Helper types
 // ═══════════════════════════════════════════════
-
-/// <summary>
-/// Shadow definition for glass-morphism effects.
-/// </summary>
-public sealed class ThemeShadow
-{
-    public Color Color { get; }
-    public double Radius { get; }
-    public double OffsetY { get; }
-
-    public ThemeShadow(Color color, double radius, double offsetY)
-    {
-        Color = color;
-        Radius = radius;
-        OffsetY = offsetY;
-    }
-}
 
 /// <summary>
 /// Color helper utilities for hex parsing and opacity manipulation.

@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml.Media;
 using UniviewCodeBuddyProxy.Helpers;
+using ColorHelper = UniviewCodeBuddyProxy.Helpers.ColorHelper;
 
 namespace UniviewCodeBuddyProxy.Models;
 

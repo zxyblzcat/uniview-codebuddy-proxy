@@ -55,6 +55,17 @@ public struct Color : IEquatable<Color>
 
     public static bool operator !=(Color left, Color right) => !left.Equals(right);
 
+    // ── Implicit conversions to/from Windows.UI.Color ──
+    //
+    // SolidColorBrush and other WinUI 3 APIs use Windows.UI.Color at the WinRT
+    // metadata level. When the CsWinRT source generator runs (local VS builds),
+    // the generated Microsoft.UI.Color has WinRT type identity that makes it
+    // assignment-compatible. On CI where the generator doesn't run, these implicit
+    // conversions bridge the gap so code like `new SolidColorBrush(myColor)` works.
+
+    public static implicit operator Windows.UI.Color(Color c) => Windows.UI.Color.FromArgb(c.A, c.R, c.G, c.B);
+    public static implicit operator Color(Windows.UI.Color c) => new(c.A, c.R, c.G, c.B);
+
     public override string ToString() => $"#{A:X2}{R:X2}{G:X2}{B:X2}";
 }
 

@@ -26,12 +26,6 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
-
-        // ThemeShadow.OffsetY is not supported in XAML (WMC0011), set it in code
-        if (Resources["ToastShadow"] is Microsoft.UI.Xaml.Media.ThemeShadow toastShadow)
-        {
-            toastShadow.OffsetY = 4;
-        }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
