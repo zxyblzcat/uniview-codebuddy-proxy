@@ -2,7 +2,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
+using UniviewCodeBuddyProxy.Helpers;
 using ColorHelper = UniviewCodeBuddyProxy.Helpers.ColorHelper;
+using ThemeColors = UniviewCodeBuddyProxy.Helpers.ThemeColors;
 
 namespace UniviewCodeBuddyProxy.Controls;
 
@@ -127,8 +129,9 @@ public sealed partial class KPICard : UserControl
             return;
         }
         var color = brush.Color; // Windows.UI.Color from SolidColorBrush
-        // Convert to Microsoft.UI.Color for WithOpacity, implicit conversion back for GradientStop.Color
-        var miColor = (Microsoft.UI.Color)color;
+        // Convert to Microsoft.UI.Color for WithOpacity extension method,
+        // implicit conversion back to Windows.UI.Color for GradientStop.Color.
+        var miColor = (Microsoft.UI.Color)brush.Color; // implicit conversion via polyfill
         var gradient = new LinearGradientBrush
         {
             StartPoint = new Point(0, 0.5),

@@ -17,7 +17,7 @@ public sealed partial class MainWindow : Window
 {
     private ThemeManager _themeManager = new();
     private readonly Helpers.ToastManager _toastManager = new();
-    private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
+    private readonly global::Windows.UI.ViewManagement.UISettings _uiSettings = new();
 
     public ThemeManager ThemeManager
     {
@@ -50,8 +50,8 @@ public sealed partial class MainWindow : Window
         Title = "CodeBuddy 代理";
 
         // Detect initial system theme
-        var backgroundColor = _uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
-        _themeManager.UpdateSystemTheme(backgroundColor == Windows.UI.Colors.Black || backgroundColor.R < 128);
+        var backgroundColor = _uiSettings.GetColorValue(global::Windows.UI.ViewManagement.UIColorType.Background);
+        _themeManager.UpdateSystemTheme(backgroundColor == global::Windows.UI.Colors.Black || backgroundColor.R < 128);
 
         // Apply initial theme
         ApplyTheme();
@@ -88,11 +88,13 @@ public sealed partial class MainWindow : Window
         DepthGlowStop.Color = colors.Primary.WithOpacity(0.04);
 
         // Apply AcrylicBrush to the content area for glass-morphism
+        // Note: WinUI 3 AcrylicBrush does not have BackgroundSource (that's UWP).
+        // Use TintLuminosityOpacity instead for backdrop vs. placeholder tinting.
         var acrylicBrush = new AcrylicBrush
         {
-            BackgroundSource = Microsoft.UI.Xaml.Media.AcrylicBackgroundSource.HostBackdrop,
             TintColor = colors.Bg,
             TintOpacity = 0.78,
+            TintLuminosityOpacity = 0.78,
             FallbackColor = colors.Bg,
         };
         ContentArea.Background = acrylicBrush;
@@ -109,13 +111,13 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnSystemThemeChanged(Windows.UI.ViewManagement.UISettings sender, object args)
+    private void OnSystemThemeChanged(global::Windows.UI.ViewManagement.UISettings sender, object args)
     {
         // UISettings.ColorValuesChanged fires on a background thread
         DispatcherQueue.TryEnqueue(() =>
         {
-            var backgroundColor = sender.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
-            var systemIsDark = backgroundColor == Windows.UI.Colors.Black || backgroundColor.R < 128;
+            var backgroundColor = sender.GetColorValue(global::Windows.UI.ViewManagement.UIColorType.Background);
+            var systemIsDark = backgroundColor == global::Windows.UI.Colors.Black || backgroundColor.R < 128;
             _themeManager.UpdateSystemTheme(systemIsDark);
         });
     }
@@ -139,7 +141,7 @@ public sealed partial class MainWindow : Window
     private void UpdateStatusBar()
     {
         var colors = _themeManager.Colors;
-        ConnectionIndicator.Fill = new SolidColorBrush(colors.Success);
+        ConnectionIndicator.Fill = new SolidColorBrush(Helpers.ThemeColors.Success);
         ProxyStatusText.Foreground = new SolidColorBrush(colors.Text);
         ModelCountText.Foreground = new SolidColorBrush(colors.TextSecondary);
         StatusText.Foreground = new SolidColorBrush(colors.TextSecondary);
