@@ -94,7 +94,7 @@ jobs:
       - name: Verify publish output
         shell: pwsh
         run: |
-          $publishDir = "windows/UniviewCodeBuddyProxy/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish"
+          $publishDir = "windows/UniviewCodeBuddyProxy/bin/x64/Release/net8.0-windows10.0.19041.0/win-x64/publish"
           if (Test-Path $publishDir) {
             Write-Host "✅ Publish output exists"
             Get-ChildItem $publishDir -Name | Select-Object -First 20
