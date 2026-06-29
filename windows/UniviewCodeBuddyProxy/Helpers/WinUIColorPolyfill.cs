@@ -63,8 +63,8 @@ public struct Color : IEquatable<Color>
     // assignment-compatible. On CI where the generator doesn't run, these implicit
     // conversions bridge the gap so code like `new SolidColorBrush(myColor)` works.
 
-    public static implicit operator Windows.UI.Color(Color c) => Windows.UI.Color.FromArgb(c.A, c.R, c.G, c.B);
-    public static implicit operator Color(Windows.UI.Color c) => new(c.A, c.R, c.G, c.B);
+    public static implicit operator global::Windows.UI.Color(Color c) => global::Windows.UI.Color.FromArgb(c.A, c.R, c.G, c.B);
+    public static implicit operator Color(global::Windows.UI.Color c) => new(c.A, c.R, c.G, c.B);
 
     public override string ToString() => $"#{A:X2}{R:X2}{G:X2}{B:X2}";
 }
