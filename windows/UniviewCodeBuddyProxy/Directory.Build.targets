@@ -42,18 +42,14 @@
     <GeneratePri>false</GeneratePri>
     <EnableMrtTargets>false</EnableMrtTargets>
     <DisableMrtAutoMerger>true</DisableMrtAutoMerger>
+    <!--
+      When building outside Visual Studio (CI), skip all MRT/PRI steps.
+      MrtCore.PriGen.targets uses UsingTask to load the PRI task DLL which
+      doesn't exist on CI runners. Setting these flags disables the targets.
+    -->
+    <DisableMrtGen Condition="'$(BuildingInsideVisualStudio)' != 'true'">true</DisableMrtGen>
+    <MrtPriGenEnabled Condition="'$(BuildingInsideVisualStudio)' != 'true'">false</MrtPriGenEnabled>
   </PropertyGroup>
-
-  <!--
-    Override the _ExpandPriContent target (from MrtCore.PriGen.targets) as a no-op
-    so ExpandPriContent task is never invoked. That task requires
-    Microsoft.Build.Packaging.Pri.Tasks.dll which is only available with the
-    Visual Studio MSBuild workload, not on GitHub Actions runners.
-  -->
-  <Target Name="_ExpandPriContent" />
-  <Target Name="_ComputePriPayload" />
-  <Target Name="MergePriFiles" />
-  <Target Name="_CreatePri" />
 
   <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
