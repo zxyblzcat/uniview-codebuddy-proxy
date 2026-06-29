@@ -32,6 +32,17 @@
   <Target Name="MarkupCompilePass2" />
 
   <!--
+    Skip PRI (Package Resource Index) generation on CI.
+    The ExpandPriContent task requires Microsoft.Build.Packaging.Pri.Tasks.dll
+    which is only available with the Visual Studio workload, not on CI runners.
+    For unpackaged apps (WindowsPackageType=None), PRI generation is not needed.
+  -->
+  <PropertyGroup>
+    <AppxPackage>false</AppxPackage>
+    <GeneratePri>false</GeneratePri>
+  </PropertyGroup>
+
+  <!--
     Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
     WMC1509 "No LocalAssembly parameter given during MarkupCompilePass2" occurs when
     the intermediate assembly doesn't exist yet on first build.
