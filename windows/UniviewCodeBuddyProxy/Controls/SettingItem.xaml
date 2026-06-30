@@ -39,7 +39,7 @@
                        VerticalAlignment="Center"/>
 
             <!-- Content slot (right-aligned) -->
-            <ContentPresenter x:Name="ContentSlot"
+            <ContentPresenter x:Name="SlotPresenter"
                               Grid.Column="2"
                               HorizontalAlignment="Right"
                               VerticalAlignment="Center"/>

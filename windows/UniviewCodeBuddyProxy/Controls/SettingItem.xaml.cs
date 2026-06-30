@@ -6,12 +6,37 @@ namespace UniviewCodeBuddyProxy.Controls;
 /// <summary>
 /// Settings row with icon, label, and content slot, plus divider.
 /// Mirrors macOS settingsRow().
+/// ContentSlot is a DependencyProperty that forwards its value to the
+/// internal ContentPresenter, allowing XamlCompiler to recognize it.
 /// </summary>
 public sealed partial class SettingItem : UserControl
 {
     public SettingItem()
     {
         this.InitializeComponent();
+    }
+
+    // ── ContentSlot ──
+
+    /// <summary>
+    /// Content to display in the right-aligned slot (e.g., toggle, slider, textbox).
+    /// This is the XAML-settable property that XamlCompiler recognizes via
+    /// [ContentProperty(Name = "ContentSlot")] on the class.
+    /// </summary>
+    public static readonly DependencyProperty ContentSlotProperty =
+        DependencyProperty.Register(nameof(ContentSlot), typeof(object), typeof(SettingItem),
+            new PropertyMetadata(null, OnContentSlotChanged));
+
+    public object ContentSlot
+    {
+        get => GetValue(ContentSlotProperty);
+        set => SetValue(ContentSlotProperty, value);
+    }
+
+    private static void OnContentSlotChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var item = (SettingItem)d;
+        item.SlotPresenter.Content = e.NewValue;
     }
 
     // ── Icon (Segoe MDL2 glyph) ──
