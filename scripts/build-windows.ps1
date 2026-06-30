@@ -55,7 +55,15 @@ if (-not (Test-Path $WinUIPublishDir)) {
     exit 1
 }
 
-Write-Host "  ✅ WinUI app published"
+# Verify x:Bind bindings were generated (XamlCompiler must produce .g.cs files)
+$gcsPattern = Join-Path $WindowsDir "$AppName\obj\x64\Release\net8.0-windows10.0.19041.0\*.g.cs"
+$gcsFiles = Get-ChildItem -Path $gcsPattern -ErrorAction SilentlyContinue
+if ($gcsFiles.Count -eq 0) {
+    Write-Error "❌ No .g.cs files generated — x:Bind bindings missing! XamlCompiler may have been skipped."
+    exit 1
+}
+
+Write-Host "  ✅ WinUI app published ($($gcsFiles.Count) .g.cs files generated, x:Bind OK)"
 
 # ─── 3. Package WinUI app as ZIP ────────────────────────────────
 Write-Host ""
