@@ -5,6 +5,8 @@ using UniviewCodeBuddyProxy.Helpers;
 using UniviewCodeBuddyProxy.Models;
 using UniviewCodeBuddyProxy.Services;
 using UniviewCodeBuddyProxy.ViewModels;
+using ColorHelper = UniviewCodeBuddyProxy.Helpers.ColorHelper;
+using ThemeColors = UniviewCodeBuddyProxy.Helpers.ThemeColors;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;

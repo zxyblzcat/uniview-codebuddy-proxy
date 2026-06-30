@@ -69,7 +69,7 @@
                                     <TextBlock Text="{Binding StatusLabel}"
                                                FontSize="11"
                                                FontWeight="Medium"
-                                               Foreground="White"/>
+                                               Foreground="{Binding StatusBadgeFg}"/>
                                 </Border>
 
                                 <!-- Token info -->

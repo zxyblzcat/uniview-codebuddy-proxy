@@ -24,7 +24,7 @@ public sealed partial class DashboardPage : Page
     public DashboardPage()
     {
         var app = (App)Application.Current;
-        ViewModel = new DashboardViewModel(app.TokenManager, app.LogBuffer, app.TelemetryReporter);
+        ViewModel = new DashboardViewModel(app.TokenManager, app.LogBuffer, app.TelemetryReporter, app.UsageStats);
         this.InitializeComponent();
 
         // Capture dispatcher queue in constructor since Page is created on UI thread
@@ -36,6 +36,19 @@ public sealed partial class DashboardPage : Page
         if (app.LogBuffer != null)
         {
             app.LogBuffer.EntryAppended += OnLogEntryAppended;
+        }
+
+        // Re-apply theme-dependent UI when appearance changes
+        app.ThemeManager.PropertyChanged += OnThemeChanged;
+    }
+
+    private void OnThemeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ThemeManager.Colors))
+        {
+            // DonutChart segments use static model colors (don't change with theme),
+            // but if future theme-dependent chart colors are added, refresh here.
+            // BarChart already subscribes to ThemeManager.PropertyChanged internally.
         }
     }
 

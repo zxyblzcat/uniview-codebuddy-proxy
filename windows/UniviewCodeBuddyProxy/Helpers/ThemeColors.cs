@@ -69,6 +69,9 @@ public sealed class ThemeColors
     public Color PrimaryHover => IsDark ? Primary.WithOpacity(0.85) : Primary.WithOpacity(0.8);
     public Color PrimarySubtle => Primary.WithOpacity(0.14);
 
+    /// <summary>Text color on primary background (white — primary is always #5B9CF6 blue).</summary>
+    public Color TextOnPrimary => Colors.White;
+
     // ── Accent variants ──
 
     public Color AccentSubtle => Accent.WithOpacity(0.14);
@@ -106,6 +109,11 @@ public sealed class ThemeColors
 
     public Color HoverBg => IsDark ? Colors.White.WithOpacity(0.02) : Colors.Black.WithOpacity(0.03);
 
+    // ── Toggle ──
+
+    /// <summary>Toggle thumb color in off-state (white in dark, dark in light — to contrast with glassBgHeavy track).</summary>
+    public Color ToggleThumbOff => IsDark ? Colors.White : Fg;
+
     // ── Corner radii ──
 
     public static double Radius => 20;
@@ -113,18 +121,6 @@ public sealed class ThemeColors
     public double RadiusMD => Radius;
     public double RadiusLG => Radius * 1.4;
     public static double RadiusPill => 999;
-
-    // ── Shadows — adaptive ──
-
-    public ThemeShadow ShadowGlass => IsDark
-        ? new(Colors.Black.WithOpacity(0.3), 32, 8)
-        : new(Colors.Black.WithOpacity(0.08), 20, 4);
-    public ThemeShadow ShadowGlassSM => IsDark
-        ? new(Colors.Black.WithOpacity(0.2), 16, 4)
-        : new(Colors.Black.WithOpacity(0.05), 10, 2);
-    public ThemeShadow ShadowTabbar => IsDark
-        ? new(Colors.Black.WithOpacity(0.4), 40, -4)
-        : new(Colors.Black.WithOpacity(0.10), 20, -2);
 
     // ── Animation ──
 
@@ -265,23 +261,6 @@ public sealed class ThemeManager : INotifyPropertyChanged
 // ═══════════════════════════════════════════════
 // Helper types
 // ═══════════════════════════════════════════════
-
-/// <summary>
-/// Shadow definition for glass-morphism effects.
-/// </summary>
-public sealed class ThemeShadow
-{
-    public Color Color { get; }
-    public double Radius { get; }
-    public double OffsetY { get; }
-
-    public ThemeShadow(Color color, double radius, double offsetY)
-    {
-        Color = color;
-        Radius = radius;
-        OffsetY = offsetY;
-    }
-}
 
 /// <summary>
 /// Color helper utilities for hex parsing and opacity manipulation.

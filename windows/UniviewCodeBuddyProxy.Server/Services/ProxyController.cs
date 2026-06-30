@@ -26,6 +26,7 @@ public sealed class ProxyController
     private readonly CircuitBreaker _circuitBreaker;
     private readonly TelemetryReporter _telemetryReporter;
     private readonly LogBuffer _logBuffer;
+    private readonly UsageStats _usageStats;
 
     public ProxyController(
         ConfigManager configManager,
@@ -35,7 +36,8 @@ public sealed class ProxyController
         CacheManager cacheManager,
         CircuitBreaker circuitBreaker,
         TelemetryReporter telemetryReporter,
-        LogBuffer logBuffer)
+        LogBuffer logBuffer,
+        UsageStats usageStats)
     {
         _configManager = configManager;
         _tokenManager = tokenManager;
@@ -46,6 +48,7 @@ public sealed class ProxyController
         _circuitBreaker = circuitBreaker;
         _telemetryReporter = telemetryReporter;
         _logBuffer = logBuffer;
+        _usageStats = usageStats;
     }
 
 
@@ -208,6 +211,7 @@ public sealed class ProxyController
 
             var latency = (DateTime.UtcNow - startTime).TotalSeconds;
             _telemetryReporter.ReportChatResponse(model, latency);
+            _usageStats.RecordRequest(model, 0, 0, 0, 0, 0, 0, latency, true);
         }
         else
         {
@@ -218,6 +222,9 @@ public sealed class ProxyController
 
                 var latency = (DateTime.UtcNow - startTime).TotalSeconds;
                 _telemetryReporter.ReportChatResponse(model, latency);
+                _usageStats.RecordRequest(model, result.PromptTokens, result.CompletionTokens,
+                    result.TotalTokens > 0 ? result.TotalTokens : result.PromptTokens + result.CompletionTokens,
+                    result.Credit, result.CacheReadInputTokens, result.CacheCreationInputTokens, latency, true);
 
                 var responseDict = BuildNonStreamingResponse(result);
                 await WriteJsonAsync(ctx, 200, responseDict);
@@ -311,6 +318,7 @@ public sealed class ProxyController
 
             var latency = (DateTime.UtcNow - startTime).TotalSeconds;
             _telemetryReporter.ReportChatResponse(model, latency);
+            _usageStats.RecordRequest(model, 0, 0, 0, 0, 0, 0, latency, true);
         }
         else
         {
@@ -321,6 +329,9 @@ public sealed class ProxyController
 
                 var latency = (DateTime.UtcNow - startTime).TotalSeconds;
                 _telemetryReporter.ReportChatResponse(model, latency);
+                _usageStats.RecordRequest(model, result.PromptTokens, result.CompletionTokens,
+                    result.TotalTokens > 0 ? result.TotalTokens : result.PromptTokens + result.CompletionTokens,
+                    result.Credit, result.CacheReadInputTokens, result.CacheCreationInputTokens, latency, true);
 
                 var anthropicResponse = ConvertOpenAIToAnthropic(result, payload);
                 await WriteJsonAsync(ctx, 200, anthropicResponse);
@@ -781,15 +792,15 @@ public sealed class ProxyController
             {
                 ["prompt_tokens"] = result.PromptTokens,
                 ["completion_tokens"] = result.CompletionTokens,
-                ["total_tokens"] = result.PromptTokens + result.CompletionTokens,
+                ["total_tokens"] = result.TotalTokens > 0 ? result.TotalTokens : result.PromptTokens + result.CompletionTokens,
             },
         };
 
         if (result.ReasoningTokens > 0)
             responseDict["completion_tokens_details"] = new Dictionary<string, int> { ["reasoning_tokens"] = result.ReasoningTokens };
 
-        if (result.CacheCreationTokens > 0 && responseDict["usage"] is Dictionary<string, int> usage)
-            usage["prompt_tokens_details"] = result.CacheCreationTokens;
+        if (result.CacheReadInputTokens > 0 && responseDict["usage"] is Dictionary<string, object> usage)
+            usage["prompt_tokens_details"] = new Dictionary<string, int> { ["cached_tokens"] = result.CacheReadInputTokens };
 
         if (result.ToolCalls.Count > 0)
         {
@@ -1033,7 +1044,8 @@ public sealed class ProxyController
             {
                 ["input_tokens"] = result.PromptTokens,
                 ["output_tokens"] = result.CompletionTokens,
-                ["cache_creation_input_tokens"] = result.CacheCreationTokens,
+                ["cache_creation_input_tokens"] = result.CacheCreationInputTokens,
+                ["cache_read_input_tokens"] = result.CacheReadInputTokens,
             },
         };
     }
@@ -1198,7 +1210,7 @@ public sealed class ProxyController
             {
                 ["input_tokens"] = result.PromptTokens,
                 ["output_tokens"] = result.CompletionTokens,
-                ["total_tokens"] = result.PromptTokens + result.CompletionTokens,
+                ["total_tokens"] = result.TotalTokens > 0 ? result.TotalTokens : result.PromptTokens + result.CompletionTokens,
             },
         };
     }

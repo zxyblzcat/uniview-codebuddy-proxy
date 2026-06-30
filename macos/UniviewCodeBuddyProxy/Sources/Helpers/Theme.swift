@@ -45,6 +45,14 @@ struct ThemeColors {
     var primaryHover: Color { isDark ? primary.opacity(0.85) : primary.opacity(0.8) }
     var primarySubtle: Color { primary.opacity(0.14) }
 
+    /// primary 背景上的文字色（深色模式白字，浅色模式也白字——primary 是固定蓝色）
+    var textOnPrimary: Color { .white }
+
+    // ── Toggle ──
+
+    /// 关闭状态下滑块颜色（深色模式白点，浅色模式深色点——与浅色 track 区分）
+    var toggleThumbOff: Color { isDark ? .white : Color(hex: "1A1D26") }
+
     // ── 强调色变体 ──
 
     var accentSubtle: Color { accent.opacity(0.14) }

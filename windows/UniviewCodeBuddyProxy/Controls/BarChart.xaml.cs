@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using UniviewCodeBuddyProxy.Helpers;
 using UniviewCodeBuddyProxy.Models;
+using ColorHelper = UniviewCodeBuddyProxy.Helpers.ColorHelper;
 
 namespace UniviewCodeBuddyProxy.Controls;
 
@@ -23,6 +24,17 @@ public sealed partial class BarChart : UserControl
         this.InitializeComponent();
         Loaded += OnLoaded;
         ChartCanvas.SizeChanged += OnSizeChanged;
+
+        // Re-draw bars when theme changes (TextMuted color may change)
+        ((App)Application.Current).ThemeManager.PropertyChanged += OnThemeChanged;
+    }
+
+    private void OnThemeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ThemeManager.Colors))
+        {
+            DrawBars();
+        }
     }
 
     // ── Dependency Properties ──
@@ -140,6 +152,9 @@ internal static class BrushExtensions
 {
     public static SolidColorBrush WithOpacity(this SolidColorBrush brush, double opacity)
     {
-        return new SolidColorBrush(brush.Color.WithOpacity(opacity));
+        // brush.Color returns Windows.UI.Color; convert to Microsoft.UI.Color for WithOpacity,
+        // then the implicit operator converts back to Windows.UI.Color for SolidColorBrush ctor.
+        var miColor = (Microsoft.UI.Color)brush.Color;
+        return new SolidColorBrush(miColor.WithOpacity(opacity));
     }
 }

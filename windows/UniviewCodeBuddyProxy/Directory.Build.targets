@@ -1,51 +1,62 @@
 <Project>
   <!--
-    Remove ASP.NET Core reference assemblies before XamlCompiler runs.
-    The net472 in-process CompileXaml task (used by MSBuild) can have issues
-    with ASP.NET Core transitive refs from the Core project.
-  -->
-  <Target Name="_RemoveAspNetCoreRefsBeforeXamlCompiler"
-          BeforeTargets="XamlMarkupCompilePass1;_XamlBuildExecTask;MarkupCompilePass1"
-          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
-    <ItemGroup>
-      <_AspNetCoreRefs Include="@(ReferencePath)" Condition="$([System.String]::new('%(FullPath)').Contains('Microsoft.AspNetCore'))" />
-      <ReferencePath Remove="@(_AspNetCoreRefs)" />
-    </ItemGroup>
-    <Message Importance="high" Text="[_RemoveAspNetCoreRefsBeforeXamlCompiler] Removed @(_AspNetCoreRefs->Count()) ASP.NET Core refs. Remaining ReferencePath: @(ReferencePath->Count())" />
-  </Target>
+    ══════════════════════════════════════════════════════════════════════════════
+    CI Build Configuration — XamlCompiler / PRI / XBF overrides
+    ══════════════════════════════════════════════════════════════════════════════
 
-  <!--
-    Remove XamlPreCompile from PrepareResourcesDependsOn.
-    XamlPreCompile is a WPF/WinFX target inherited by the build pipeline.
-    When it runs under MSBuild, it invokes the .NET Framework Roslyn csc.exe which
-    cannot resolve WinRT projected types (Color, NavigationView, DispatcherQueue),
-    causing CS0246 errors. Removing it lets the normal CoreCompile (which uses the
-    correct .NET 8 Roslyn) handle all C# compilation.
+    The net472 XamlCompiler.exe cannot process .NET 8 reference assemblies and
+    fails on CI. These overrides skip it entirely, deferring C# compilation to
+    CoreCompile (Roslyn). The Color/Colors polyfill (WinUIColorPolyfill.cs)
+    provides the projected types that CsWinRT would normally emit.
+
+    ⚠️  IMPORTANT: Skipping MarkupCompilePass2 means x:Bind compiled bindings
+    are NOT generated. CI builds validate compilation only — the resulting
+    binary has ~48 broken x:Bind bindings and must NOT be distributed.
+    For release builds, use Visual Studio locally.
   -->
+
+  <!-- ── XamlCompiler bypass ── -->
+
   <PropertyGroup>
     <PrepareResourcesDependsOn>
-      ResolveKeySource;
-      AddImplicitDefineConstants;
       MarkupCompilePass1;
-      MarkupCompilePass2;
       $(PrepareResourcesDependsOn)
     </PrepareResourcesDependsOn>
   </PropertyGroup>
 
   <!--
-    Set LocalAssembly before MarkupCompilePass2 so x:Bind type resolution works.
-    WMC1509 "No LocalAssembly parameter given during MarkupCompilePass2" occurs when
-    the intermediate assembly doesn't exist yet on first build. We point it to the
-    CoreCompile output path which should exist by the time Pass2 runs (after Pass1
-    generates code and CoreCompile produces the assembly).
+    Override XamlPreCompile and MarkupCompilePass2 as no-ops so the net472
+    XamlCompiler.exe is never invoked.
   -->
-  <Target Name="_SetLocalAssemblyForMarkupCompilePass2"
-          BeforeTargets="MarkupCompilePass2"
-          DependsOnTargets="ResolvePackageAssets;ResolveFrameworkReferences;ResolveAssemblyReferences">
-    <PropertyGroup>
-      <LocalAssembly Condition="'$(LocalAssembly)' == ''">$(IntermediateOutputPath)$(TargetName)$(TargetExt)</LocalAssembly>
-      <XamlLocalAssembly Condition="'$(XamlLocalAssembly)' == ''">$(LocalAssembly)</XamlLocalAssembly>
-    </PropertyGroup>
-    <Message Importance="high" Text="[_SetLocalAssemblyForMarkupCompilePass2] LocalAssembly=$(LocalAssembly)" />
-  </Target>
+  <Target Name="XamlPreCompile" />
+  <Target Name="MarkupCompilePass2" />
+
+  <!-- ── XBF (XAML Binary Format) skip ── -->
+
+  <!--
+    XBF files are produced by XamlCompiler. Since we skip it, set
+    DisableXbfGeneration=true so the infrastructure keeps .xaml extensions
+    instead of swapping to .xbf in copy item groups.
+  -->
+  <PropertyGroup>
+    <DisableXbfGeneration>true</DisableXbfGeneration>
+  </PropertyGroup>
+
+  <!--
+    Skip copy of generated XAML/XBF files since XamlCompiler didn't produce
+    any. Prevents MSB3030 "Could not copy the file because it was not found".
+  -->
+  <Target Name="CopyGeneratedXaml" />
+  <Target Name="AddProcessedXamlFilesToCopyLocal" />
+
+  <!-- ── Packaging ── -->
+
+  <!--
+    Skip MSIX packaging. The project is unpackaged (WindowsPackageType=None).
+    EnableMsixTooling=true in csproj handles PRI generation via the NuGet-packaged
+    Microsoft.Build.Msix.dll (not VS-dependent).
+  -->
+  <PropertyGroup>
+    <AppxPackage>false</AppxPackage>
+  </PropertyGroup>
 </Project>

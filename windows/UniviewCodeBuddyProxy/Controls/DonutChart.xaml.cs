@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.UI;
+using Windows.Foundation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Shapes;
+using Path = Microsoft.UI.Xaml.Shapes.Path;
 using UniviewCodeBuddyProxy.Helpers;
 
 namespace UniviewCodeBuddyProxy.Controls;

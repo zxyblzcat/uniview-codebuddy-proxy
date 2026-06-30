@@ -13,6 +13,7 @@ final class ProxyController {
     let circuitBreaker: CircuitBreaker
     let telemetryReporter: TelemetryReporter
     let logBuffer: LogBuffer
+    let usageStats: UsageStats
 
     init(
         configManager: ConfigManager,
@@ -22,7 +23,8 @@ final class ProxyController {
         cacheManager: CacheManager,
         circuitBreaker: CircuitBreaker,
         telemetryReporter: TelemetryReporter,
-        logBuffer: LogBuffer
+        logBuffer: LogBuffer,
+        usageStats: UsageStats
     ) {
         self.configManager = configManager
         self.tokenManager = tokenManager
@@ -32,6 +34,7 @@ final class ProxyController {
         self.circuitBreaker = circuitBreaker
         self.telemetryReporter = telemetryReporter
         self.logBuffer = logBuffer
+        self.usageStats = usageStats
     }
 
     // MARK: - 图片检测与模型切换
@@ -143,8 +146,11 @@ final class ProxyController {
                                 break
                             }
                         }
+                        let latency = Date().timeIntervalSince(startTime)
+                        Task { @MainActor in usageStats.recordRequest(model: model, promptTokens: translator.promptTokens, completionTokens: translator.completionTokens, totalTokens: translator.totalTokens, credit: translator.credit, cacheHitTokens: translator.cacheReadInputTokens, cacheCreationInputTokens: translator.cacheCreationInputTokens, latency: latency, success: true) }
                         continuation.finish()
                     } catch {
+                        Task { @MainActor in usageStats.recordRequest(model: model, promptTokens: 0, completionTokens: 0, totalTokens: 0, credit: 0, cacheHitTokens: 0, cacheCreationInputTokens: 0, latency: Date().timeIntervalSince(startTime), success: false) }
                         continuation.yield(ByteBuffer(string: StreamTranslator.sseError(message: error.localizedDescription)))
                         continuation.finish()
                     }
@@ -166,6 +172,8 @@ final class ProxyController {
                 }
 
                 telemetryReporter.reportChatResponse(model: model, latency: Date().timeIntervalSince(startTime))
+                let latency = Date().timeIntervalSince(startTime)
+                Task { @MainActor in usageStats.recordRequest(model: model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, totalTokens: result.totalTokens, credit: result.credit, cacheHitTokens: result.cacheReadInputTokens, cacheCreationInputTokens: result.cacheCreationInputTokens, latency: latency, success: true) }
 
                 var responseDict = buildNonStreamingResponse(result)
                 let data = try JSONSerialization.data(withJSONObject: responseDict)
@@ -237,8 +245,10 @@ final class ProxyController {
                         for output in finalEvents {
                             continuation.yield(ByteBuffer(string: output))
                         }
+                        Task { @MainActor in usageStats.recordRequest(model: model, promptTokens: translator.inputTokens, completionTokens: translator.outputTokens, totalTokens: translator.inputTokens + translator.outputTokens, credit: translator.credit, cacheHitTokens: translator.cacheReadInputTokens, cacheCreationInputTokens: translator.cacheCreationInputTokens, latency: Date().timeIntervalSince(startTime), success: true) }
                         continuation.finish()
                     } catch {
+                        Task { @MainActor in usageStats.recordRequest(model: model, promptTokens: 0, completionTokens: 0, totalTokens: 0, credit: 0, cacheHitTokens: 0, cacheCreationInputTokens: 0, latency: Date().timeIntervalSince(startTime), success: false) }
                         continuation.yield(ByteBuffer(string: AnthropicStreamTranslator.sseError(message: error.localizedDescription)))
                         continuation.finish()
                     }
@@ -259,6 +269,7 @@ final class ProxyController {
                 }
 
                 telemetryReporter.reportChatResponse(model: model, latency: Date().timeIntervalSince(startTime))
+                Task { @MainActor in usageStats.recordRequest(model: model, promptTokens: result.promptTokens, completionTokens: result.completionTokens, totalTokens: result.totalTokens, credit: result.credit, cacheHitTokens: result.cacheReadInputTokens, cacheCreationInputTokens: result.cacheCreationInputTokens, latency: Date().timeIntervalSince(startTime), success: true) }
 
                 let anthropicResponse = convertOpenAIToAnthropic(result, originalPayload: payload)
                 let data = try JSONSerialization.data(withJSONObject: anthropicResponse)
@@ -592,15 +603,15 @@ final class ProxyController {
             "usage": [
                 "prompt_tokens": result.promptTokens,
                 "completion_tokens": result.completionTokens,
-                "total_tokens": result.promptTokens + result.completionTokens,
+                "total_tokens": result.totalTokens > 0 ? result.totalTokens : result.promptTokens + result.completionTokens,
             ],
         ]
         if result.reasoningTokens > 0 {
             responseDict["completion_tokens_details"] = ["reasoning_tokens": result.reasoningTokens]
         }
-        if result.cacheCreationTokens > 0 {
+        if result.cacheReadInputTokens > 0 {
             if var usage = responseDict["usage"] as? [String: Any] {
-                usage["prompt_tokens_details"] = ["cached_tokens": result.cacheCreationTokens]
+                usage["prompt_tokens_details"] = ["cached_tokens": result.cacheReadInputTokens]
                 responseDict["usage"] = usage
             }
         }
@@ -836,7 +847,8 @@ final class ProxyController {
             "usage": [
                 "input_tokens": result.promptTokens,
                 "output_tokens": result.completionTokens,
-                "cache_creation_input_tokens": result.cacheCreationTokens,
+                "cache_creation_input_tokens": result.cacheCreationInputTokens,
+                "cache_read_input_tokens": result.cacheReadInputTokens,
             ],
         ]
     }
@@ -972,7 +984,7 @@ final class ProxyController {
             "usage": [
                 "input_tokens": result.promptTokens,
                 "output_tokens": result.completionTokens,
-                "total_tokens": result.promptTokens + result.completionTokens,
+                "total_tokens": result.totalTokens > 0 ? result.totalTokens : result.promptTokens + result.completionTokens,
             ],
         ]
     }
@@ -1012,7 +1024,11 @@ struct CollectedResult {
     var promptTokens: Int = 0
     var completionTokens: Int = 0
     var reasoningTokens: Int = 0
-    var cacheCreationTokens: Int = 0
+    var cacheReadInputTokens: Int = 0
+    var cacheCreationInputTokens: Int = 0
+    var thinkingTokens: Int = 0
+    var totalTokens: Int = 0
+    var credit: Double = 0
 }
 
 /// 上游请求意图

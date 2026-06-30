@@ -68,8 +68,7 @@ public sealed class TokensViewModel : INotifyPropertyChanged
 
     private void OnTokenManagerChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(TokenManager.ActiveTokenCount) ||
-            e.PropertyName == nameof(TokenManager.Entries))
+        if (e.PropertyName == nameof(TokenManager.ActiveTokenCount))
         {
             RefreshFromManager();
         }

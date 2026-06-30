@@ -49,7 +49,7 @@ jobs:
 
   build-windows:
     name: Build Windows
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,9 +58,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v1.1
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -76,29 +73,28 @@ jobs:
 
       - name: Restore NuGet packages
         working-directory: windows
-        run: msbuild UniviewCodeBuddyProxy.sln /t:Restore /p:Platform=x64
+        run: dotnet restore UniviewCodeBuddyProxy.sln
 
       - name: Build WinUI app (Debug)
         working-directory: windows
-        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Debug /p:Platform=x64 /m
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Debug -p:Platform=x64
 
       - name: Build WinUI app (Release)
         working-directory: windows
-        run: msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj /p:Configuration=Release /p:Platform=x64 /m
+        run: dotnet build UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj -c Release -p:Platform=x64
 
       - name: Publish WinUI app
         working-directory: windows
         run: >
-          msbuild UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
-          /p:Configuration=Release /p:Platform=x64
-          /p:SelfContained=true /p:RuntimeIdentifier=win-x64
-          /p:PublishSingleFile=false /p:WindowsAppSDKSelfContained=true
-          /t:Publish
+          dotnet publish UniviewCodeBuddyProxy/UniviewCodeBuddyProxy.csproj
+          -c Release -p:Platform=x64
+          -p:SelfContained=true -r win-x64
+          -p:PublishSingleFile=false -p:WindowsAppSDKSelfContained=true
 
       - name: Verify publish output
         shell: pwsh
         run: |
-          $publishDir = "windows/UniviewCodeBuddyProxy/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish"
+          $publishDir = "windows/UniviewCodeBuddyProxy/bin/x64/Release/net8.0-windows10.0.19041.0/win-x64/publish"
           if (Test-Path $publishDir) {
             Write-Host "✅ Publish output exists"
             Get-ChildItem $publishDir -Name | Select-Object -First 20

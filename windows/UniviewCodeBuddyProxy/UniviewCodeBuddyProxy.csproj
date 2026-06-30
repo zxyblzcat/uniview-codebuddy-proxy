@@ -14,12 +14,35 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <!--
+      EnableMsixTooling: switches from old MrtCore.PriGen.targets (which requires
+      VS-MSBuild's Microsoft.Build.Packaging.Pri.Tasks.dll) to the new
+      Microsoft.Build.Msix.*.targets path that uses Microsoft.Build.Msix.dll
+      bundled inside the WindowsAppSDK NuGet package. This makes PRI generation
+      work on CI without Visual Studio's MSBuild extensions.
+      See: https://github.com/microsoft/WindowsAppSDK/issues/4889
+    -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <!--
+      HAS_CSWINRT_COLOR: defined when CsWinRT source generator is expected to produce
+      Microsoft.UI.Color (local VS builds). On CI the generator may fail; the polyfill
+      in Helpers/WinUIColorPolyfill.cs (#if !HAS_CSWINRT_COLOR) fills the gap.
+    -->
+    <DefineConstants Condition="'$(BuildingInsideVisualStudio)' == 'true'">$(DefineConstants);HAS_CSWINRT_COLOR</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- WinUI 3 / Windows App SDK -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.*" />
+    <!--
+      CsWinRT package — provides WinRT.Runtime.dll, the source generator (analyzers),
+      and the cswinrt.exe tool that processes .winmd files into projected C# types.
+      On local VS builds the FrameworkReference targeting pack may already supply
+      these, but on CI the package is the only source. Without it, projected types
+      like Microsoft.UI.Color cannot be resolved by the source generator, causing CS0246.
+    -->
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.6" />
   </ItemGroup>
 
   <ItemGroup>

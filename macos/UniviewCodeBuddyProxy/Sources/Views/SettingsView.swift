@@ -399,7 +399,7 @@ struct SettingsView: View {
 
                 Image(systemName: "server.rack")
                     .font(.system(size: 20))
-                    .foregroundColor(.white)
+                    .foregroundColor(c.textOnPrimary)
             }
 
             // 中间文字

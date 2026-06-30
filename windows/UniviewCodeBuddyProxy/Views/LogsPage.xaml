@@ -107,7 +107,7 @@
                         <Border Grid.Column="1" CornerRadius="3" Padding="4,2"
                                 Background="{Binding LevelBadgeBrush}">
                             <TextBlock Text="{Binding LevelTag}" FontSize="9"
-                                       FontWeight="SemiBold" Foreground="White"
+                                       FontWeight="SemiBold" Foreground="{Binding LevelBadgeFg}"
                                        HorizontalAlignment="Center"/>
                         </Border>
                         <TextBlock Grid.Column="2" Text="{Binding ShortTime}" FontSize="11"

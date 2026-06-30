@@ -38,7 +38,7 @@ struct GlassToggle: View {
 
             // Thumb
             Circle()
-                .fill(.white)
+                .fill(isOn ? .white : themeManager.colors.toggleThumbOff)
                 .frame(width: thumbSize, height: thumbSize)
                 .shadow(color: themeManager.colors.shadowGlassSMColor, radius: themeManager.colors.shadowGlassSMRadius, y: themeManager.colors.shadowGlassSMY)
                 .padding(3)

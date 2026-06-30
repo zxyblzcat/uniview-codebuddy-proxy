@@ -21,16 +21,11 @@ public partial class App : Application
     public TokenManager TokenManager { get; private set; } = null!;
     public AuthService AuthService { get; private set; } = null!;
     public TelemetryReporter TelemetryReporter { get; private set; } = null!;
+    public UsageStats UsageStats { get; private set; } = null!;
 
     public App()
     {
         InitializeComponent();
-
-        // ThemeShadow.OffsetY is not supported in XAML (WMC0011), set it in code
-        if (Resources["ToastShadow"] is Microsoft.UI.Xaml.Media.ThemeShadow toastShadow)
-        {
-            toastShadow.OffsetY = 4;
-        }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
@@ -41,6 +36,7 @@ public partial class App : Application
         TokenManager = new TokenManager();
         AuthService = new AuthService();
         TelemetryReporter = new TelemetryReporter(ConfigManager, TokenManager);
+        UsageStats = new UsageStats();
 
         // Create main window
         _window = new MainWindow
@@ -69,6 +65,7 @@ public partial class App : Application
     public void QuitApp()
     {
         _proxyServer?.Stop();
+        UsageStats?.Dispose();
         TelemetryReporter?.Shutdown();
         TokenManager?.Dispose();
         LogBuffer?.Dispose();
@@ -84,7 +81,8 @@ public partial class App : Application
             TokenManager,
             AuthService,
             LogBuffer,
-            TelemetryReporter);
+            TelemetryReporter,
+            UsageStats);
         _proxyServer.Start();
     }
 }

@@ -40,6 +40,10 @@ public sealed class UpstreamCollectResult
     public List<string> ContentParts { get; set; } = [];
     public int PromptTokens { get; set; }
     public int CompletionTokens { get; set; }
+    public int TotalTokens { get; set; }
+    public int CacheReadInputTokens { get; set; }
+    public int CacheCreationInputTokens { get; set; }
+    public double Credit { get; set; }
 }
 
 /// <summary>
@@ -265,6 +269,23 @@ public sealed class UpstreamClient : IDisposable
                                     result.PromptTokens = pt.GetInt32();
                                 if (usage.TryGetProperty("completion_tokens", out var ct))
                                     result.CompletionTokens = ct.GetInt32();
+                                if (usage.TryGetProperty("total_tokens", out var tt))
+                                    result.TotalTokens = tt.GetInt32();
+                                if (usage.TryGetProperty("prompt_tokens_details", out var ptd))
+                                {
+                                    if (ptd.TryGetProperty("cached_tokens", out var cachedEl))
+                                    {
+                                        var v = cachedEl.ValueKind == JsonValueKind.Number ? cachedEl.GetInt32() : 0;
+                                        if (v > 0) result.CacheReadInputTokens = v;
+                                    }
+                                    if (ptd.TryGetProperty("cache_creation_tokens", out var cctEl))
+                                    {
+                                        var v = cctEl.ValueKind == JsonValueKind.Number ? cctEl.GetInt32() : 0;
+                                        if (v > 0) result.CacheCreationInputTokens = v;
+                                    }
+                                }
+                                if (usage.TryGetProperty("credit", out var cr) && cr.ValueKind == JsonValueKind.Number)
+                                    result.Credit = cr.GetDouble();
                             }
                         }
                         catch
