@@ -91,6 +91,16 @@ jobs:
           -p:SelfContained=true -r win-x64
           -p:PublishSingleFile=false -p:WindowsAppSDKSelfContained=true
 
+      - name: Verify x:Bind bindings generated
+        shell: pwsh
+        run: |
+          $gcsFiles = Get-ChildItem -Path "windows/UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0/*.g.cs" -ErrorAction SilentlyContinue
+          if ($gcsFiles.Count -eq 0) {
+            Write-Error "❌ No .g.cs files generated — x:Bind bindings missing! XamlCompiler may have been skipped."
+            exit 1
+          }
+          Write-Host "✅ $($gcsFiles.Count) .g.cs files generated (x:Bind bindings OK)"
+
       - name: Verify publish output
         shell: pwsh
         run: |

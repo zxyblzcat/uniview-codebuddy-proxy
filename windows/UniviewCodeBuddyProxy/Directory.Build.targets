@@ -1,53 +1,25 @@
 <Project>
   <!--
     ══════════════════════════════════════════════════════════════════════════════
-    CI Build Configuration — XamlCompiler / PRI / XBF overrides
+    CI Build Configuration — XamlCompiler / Packaging overrides
     ══════════════════════════════════════════════════════════════════════════════
 
-    The net472 XamlCompiler.exe cannot process .NET 8 reference assemblies and
-    fails on CI. These overrides skip it entirely, deferring C# compilation to
-    CoreCompile (Roslyn). The Color/Colors polyfill (WinUIColorPolyfill.cs)
-    provides the projected types that CsWinRT would normally emit.
+    By default, WinAppSDK sets UseXamlCompilerExecutable=true when
+    MSBuildRuntimeType=Core (dotnet build), which invokes the net472
+    XamlCompiler.exe via <Exec>. That EXE cannot load .NET 8 reference
+    assemblies, causing build failures on CI.
 
-    ⚠️  IMPORTANT: Skipping MarkupCompilePass2 means x:Bind compiled bindings
-    are NOT generated. CI builds validate compilation only — the resulting
-    binary has ~48 broken x:Bind bindings and must NOT be distributed.
-    For release builds, use Visual Studio locally.
+    Setting UseXamlCompilerExecutable=false switches to the in-process
+    CompileXaml task from the net6.0 Microsoft.UI.Xaml.Markup.Compiler.dll,
+    which reads assemblies via System.Reflection.Metadata (framework-agnostic)
+    and handles .NET 8 references correctly.
   -->
 
-  <!-- ── XamlCompiler bypass ── -->
+  <!-- ── Use in-process CompileXaml task (net6.0 DLL) instead of net472 EXE ── -->
 
   <PropertyGroup>
-    <PrepareResourcesDependsOn>
-      MarkupCompilePass1;
-      $(PrepareResourcesDependsOn)
-    </PrepareResourcesDependsOn>
+    <UseXamlCompilerExecutable>false</UseXamlCompilerExecutable>
   </PropertyGroup>
-
-  <!--
-    Override XamlPreCompile and MarkupCompilePass2 as no-ops so the net472
-    XamlCompiler.exe is never invoked.
-  -->
-  <Target Name="XamlPreCompile" />
-  <Target Name="MarkupCompilePass2" />
-
-  <!-- ── XBF (XAML Binary Format) skip ── -->
-
-  <!--
-    XBF files are produced by XamlCompiler. Since we skip it, set
-    DisableXbfGeneration=true so the infrastructure keeps .xaml extensions
-    instead of swapping to .xbf in copy item groups.
-  -->
-  <PropertyGroup>
-    <DisableXbfGeneration>true</DisableXbfGeneration>
-  </PropertyGroup>
-
-  <!--
-    Skip copy of generated XAML/XBF files since XamlCompiler didn't produce
-    any. Prevents MSB3030 "Could not copy the file because it was not found".
-  -->
-  <Target Name="CopyGeneratedXaml" />
-  <Target Name="AddProcessedXamlFilesToCopyLocal" />
 
   <!-- ── Packaging ── -->
 
