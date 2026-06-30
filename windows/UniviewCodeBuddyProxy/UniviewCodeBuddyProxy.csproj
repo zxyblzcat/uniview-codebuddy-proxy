@@ -64,7 +64,7 @@
       native dependency on the VC++ runtime; without it, the DLL fails to load silently.
       See: https://github.com/microsoft/WindowsAppSDK/issues/1762
     -->
-    <PackageReference Include="Microsoft.VCRTForwarders.140" Version="1.0.6" />
+    <PackageReference Include="Microsoft.VCRTForwarders.140" Version="1.1.0" />
   </ItemGroup>
 
   <ItemGroup>
