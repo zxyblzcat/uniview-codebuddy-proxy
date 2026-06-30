@@ -45,7 +45,7 @@ $WinUIPublishDir = Join-Path $WindowsDir "$AppName\bin\x64\Release\net8.0-window
 dotnet restore $WinUIProject
 
 msbuild $WinUIProject `
-    /t:Publish `
+    /t:Publish /restore `
     /p:Configuration=Release `
     /p:Platform=x64 `
     /p:SelfContained=true `
