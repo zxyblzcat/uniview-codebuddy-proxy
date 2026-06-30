@@ -40,7 +40,7 @@ Write-Host ""
 Write-Host "📦 Step 2/5: Publishing WinUI app (x64, self-contained)..."
 
 $WinUIProject = Join-Path $WindowsDir "$AppName\$AppName.csproj"
-$WinUIPublishDir = Join-Path $WindowsDir "$AppName\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish"
+$WinUIPublishDir = Join-Path $WindowsDir "$AppName\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish"
 
 dotnet publish $WinUIProject `
     -c Release `
