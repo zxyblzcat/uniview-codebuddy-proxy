@@ -42,13 +42,16 @@ Write-Host "📦 Step 2/5: Publishing WinUI app (x64, self-contained)..."
 $WinUIProject = Join-Path $WindowsDir "$AppName\$AppName.csproj"
 $WinUIPublishDir = Join-Path $WindowsDir "$AppName\bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\publish"
 
-dotnet publish $WinUIProject `
-    -c Release `
-    -p:Platform=x64 `
-    -p:SelfContained=true `
-    -p:RuntimeIdentifier=win-x64 `
-    -p:PublishSingleFile=false `
-    -p:WindowsAppSDKSelfContained=true
+dotnet restore $WinUIProject
+
+msbuild $WinUIProject `
+    /t:Publish `
+    /p:Configuration=Release `
+    /p:Platform=x64 `
+    /p:SelfContained=true `
+    /p:RuntimeIdentifier=win-x64 `
+    /p:PublishSingleFile=false `
+    /p:WindowsAppSDKSelfContained=true
 
 if (-not (Test-Path $WinUIPublishDir)) {
     Write-Error "❌ Publish directory not found: $WinUIPublishDir"
