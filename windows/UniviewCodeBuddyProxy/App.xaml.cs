@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using UniviewCodeBuddyProxy.Helpers;
 using UniviewCodeBuddyProxy.Services;
@@ -23,29 +25,49 @@ public partial class App : Application
     public TelemetryReporter TelemetryReporter { get; private set; } = null!;
     public UsageStats UsageStats { get; private set; } = null!;
 
+    /// <summary>
+    /// Path to the crash log file, written when an unhandled exception occurs.
+    /// Located next to the exe for easy discovery.
+    /// </summary>
+    private static readonly string CrashLogPath = Path.Combine(
+        AppContext.BaseDirectory, "crash.log");
+
     public App()
     {
+        // Global unhandled exception handlers — write crash log before the process dies
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
         InitializeComponent();
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        // Initialize core services
-        ConfigManager = new ConfigManager();
-        LogBuffer = new LogBuffer();
-        TokenManager = new TokenManager();
-        AuthService = new AuthService();
-        TelemetryReporter = new TelemetryReporter(ConfigManager, TokenManager);
-        UsageStats = new UsageStats();
-
-        // Create main window
-        _window = new MainWindow
+        try
         {
-            ThemeManager = ThemeManager
-        };
+            // Initialize core services
+            ConfigManager = new ConfigManager();
+            LogBuffer = new LogBuffer();
+            TokenManager = new TokenManager();
+            AuthService = new AuthService();
+            TelemetryReporter = new TelemetryReporter(ConfigManager, TokenManager);
+            UsageStats = new UsageStats();
 
-        // Start the proxy server
-        StartProxyServer();
+            // Create main window
+            _window = new MainWindow
+            {
+                ThemeManager = ThemeManager
+            };
+
+            // Start the proxy server
+            StartProxyServer();
+        }
+        catch (Exception ex)
+        {
+            WriteCrashLog("OnLaunched", ex);
+            // Re-throw so the process exits with a clear error instead of hanging invisibly
+            throw;
+        }
     }
 
     /// <summary>
@@ -84,5 +106,43 @@ public partial class App : Application
             TelemetryReporter,
             UsageStats);
         _proxyServer.Start();
+    }
+
+    // ── Unhandled exception handlers ──
+
+    private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        var exception = e.ExceptionObject as Exception;
+        WriteCrashLog("UnhandledException", exception);
+    }
+
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        WriteCrashLog("UnobservedTaskException", e.Exception);
+        e.SetObserved(); // Prevent process crash from unobserved task
+    }
+
+    /// <summary>
+    /// Writes a crash log to the file next to the exe.
+    /// Includes timestamp, exception type, message, and full stack trace.
+    /// </summary>
+    private static void WriteCrashLog(string source, Exception? exception)
+    {
+        try
+        {
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            var entry = $"[{timestamp}] [{source}] {exception?.GetType().FullName}: {exception?.Message}\n" +
+                        $"Stack Trace:\n{exception?.StackTrace}\n" +
+                        (exception?.InnerException != null
+                            ? $"\nInner Exception:\n  {exception.InnerException.GetType().FullName}: {exception.InnerException.Message}\n  {exception.InnerException.StackTrace}\n"
+                            : "") +
+                        "\n---\n";
+
+            File.AppendAllText(CrashLogPath, entry);
+        }
+        catch
+        {
+            // If we can't write the crash log, there's nothing more we can do
+        }
     }
 }
