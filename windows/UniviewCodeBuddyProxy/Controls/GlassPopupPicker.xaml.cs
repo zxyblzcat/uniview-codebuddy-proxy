@@ -13,9 +13,9 @@ namespace UniviewCodeBuddyProxy.Controls;
 /// </summary>
 public sealed class GlassPopupPickerItem
 {
-    public string Label { get; init; } = "";
-    public string Value { get; init; } = "";
-    public string? Subtitle { get; init; }
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string? Subtitle { get; set; }
 
     public override string ToString() => Label;
 }
