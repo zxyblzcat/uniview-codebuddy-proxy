@@ -110,7 +110,7 @@ public partial class App : Application
 
     // ── Unhandled exception handlers ──
 
-    private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    private static void OnUnhandledException(object sender, System.UnhandledExceptionEventArgs e)
     {
         var exception = e.ExceptionObject as Exception;
         WriteCrashLog("UnhandledException", exception);
