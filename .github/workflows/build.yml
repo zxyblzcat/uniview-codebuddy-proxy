@@ -94,7 +94,7 @@ jobs:
       - name: Verify x:Bind bindings generated
         shell: pwsh
         run: |
-          $gcsFiles = Get-ChildItem -Path "windows/UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0/*.g.cs" -ErrorAction SilentlyContinue
+          $gcsFiles = Get-ChildItem -Path "windows/UniviewCodeBuddyProxy/obj/x64/Release/net8.0-windows10.0.19041.0/win-x64/*.g.cs" -ErrorAction SilentlyContinue
           if ($gcsFiles.Count -eq 0) {
             Write-Error "❌ No .g.cs files generated — x:Bind bindings missing! XamlCompiler may have been skipped."
             exit 1
