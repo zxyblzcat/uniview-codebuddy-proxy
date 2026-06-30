@@ -69,6 +69,31 @@ if ($gcsFiles.Count -eq 0) {
 
 Write-Host "  ✅ WinUI app published ($($gcsFiles.Count) .g.cs files generated, x:Bind OK)"
 
+# Verify critical runtime DLLs are present in publish output
+# Missing DLLs cause silent "no window" crashes at runtime
+$requiredDlls = @(
+    "Microsoft.UI.Xaml.dll",
+    "Microsoft.ui.xaml.dll",
+    "Microsoft.WinUI.dll",
+    "WinRT.Runtime.dll"
+)
+$missingDlls = @()
+foreach ($dll in $requiredDlls) {
+    $dllPath = Join-Path $WinUIPublishDir $dll
+    if (-not (Test-Path $dllPath)) {
+        $missingDlls += $dll
+    }
+}
+if ($missingDlls.Count -gt 0) {
+    Write-Warning "⚠️  Missing critical DLLs in publish output (may cause runtime failure):"
+    $missingDlls | ForEach-Object { Write-Warning "    - $_" }
+    Write-Host ""
+    Write-Host "  Files in publish dir:"
+    Get-ChildItem $WinUIPublishDir -Filter "*.dll" | Select-Object -First 30 | ForEach-Object { Write-Host "    $($_.Name)" }
+} else {
+    Write-Host "  ✅ All critical runtime DLLs present"
+}
+
 # ─── 3. Package WinUI app as ZIP ────────────────────────────────
 Write-Host ""
 Write-Host "📦 Step 3/5: Creating ZIP package..."

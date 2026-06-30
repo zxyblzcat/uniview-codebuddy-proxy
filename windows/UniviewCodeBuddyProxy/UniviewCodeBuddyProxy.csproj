@@ -24,6 +24,13 @@
     -->
     <EnableMsixTooling>true</EnableMsixTooling>
     <!--
+      Disable DeploymentManager auto-initialize for self-contained unpackaged apps.
+      The runtime DLLs are already alongside the exe; auto-init calls
+      RaiseFailFastException on failure, killing the process silently.
+      See: https://github.com/microsoft/WindowsAppSDK/issues/5447
+    -->
+    <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+    <!--
       HAS_CSWINRT_COLOR: NOT defined on CI. The CsWinRT cswinrt.exe tool does not
       produce Microsoft.UI.Color/Colors projected types — those come from
       Microsoft.InteractiveExperiences.Projection.dll which is always available.
@@ -51,6 +58,13 @@
       like Microsoft.UI.Color cannot be resolved by the source generator, causing CS0246.
     -->
     <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.1.6" />
+    <!--
+      VCRTForwarders: bundles Visual C++ Redistributable forwarder DLLs so the app
+      works on machines without VC++ Redist installed. Microsoft.ui.xaml.dll has a
+      native dependency on the VC++ runtime; without it, the DLL fails to load silently.
+      See: https://github.com/microsoft/WindowsAppSDK/issues/1762
+    -->
+    <PackageReference Include="Microsoft.VCRTForwarders.140" Version="1.1.0" />
   </ItemGroup>
 
   <ItemGroup>

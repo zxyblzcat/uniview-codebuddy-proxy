@@ -101,6 +101,23 @@ jobs:
           }
           Write-Host "✅ $($gcsFiles.Count) .g.cs files generated (x:Bind bindings OK)"
 
+      - name: Verify critical runtime DLLs
+        shell: pwsh
+        run: |
+          $publishDir = "windows/UniviewCodeBuddyProxy/bin/x64/Release/net8.0-windows10.0.19041.0/win-x64/publish"
+          $requiredDlls = @("Microsoft.UI.Xaml.dll", "Microsoft.ui.xaml.dll", "Microsoft.WinUI.dll", "WinRT.Runtime.dll")
+          $missing = @()
+          foreach ($dll in $requiredDlls) {
+            if (-not (Test-Path (Join-Path $publishDir $dll))) { $missing += $dll }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Warning "⚠️ Missing critical DLLs: $($missing -join ', ')"
+            Write-Host "DLLs in publish dir:"
+            Get-ChildItem $publishDir -Filter "*.dll" | Select-Object -First 30 | ForEach-Object { Write-Host "  $($_.Name)" }
+          } else {
+            Write-Host "✅ All critical runtime DLLs present"
+          }
+
       - name: Verify publish output
         shell: pwsh
         run: |
