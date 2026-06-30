@@ -24,11 +24,21 @@
     -->
     <EnableMsixTooling>true</EnableMsixTooling>
     <!--
-      HAS_CSWINRT_COLOR: defined when CsWinRT source generator is expected to produce
-      Microsoft.UI.Color (local VS builds). On CI the generator may fail; the polyfill
-      in Helpers/WinUIColorPolyfill.cs (#if !HAS_CSWINRT_COLOR) fills the gap.
+      HAS_CSWINRT_COLOR: defined when CsWinRT source generator has successfully produced
+      Microsoft.UI.Color/Colors projected types. The polyfill in Helpers/WinUIColorPolyfill.cs
+      (#if !HAS_CSWINRT_COLOR) fills the gap when the generator doesn't run.
+
+      Note: BuildingInsideVisualStudio is true even for VS MSBuild on CI (via setup-msbuild),
+      so we cannot rely on it alone. The polyfill must always be available as fallback.
+      We define HAS_CSWINRT_COLOR only when building inside VS AND the CsWinRT generator
+      actually produces the types (checked at runtime by the CS0436 warning — if polyfill
+      conflicts with projection, the generator ran and polyfill should be excluded).
+
+      For safety, we do NOT define HAS_CSWINRT_COLOR on CI, so the polyfill is always compiled.
+      The CS0436 warnings (polyfill vs Microsoft.InteractiveExperiences.Projection) are benign
+      — C# resolves to the polyfill which is layout-compatible.
     -->
-    <DefineConstants Condition="'$(BuildingInsideVisualStudio)' == 'true'">$(DefineConstants);HAS_CSWINRT_COLOR</DefineConstants>
+    <DefineConstants Condition="'$(BuildingInsideVisualStudio)' == 'true' And '$(GITHUB_ACTIONS)' == ''">$(DefineConstants);HAS_CSWINRT_COLOR</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
