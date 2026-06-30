@@ -15,9 +15,9 @@ namespace UniviewCodeBuddyProxy.Controls;
 /// </summary>
 public sealed class DonutSegment
 {
-    public string Name { get; init; } = "";
-    public double Ratio { get; init; }
-    public Color Color { get; init; }
+    public string Name { get; set; } = "";
+    public double Ratio { get; set; }
+    public Color Color { get; set; }
 }
 
 /// <summary>

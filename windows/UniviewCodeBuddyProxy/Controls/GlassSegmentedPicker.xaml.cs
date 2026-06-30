@@ -14,8 +14,8 @@ namespace UniviewCodeBuddyProxy.Controls;
 /// </summary>
 public sealed class GlassSegmentedOption
 {
-    public string Label { get; init; } = "";
-    public string Value { get; init; } = "";
+    public string Label { get; set; } = "";
+    public string Value { get; set; } = "";
 }
 
 /// <summary>
