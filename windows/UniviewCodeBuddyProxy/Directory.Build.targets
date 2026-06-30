@@ -1,25 +1,13 @@
 <Project>
   <!--
     ══════════════════════════════════════════════════════════════════════════════
-    CI Build Configuration — XamlCompiler / Packaging overrides
+    CI Build Configuration — Packaging overrides
     ══════════════════════════════════════════════════════════════════════════════
 
-    By default, WinAppSDK sets UseXamlCompilerExecutable=true when
-    MSBuildRuntimeType=Core (dotnet build), which invokes the net472
-    XamlCompiler.exe via <Exec>. That EXE cannot load .NET 8 reference
-    assemblies, causing build failures on CI.
-
-    Setting UseXamlCompilerExecutable=false switches to the in-process
-    CompileXaml task from the net6.0 Microsoft.UI.Xaml.Markup.Compiler.dll,
-    which reads assemblies via System.Reflection.Metadata (framework-agnostic)
-    and handles .NET 8 references correctly.
+    XamlCompiler now runs via VS MSBuild (see release.yml / build.yml changes),
+    which uses the net472 CompileXaml task DLL in-process — the officially
+    supported path that correctly handles .NET 8 reference assemblies.
   -->
-
-  <!-- ── Use in-process CompileXaml task (net6.0 DLL) instead of net472 EXE ── -->
-
-  <PropertyGroup>
-    <UseXamlCompilerExecutable>false</UseXamlCompilerExecutable>
-  </PropertyGroup>
 
   <!-- ── Packaging ── -->
 
