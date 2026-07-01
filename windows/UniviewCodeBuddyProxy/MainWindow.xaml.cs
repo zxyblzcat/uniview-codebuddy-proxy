@@ -15,7 +15,10 @@ namespace UniviewCodeBuddyProxy;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
-    private ThemeManager _themeManager = new();
+    // Do NOT field-initialize ThemeManager — it gets set by App.OnLaunched via the
+    // ThemeManager property setter. Field-initializing creates an orphaned instance
+    // whose PropertyChanged subscriptions are lost when the setter replaces it.
+    private ThemeManager _themeManager = null!;
     private readonly Helpers.ToastManager _toastManager = new();
     private readonly global::Windows.UI.ViewManagement.UISettings _uiSettings = new();
 
@@ -24,7 +27,19 @@ public sealed partial class MainWindow : Window
         get => _themeManager;
         set
         {
+            // Unsubscribe from old instance if replacing (prevents orphaned subscriptions)
+            if (_themeManager != null)
+            {
+                _themeManager.PropertyChanged -= OnThemeChanged;
+            }
             _themeManager = value;
+
+            // Detect initial system theme and apply it
+            var backgroundColor = _uiSettings.GetColorValue(global::Windows.UI.ViewManagement.UIColorType.Background);
+            _themeManager.UpdateSystemTheme(backgroundColor == global::Windows.UI.Color.FromArgb(255, 0, 0, 0) || backgroundColor.R < 128);
+
+            // Subscribe to future theme changes
+            _themeManager.PropertyChanged += OnThemeChanged;
             ApplyTheme();
         }
     }
@@ -49,16 +64,6 @@ public sealed partial class MainWindow : Window
         // Set title
         Title = "CodeBuddy 代理";
 
-        // Detect initial system theme
-        var backgroundColor = _uiSettings.GetColorValue(global::Windows.UI.ViewManagement.UIColorType.Background);
-        _themeManager.UpdateSystemTheme(backgroundColor == global::Windows.UI.Color.FromArgb(255, 0, 0, 0) || backgroundColor.R < 128);
-
-        // Apply initial theme
-        ApplyTheme();
-
-        // Wire theme changes
-        _themeManager.PropertyChanged += OnThemeChanged;
-
         // Wire system theme changes
         _uiSettings.ColorValuesChanged += OnSystemThemeChanged;
 
@@ -71,6 +76,7 @@ public sealed partial class MainWindow : Window
 
     private void ApplyTheme()
     {
+        if (_themeManager == null) return; // Not yet set by App.OnLaunched
         var colors = _themeManager.Colors;
 
         // Apply ElementTheme to root so {ThemeResource} brushes resolve correctly
@@ -116,6 +122,7 @@ public sealed partial class MainWindow : Window
         // UISettings.ColorValuesChanged fires on a background thread
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (_themeManager == null) return;
             var backgroundColor = sender.GetColorValue(global::Windows.UI.ViewManagement.UIColorType.Background);
             var systemIsDark = backgroundColor == global::Windows.UI.Color.FromArgb(255, 0, 0, 0) || backgroundColor.R < 128;
             _themeManager.UpdateSystemTheme(systemIsDark);
@@ -140,6 +147,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateStatusBar()
     {
+        if (_themeManager == null) return;
         var colors = _themeManager.Colors;
         ConnectionIndicator.Fill = new SolidColorBrush(Helpers.ThemeColors.Success);
         ProxyStatusText.Foreground = new SolidColorBrush(colors.Text);
