@@ -34,38 +34,93 @@ public partial class App : Application
 
     public App()
     {
-        // Global unhandled exception handlers — write crash log before the process dies
+        // Global unhandled exception handlers — write crash log before the process dies.
+        // Registered BEFORE InitializeComponent so XAML parse failures are also caught.
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
-        InitializeComponent();
+        try
+        {
+            InitializeComponent();
+        }
+        catch (Exception ex)
+        {
+            WriteCrashLog("App.InitializeComponent", ex);
+            throw; // Re-throw — process must exit, but now we know why
+        }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         try
         {
-            // Initialize core services
-            ConfigManager = new ConfigManager();
-            LogBuffer = new LogBuffer();
-            TokenManager = new TokenManager();
-            AuthService = new AuthService();
-            TelemetryReporter = new TelemetryReporter(ConfigManager, TokenManager);
-            UsageStats = new UsageStats();
+            WriteCrashLog("OnLaunched", new Exception("OnLaunched starting — app has entered OnLaunched"));
+
+            // Initialize core services (each step logged for precise failure diagnosis)
+            try
+            {
+                ConfigManager = new ConfigManager();
+                WriteCrashLog("OnLaunched", new Exception("✓ ConfigManager created"));
+            }
+            catch (Exception ex) { WriteCrashLog("OnLaunched.ConfigManager", ex); throw; }
+
+            try
+            {
+                LogBuffer = new LogBuffer();
+            }
+            catch (Exception ex) { WriteCrashLog("OnLaunched.LogBuffer", ex); throw; }
+
+            try
+            {
+                TokenManager = new TokenManager();
+            }
+            catch (Exception ex) { WriteCrashLog("OnLaunched.TokenManager", ex); throw; }
+
+            try
+            {
+                AuthService = new AuthService();
+            }
+            catch (Exception ex) { WriteCrashLog("OnLaunched.AuthService", ex); throw; }
+
+            try
+            {
+                TelemetryReporter = new TelemetryReporter(ConfigManager, TokenManager);
+            }
+            catch (Exception ex) { WriteCrashLog("OnLaunched.TelemetryReporter", ex); throw; }
+
+            try
+            {
+                UsageStats = new UsageStats();
+            }
+            catch (Exception ex) { WriteCrashLog("OnLaunched.UsageStats", ex); throw; }
 
             // Create main window
-            _window = new MainWindow
+            try
             {
-                ThemeManager = ThemeManager
-            };
+                _window = new MainWindow
+                {
+                    ThemeManager = ThemeManager
+                };
+                WriteCrashLog("OnLaunched", new Exception("✓ MainWindow created and ThemeManager set"));
+            }
+            catch (Exception ex) { WriteCrashLog("OnLaunched.MainWindow", ex); throw; }
 
             // Start the proxy server
-            StartProxyServer();
+            try
+            {
+                StartProxyServer();
+                WriteCrashLog("OnLaunched", new Exception("✓ ProxyServer started"));
+            }
+            catch (Exception ex) { WriteCrashLog("OnLaunched.StartProxyServer", ex); throw; }
+
+            // If we got here, everything worked — clear the diagnostic entries
+            WriteCrashLog("OnLaunched", new Exception("✓✓✓ App startup complete — all services initialized successfully"));
         }
         catch (Exception ex)
         {
-            WriteCrashLog("OnLaunched", ex);
-            // Re-throw so the process exits with a clear error instead of hanging invisibly
+            // The per-step log already captured the specific failure;
+            // this catch ensures we don't hang invisibly — re-throw to crash visibly
+            WriteCrashLog("OnLaunched.FATAL", ex);
             throw;
         }
     }
@@ -105,7 +160,12 @@ public partial class App : Application
             LogBuffer,
             TelemetryReporter,
             UsageStats);
-        _proxyServer.Start();
+
+        // Start server and observe the async task to prevent silent port-bind failures
+        _proxyServer.Start(ex =>
+        {
+            WriteCrashLog("ProxyServer.RunAsync", ex);
+        });
     }
 
     // ── Unhandled exception handlers ──

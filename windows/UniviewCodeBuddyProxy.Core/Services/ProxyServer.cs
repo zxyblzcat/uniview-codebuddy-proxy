@@ -70,7 +70,7 @@ public sealed class ProxyServer
 
     // ═══ Start / Stop ═══
 
-    public void Start()
+    public void Start(Action<Exception>? onError = null)
     {
         var builder = WebApplication.CreateBuilder();
 
@@ -195,8 +195,14 @@ public sealed class ProxyServer
         _app = app;
         _logBuffer.Info($"proxy server starting on 127.0.0.1:{_configManager.Port}");
 
-        // Run in background -- don't block the calling thread
-        _ = app.RunAsync();
+        // Run in background -- observe the task to catch port-bind failures
+        _ = app.RunAsync().ContinueWith(t =>
+        {
+            if (t.IsFaulted && t.Exception != null)
+            {
+                onError?.Invoke(t.Exception);
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     public void Stop()
